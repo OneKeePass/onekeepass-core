@@ -10,6 +10,9 @@ pub enum Error {
     #[error("Db Key is not found")]
     DbKeyNotFound,
 
+    #[error("DbFileContentChangeDetected")]
+    DbFileContentChangeDetected,
+
     #[error("{0}")]
     NotFound(String),
 

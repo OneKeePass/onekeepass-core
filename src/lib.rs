@@ -12,8 +12,6 @@ pub mod error;
 pub mod db_content;
 pub mod db_service;
 
-pub use self::db::{open_and_read, write_db};
-
 #[macro_use]
 extern crate slice_as_array;
 extern crate lazy_static;

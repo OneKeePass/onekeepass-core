@@ -544,6 +544,7 @@ impl NewDatabase {
             inner_header: ih,
             db_key: DbKey::default(),
             keepass_main_content: Some(kc),
+            checksum_hash: vec![],
         };
 
         Ok(k)
@@ -560,6 +561,7 @@ pub struct KdbxFile {
     inner_header: InnerHeader,
     db_key: DbKey,
     pub(crate) keepass_main_content: Option<KeepassFile>,
+    pub(crate) checksum_hash: Vec<u8>,
 }
 
 impl KdbxFile {
@@ -1194,7 +1196,7 @@ pub fn open_db_file(db_file_name: &str) -> Result<BufReader<File>> {
 }
 
 /// Opens a KeePass db file
-pub fn open_and_read(
+fn _open_and_read(
     db_file_name: &str,
     password: &str,
     key_file_name: Option<&str>,
@@ -1212,6 +1214,7 @@ pub fn open_and_read(
     read_db_from_reader(&mut reader, db_file_name, password, key_file_name)
 }
 
+// Used for both desktop and mobile 
 pub fn read_db_from_reader<R: Read + Seek>(
     reader: &mut R,
     db_file_name: &str,
@@ -1230,9 +1233,17 @@ pub fn read_db_from_reader<R: Read + Seek>(
         inner_header: InnerHeader::default(),
         db_key: DbKey::default(),
         keepass_main_content: None,
+        checksum_hash: vec![],
     };
 
-    read_db(reader, kdbx)
+    let mut updated_kdbx = read_db(reader, kdbx)?;
+
+    // Need to get the checksum to track db file content changes outside the application if any
+    let cs = calculate_db_file_checksum(reader)?;
+    debug!("Calculated checksum on reading the db");
+    updated_kdbx.checksum_hash = cs;
+
+    Ok(updated_kdbx)
 }
 
 fn read_db<R: Read + Seek>(buff: &mut R, kdbx_file: KdbxFile) -> Result<KdbxFile> {
@@ -1247,8 +1258,40 @@ pub fn write_db<W: Write + Read + Seek>(buff: &mut W, kdbx_file: &mut KdbxFile) 
     Ok(())
 }
 
+// Calculates checksum for later verification before saving
+fn calculate_db_file_checksum<R: Read + Seek>(reader: &mut R) -> Result<Vec<u8>> {
+    reader.rewind()?;
+    // For now, we just consider the first 1000 samples as sample checksum
+    let mut buffer = [0; 1000];
+    // read up to 1000 bytes
+    let _n = reader.read(&mut buffer[..])?;
+    let cs = crypto::do_slice_sha256_hash(&buffer);
+    Ok(cs?.to_vec())
+}
+
+
+// Reads the db file  and check whether the file content is modified externally
+fn read_and_verify_db_file(kdbx_file: &mut KdbxFile) -> Result<()> {
+    let mut db_file_read = OpenOptions::new()
+        .read(true)
+        .open(&kdbx_file.database_file_name)?;
+    verify_db_file_checksum(kdbx_file, &mut db_file_read)
+}
+
+// Reads data from the reader formed from the db file to compute the checksum and compares
+// with the previously calculated one
+pub fn verify_db_file_checksum<R: Read + Seek>(kdbx_file: &mut KdbxFile, reader: &mut R) -> Result<()> {
+    let cs = calculate_db_file_checksum(reader)?;
+    if cs.eq(&kdbx_file.checksum_hash) {
+        Ok(())
+    } else {
+        Err(Error::DbFileContentChangeDetected)
+    }
+}
+
 /// Writes the KDBX content to a db file found in 'kdbx_file.db_file_name'
-pub fn write_kdbx_file(kdbx_file: &mut KdbxFile) -> Result<()> {
+/// Typically overwrite is true when this fn is called when we save a new db or when we call 'Save As'
+pub fn write_kdbx_file(kdbx_file: &mut KdbxFile, overwrite: bool) -> Result<()> {
     debug!(
         "Going to write to the KDBX file {}",
         &kdbx_file.database_file_name
@@ -1260,14 +1303,27 @@ pub fn write_kdbx_file(kdbx_file: &mut KdbxFile) -> Result<()> {
             std::fs::create_dir_all(p)?;
         }
     }
+
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
         .open(&kdbx_file.database_file_name)?;
 
+    if !overwrite {
+        // Need to ensure that file is not changed outside our app
+        verify_db_file_checksum(kdbx_file, &mut file)?;
+        debug!("No backup is done.Called read_and_verify_db_file and no changes found");
+        // file stream position is reset to the start. Is it required?
+        file.rewind()?;
+    }
+
     write_db(&mut file, kdbx_file)?;
     file.sync_all()?;
+
+    // New checksum for the next time use
+    kdbx_file.checksum_hash = calculate_db_file_checksum(&mut file)?;
+    debug!("New checksum is calculated");
 
     debug!(
         "Writing to KDBX file {} completed",
@@ -1277,9 +1333,11 @@ pub fn write_kdbx_file(kdbx_file: &mut KdbxFile) -> Result<()> {
     Ok(())
 }
 
+// Called to save first to a backup file and then copied from that backup to the actual db file
 pub fn write_kdbx_file_with_backup_file(
     kdbx_file: &mut KdbxFile,
     backup_file_name: Option<&str>,
+    overwrite: bool,
 ) -> Result<()> {
     if let Some(b) = backup_file_name {
         let mut backup_file = OpenOptions::new()
@@ -1296,12 +1354,24 @@ pub fn write_kdbx_file_with_backup_file(
             "Going to save the database file {}",
             kdbx_file.database_file_name
         );
+
+        if !overwrite {
+            // Need to ensure that file is not changed outside our app
+            read_and_verify_db_file(kdbx_file)?;
+            debug!("read_and_verify_db_file is done and no changes found");
+        }
+
         std::fs::copy(&b, &kdbx_file.database_file_name)?;
         debug!("Saving the database file done");
+
+        // New checksum for the next time use
+        kdbx_file.checksum_hash = calculate_db_file_checksum(&mut backup_file)?;
+        debug!("New checksum is calculated");
+
         Ok(())
     } else {
         log::error!("Backup file name is not available and saving directly to the databae file without any backup");
-        write_kdbx_file(kdbx_file)
+        write_kdbx_file(kdbx_file, overwrite)
     }
 }
 
