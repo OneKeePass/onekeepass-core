@@ -79,6 +79,8 @@ pub enum Error {
     #[error("CustomEntryTypeInUse")]
     CustomEntryTypeInUse,
 
+    // See DataError where we can use str
+    // Other is used where we can use format!
     #[error("{0}")]
     Other(String),
 }

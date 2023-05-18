@@ -1214,7 +1214,7 @@ fn _open_and_read(
     read_db_from_reader(&mut reader, db_file_name, password, key_file_name)
 }
 
-// Used for both desktop and mobile 
+// Used for both desktop and mobile
 pub fn read_db_from_reader<R: Read + Seek>(
     reader: &mut R,
     db_file_name: &str,
@@ -1236,15 +1236,16 @@ pub fn read_db_from_reader<R: Read + Seek>(
         checksum_hash: vec![],
     };
 
-    let mut updated_kdbx = read_db(reader, kdbx)?;
-
     // Need to get the checksum to track db file content changes outside the application if any
+    let mut updated_kdbx = read_db(reader, kdbx)?;
     let cs = calculate_db_file_checksum(reader)?;
     debug!("Calculated checksum on reading the db");
     updated_kdbx.checksum_hash = cs;
-
     Ok(updated_kdbx)
+
+    // read_db(reader, kdbx)
 }
+
 
 fn read_db<R: Read + Seek>(buff: &mut R, kdbx_file: KdbxFile) -> Result<KdbxFile> {
     let mut db_reader = KdbxFileReader::new(buff, kdbx_file);
@@ -1259,16 +1260,22 @@ pub fn write_db<W: Write + Read + Seek>(buff: &mut W, kdbx_file: &mut KdbxFile) 
 }
 
 // Calculates checksum for later verification before saving
-fn calculate_db_file_checksum<R: Read + Seek>(reader: &mut R) -> Result<Vec<u8>> {
+pub fn calculate_db_file_checksum<R: Read + Seek>(reader: &mut R) -> Result<Vec<u8>> {
+    debug!("Start of calculate_db_file_checksum with reader position  {:?} ", reader.stream_position());
+    let pos = reader.stream_position()?;
     reader.rewind()?;
     // For now, we just consider the first 1000 samples as sample checksum
     let mut buffer = [0; 1000];
     // read up to 1000 bytes
+    debug!("Reading 1000 bytes");
     let _n = reader.read(&mut buffer[..])?;
     let cs = crypto::do_slice_sha256_hash(&buffer);
+    
+    reader.seek(SeekFrom::Start(pos))?;
+
+    debug!("Returning cs after resetting reader position");
     Ok(cs?.to_vec())
 }
-
 
 // Reads the db file  and check whether the file content is modified externally
 fn read_and_verify_db_file(kdbx_file: &mut KdbxFile) -> Result<()> {
@@ -1280,8 +1287,13 @@ fn read_and_verify_db_file(kdbx_file: &mut KdbxFile) -> Result<()> {
 
 // Reads data from the reader formed from the db file to compute the checksum and compares
 // with the previously calculated one
-pub fn verify_db_file_checksum<R: Read + Seek>(kdbx_file: &mut KdbxFile, reader: &mut R) -> Result<()> {
+pub fn verify_db_file_checksum<R: Read + Seek>(
+    kdbx_file: &mut KdbxFile,
+    reader: &mut R,
+) -> Result<()> {
+    debug!("verify_db_file_checksum called and reader position {:?}",reader.stream_position());
     let cs = calculate_db_file_checksum(reader)?;
+    debug!("verify_db_file_checksum called and reader position after calculation {:?}",reader.stream_position());
     if cs.eq(&kdbx_file.checksum_hash) {
         Ok(())
     } else {
@@ -1374,6 +1386,127 @@ pub fn write_kdbx_file_with_backup_file(
         write_kdbx_file(kdbx_file, overwrite)
     }
 }
+
+// New
+pub fn write_kdbx_with_writer<WR: Read + Write + Seek>(
+    kdbx_file: &mut KdbxFile,
+    db_file_reader_writer: &mut WR,
+    backup_file_name: Option<&str>,
+    overwrite: bool,
+) -> Result<()> {
+    if let Some(bkp_file_name) = backup_file_name {
+
+        let mut backup_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(bkp_file_name)?;
+
+        debug!("Going to save the backup file {}", &bkp_file_name);
+
+        write_db(&mut backup_file, kdbx_file)?;
+        backup_file.sync_all()?;
+        debug!("Saving the backup file is done");
+
+        if !overwrite {
+            // Need to ensure that file is not changed outside our app
+            debug!("Going to call verify_db_file_checksum");
+            verify_db_file_checksum(kdbx_file, db_file_reader_writer)?;
+            debug!("read_and_verify_db_file is done and no changes found");
+        }
+        // After writting to the backup writer and verification done, need to copy from that to actual db file writer
+        std::io::copy(&mut backup_file, db_file_reader_writer)?;
+        debug!("Saving the database file done");
+
+        // New checksum for the next time use
+        kdbx_file.checksum_hash = calculate_db_file_checksum(&mut backup_file)?;
+        debug!("New checksum is calculated - size of hash {}",kdbx_file.checksum_hash.len());
+
+        Ok(())
+    } else {
+        log::error!("Backup file name is not available and saving directly to the databae file without any backup");
+        if !overwrite {
+            // Need to ensure that file is not changed outside our app
+            verify_db_file_checksum(kdbx_file, db_file_reader_writer)?;
+            debug!("No backup is done.Called read_and_verify_db_file and no changes found");
+            // file stream position is reset to the start. Is it required?
+            db_file_reader_writer.rewind()?;
+        }
+    
+        write_db(db_file_reader_writer, kdbx_file)?;
+        db_file_reader_writer.flush()?;
+        //db_file_reader_writer.sync_all()?;
+        // New checksum for the next time use
+        kdbx_file.checksum_hash = calculate_db_file_checksum(db_file_reader_writer)?;
+        debug!("New checksum is calculated - size of hash {}",kdbx_file.checksum_hash.len());
+
+        debug!("Writing to KDBX file completed");
+
+        Ok(())
+    }
+}
+
+
+//////////////////////////////////////////////
+pub fn write_kdbx_with_writer_1<R: Read + Seek,W: Read + Write + Seek>(
+    kdbx_file: &mut KdbxFile,
+    db_file_reader: &mut R,
+    db_file_writer: &mut W,
+    backup_file_name: Option<&str>,
+    overwrite: bool,
+) -> Result<()> {
+    if let Some(bkp_file_name) = backup_file_name {
+
+        let mut backup_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(bkp_file_name)?;
+
+        debug!("Going to save the backup file {}", &bkp_file_name);
+
+        write_db(&mut backup_file, kdbx_file)?;
+        backup_file.sync_all()?;
+        debug!("Saving the backup file is done");
+
+        if !overwrite {
+            // Need to ensure that file is not changed outside our app
+            debug!("Going to call verify_db_file_checksum");
+            verify_db_file_checksum(kdbx_file, db_file_reader)?;
+            debug!("read_and_verify_db_file is done and no changes found");
+        }
+        // After writting to the backup writer and verification done, need to copy from that to actual db file writer
+        std::io::copy(&mut backup_file, db_file_writer)?;
+        debug!("Saving the database file done");
+
+        // New checksum for the next time use
+        kdbx_file.checksum_hash = calculate_db_file_checksum(&mut backup_file)?;
+        debug!("New checksum is calculated - size of hash {}",kdbx_file.checksum_hash.len());
+
+        Ok(())
+    } else {
+        log::error!("Backup file name is not available and saving directly to the databae file without any backup");
+        if !overwrite {
+            // Need to ensure that file is not changed outside our app
+            verify_db_file_checksum(kdbx_file, db_file_reader)?;
+            debug!("No backup is done.Called read_and_verify_db_file and no changes found");
+            // file stream position is reset to the start. Is it required?
+            db_file_reader.rewind()?;
+        }
+    
+        write_db(db_file_writer, kdbx_file)?;
+        db_file_writer.flush()?;
+        //db_file_reader_writer.sync_all()?;
+        // New checksum for the next time use
+        kdbx_file.checksum_hash = calculate_db_file_checksum(db_file_reader)?;
+        debug!("New checksum is calculated - size of hash {}",kdbx_file.checksum_hash.len());
+
+        debug!("Writing to KDBX file completed");
+
+        Ok(())
+    }
+}    
+//////////////////////////////////////////////
 
 // See comment in KdbxFileReader::read_xml_content to use this function to dump the raw xml
 // obtained after decrypting the database. Useful for debugging
