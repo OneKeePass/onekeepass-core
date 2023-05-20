@@ -79,6 +79,9 @@ pub enum Error {
     #[error("CustomEntryTypeInUse")]
     CustomEntryTypeInUse,
 
+    #[error("{0}")]
+    JsonConversionError(#[from] serde_json::Error),
+
     // See DataError where we can use str
     // Other is used where we can use format!
     #[error("{0}")]
