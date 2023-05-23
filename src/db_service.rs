@@ -63,7 +63,6 @@ pub struct KdbxContext {
     ///  The time of the most recent writing to the database
     pub(crate) last_write_time: NaiveDateTime,
     pub(crate) save_pending: bool,
-    pub(crate) last_read_hash: Vec<u8>,
 }
 
 // Need to implement Default explicitly as there is no default support in NaiveDateTime
@@ -74,7 +73,6 @@ impl Default for KdbxContext {
             last_read_time: util::now_utc(),
             last_write_time: util::now_utc(),
             save_pending: false,
-            last_read_hash: vec![],
         }
     }
 }
@@ -329,7 +327,7 @@ pub fn create_kdbx(new_db: NewDatabase) -> Result<KdbxLoaded> {
     Ok(kdbx_loaded)
 }
 
-// For non desktop ?
+// Mobile
 /// Creates a new db and writes into the supplied writer as kdbx db
 pub fn create_and_write_to_writer<W: Read + Write + Seek>(
     writer: &mut W,
@@ -369,7 +367,7 @@ pub fn create_and_write_to_writer<W: Read + Write + Seek>(
     // See above block comment. The drop(main_store()) is not working;Also there is no method 'unclock' in Mutex yet;
     save_kdbx_to_writer(&mut buf , &new_db.database_file_name)?; //new_db.database_file_name is the db_key
     buf.rewind()?;
-    debug!("Setting the checksum for teh new database");
+    debug!("Setting the checksum for the new database");
     calculate_db_file_checksum(&new_db.database_file_name, &mut buf)?;
     buf.rewind()?;  //do we require this
     std::io::copy(&mut buf, writer)?;
@@ -410,7 +408,7 @@ pub fn save_kdbx_with_backup(
     Ok(kdbx_saved)
 }
 
-// Mobile ?
+// Mobile 
 pub fn verify_db_file_checksum<R: Read + Seek>(db_key: &str, reader: &mut R) -> Result<()> {
     call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
         db::verify_db_file_checksum(&mut ctx.kdbx_file, reader)
@@ -418,6 +416,7 @@ pub fn verify_db_file_checksum<R: Read + Seek>(db_key: &str, reader: &mut R) -> 
     Ok(())
 }
 
+// Mobile
 pub fn calculate_db_file_checksum<R: Read + Seek>(db_key: &str, reader: &mut R) -> Result<()> {
     call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
         ctx.kdbx_file.checksum_hash = db::calculate_db_file_checksum(reader)?;
@@ -425,6 +424,7 @@ pub fn calculate_db_file_checksum<R: Read + Seek>(db_key: &str, reader: &mut R) 
     })
 }
 
+// Mobile
 /// Converts all data from memory structs to kdbx database formatted data and
 /// writes the final complte db content to the supplied writer. The writer may be in memory or a file
 /// Returns the result of saving in KdbxSaved struct to the client
@@ -447,110 +447,6 @@ pub fn save_kdbx_to_writer<W: Read + Write + Seek>(
         })
     })?;
     Ok(kdbx_saved)
-}
-
-// New
-pub fn save_kdbx_writer<WR: Read + Write + Seek>(
-    db_key: &str,
-    db_file_reader_writer: &mut WR,
-    backup_file_name: Option<&str>,
-    overwrite: bool,
-) -> Result<KdbxSaved> {
-    let kdbx_saved = call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
-        db::write_kdbx_with_writer(
-            &mut ctx.kdbx_file,
-            db_file_reader_writer,
-            backup_file_name,
-            overwrite,
-        )?;
-        // All changes are now saved to file
-        ctx.save_pending = false;
-        debug!(
-            "Saving database_name {} with db_key {}",
-            ctx.kdbx_file.get_database_name(),
-            &db_key
-        );
-        Ok(KdbxSaved {
-            db_key: db_key.into(),
-            database_name: ctx.kdbx_file.get_database_name().into(),
-        })
-    })?;
-    Ok(kdbx_saved)
-}
-
-pub fn verify_save_kdbx<R: Read + Seek, W: Read + Write + Seek>(
-    db_key: &str,
-    db_file_reader: &mut R,
-    db_file_writer: &mut W,
-    backup_file_name: Option<&str>,
-    overwrite: bool,
-) -> Result<KdbxSaved> {
-    let kdbx_saved = call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
-        debug!(
-            "verify_save_kdbx called and reader position {:?} and writer position {:?}",
-            db_file_reader.stream_position(),
-            db_file_writer.stream_position()
-        );
-        db::write_kdbx_with_writer_1(
-            &mut ctx.kdbx_file,
-            db_file_reader,
-            db_file_writer,
-            backup_file_name,
-            overwrite,
-        )?;
-        // All changes are now saved to file
-        ctx.save_pending = false;
-        debug!(
-            "Saving database_name {} with db_key {}",
-            ctx.kdbx_file.get_database_name(),
-            &db_key
-        );
-        Ok(KdbxSaved {
-            db_key: db_key.into(),
-            database_name: ctx.kdbx_file.get_database_name().into(),
-        })
-    })?;
-    Ok(kdbx_saved)
-}
-
-// New
-pub fn create_kdbx_with_writer<WR: Read + Write + Seek>(
-    db_file_reader_writer: &mut WR,
-    new_db: NewDatabase,
-) -> Result<KdbxLoaded> {
-    // Assumed the new_db has all valid values including key file data
-
-    let kdbx_file = new_db.create()?;
-    let kp = to_keepassfile!(kdbx_file);
-    let kdbx_loaded = KdbxLoaded {
-        db_key: new_db.database_file_name.clone(),
-        database_name: kp.meta.database_name.clone(),
-    };
-
-    // IMPORTANT:
-    // We need to call the following inserting of db to the shared cache in {} block
-    // so that the Mutex guard is unlocked so that outside this block, the save_kdbx fn
-    // can be called. If this is not done, save_kdbx will deadlock the thread as it will be waiting for
-    // main_store lock to be released
-    {
-        // Add the newly created db to cache for UI use
-        let mut kdbx_context = KdbxContext::default();
-        kdbx_context.kdbx_file = kdbx_file;
-
-        let mut store = main_store().lock().unwrap();
-        store.insert(new_db.database_file_name.clone(), kdbx_context);
-    }
-    // Mutex guard is now released
-    // Save the newly created db to the file system for persistence
-    // See above block comment. The drop(main_store()) is not working;Also there is no method 'unclock' in Mutex yet;
-    save_kdbx_writer(
-        &new_db.database_file_name,
-        db_file_reader_writer,
-        None,
-        true,
-    )?; //new_db.database_file_name is the db_key
-
-    Ok(kdbx_loaded)
 }
 
 /// Called to save all modified db files in one go and also creating backups in desktop
@@ -630,7 +526,7 @@ pub fn save_as_kdbx(db_key: &str, database_file_name: &str) -> Result<KdbxLoaded
     Ok(kdbx_loaded)
 }
 
-// Mobile specific ?
+// Mobile 
 /// Called to rename the db key used and the database_file_name as we know
 /// the full db file name and db_key are used interchangeabley
 pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
