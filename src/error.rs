@@ -10,6 +10,9 @@ pub enum Error {
     #[error("Db Key is not found")]
     DbKeyNotFound,
 
+    #[error("DbFileContentChangeDetected")]
+    DbFileContentChangeDetected,
+
     #[error("{0}")]
     NotFound(String),
 
@@ -76,6 +79,11 @@ pub enum Error {
     #[error("CustomEntryTypeInUse")]
     CustomEntryTypeInUse,
 
+    #[error("{0}")]
+    JsonConversionError(#[from] serde_json::Error),
+
+    // See DataError where we can use str
+    // Other is used where we can use format!
     #[error("{0}")]
     Other(String),
 }

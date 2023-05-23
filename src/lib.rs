@@ -12,40 +12,10 @@ pub mod error;
 pub mod db_content;
 pub mod db_service;
 
-pub use self::db::{open_and_read, write_db};
-
 #[macro_use]
 extern crate slice_as_array;
 extern crate lazy_static;
 extern crate log;
-
-// use once_cell::sync::Lazy;
-// use std::{
-//     collections::HashMap,
-//     sync::{Arc, Mutex},
-//   };
-
-// type DbFilesStore = Arc<Mutex<HashMap<String, String>>>;
-
-// fn db_files() -> &'static DbFilesStore  {
-//     static DB_STORE: Lazy<DbFilesStore> = Lazy::new(Default::default);
-//   &DB_STORE
-// }
-
-// pub fn load_kdbx(name:String, data:String)  {
-//     let mut store = db_files().lock().unwrap();
-//     store.insert(name, data);
-// }
-
-// pub fn groups_summary_data(name:&String) -> String {
-//     let store = db_files().lock().unwrap();
-//     match store.get(name) {
-//         Some(x) => x.clone(),
-//         None => "None".to_string()
-//     }
-// }
-
-pub fn my_command() {}
 
 //Need to use " cargo test -- --nocapture " to see println! output in the console
 #[cfg(test)]
