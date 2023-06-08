@@ -232,8 +232,8 @@ pub fn load_kdbx(
     password: &str,
     key_file_name: Option<&str>,
 ) -> Result<KdbxLoaded> {
-    let mut db_file_read = db::open_db_file(db_file_name)?;
-    read_kdbx(&mut db_file_read, db_file_name, password, key_file_name)
+    let mut db_file_reader = db::open_db_file(db_file_name)?;
+    read_kdbx(&mut db_file_reader, db_file_name, password, key_file_name)
 }
 
 // Gets a ref to the main keepass content
@@ -248,6 +248,7 @@ macro_rules! to_keepassfile {
 }
 
 // Used for both desktop and mobile
+// db_file_name is full uri and used as db_key in all subsequent calls
 pub fn read_kdbx<R: Read + Seek>(
     reader: &mut R,
     db_file_name: &str,
