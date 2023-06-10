@@ -204,7 +204,7 @@ impl EntryFormData {
                     } else {
                         // The FieldDef of this entry type is not in KV. This can happen when new fields
                         // are added in standard types or when we need to use default entry type in case of deserilalizing issue
-                        debug!("Not found in KV - Field Def {:?}", fd);
+                        // debug!("Not found in KV - Field Def {:?}", fd);
                         let mut kvd: KeyValueData = KeyValueData::default();
                         kvd.data_type = fd.data_type;
                         kvd.required = fd.required;

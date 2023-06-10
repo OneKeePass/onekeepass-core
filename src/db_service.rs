@@ -1,4 +1,4 @@
-pub use crate::db::NewDatabase;
+pub use crate::db::{NewDatabase, SecureKeyInfo};
 pub use crate::db_content::{AllTags, Entry, EntryType, FieldDataType, Group};
 pub use crate::error;
 pub use crate::error::{Error, Result};
@@ -6,7 +6,9 @@ pub use crate::form_data::*;
 pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions, PasswordScore};
 pub use crate::util::string_to_simple_hash;
 
-use crate::db::{self, write_kdbx_file, write_kdbx_file_with_backup_file, KdbxFile};
+use crate::db::{
+    self, write_kdbx_file, write_kdbx_file_with_backup_file, KdbxFile, SessionKeyCallback,
+};
 use crate::db_content::{standard_types_ordered_by_id, AttachmentHashValue, KeepassFile};
 use crate::password_generator;
 use crate::searcher;
@@ -15,7 +17,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs::File;
-use std::io::{BufReader, Read, Seek, Write, Cursor};
+use std::io::{BufReader, Cursor, Read, Seek, Write};
 use std::path::Path;
 use std::{
     collections::HashMap,
@@ -277,6 +279,86 @@ pub fn read_kdbx<R: Read + Seek>(
     Ok(kdbx_loaded)
 }
 
+pub fn load_kdbx_NEW<SF>(
+    db_file_name: &str,
+    password: &str,
+    key_file_name: Option<&str>,
+    store_key_callback: SF,
+    get_key_callback: SessionKeyCallback,
+) -> Result<KdbxLoaded>
+where
+    SF: FnMut(&str, Vec<u8>) -> Result<()>,
+{
+    let mut db_file_reader = db::open_db_file(db_file_name)?;
+    read_kdbx_NEW(
+        &mut db_file_reader,
+        db_file_name,
+        password,
+        key_file_name,
+        store_key_callback,
+        get_key_callback,
+    )
+}
+
+pub fn read_kdbx_NEW<R: Read + Seek, SF>(
+    reader: &mut R,
+    db_file_name: &str,
+    password: &str,
+    key_file_name: Option<&str>,
+    store_key_callback: SF,
+    get_key_callback: SessionKeyCallback,
+) -> Result<KdbxLoaded>
+where
+    SF: FnMut(&str, Vec<u8>) -> Result<()>,
+{
+    let kdbx_file = db::read_db_from_reader_NEW(
+        reader,
+        db_file_name,
+        password,
+        key_file_name,
+        store_key_callback,
+        get_key_callback,
+    )?;
+
+    let kp = to_keepassfile!(kdbx_file);
+
+    let kdbx_loaded = KdbxLoaded {
+        db_key: db_file_name.into(),
+        database_name: kp.meta.database_name.clone(),
+    };
+
+    let mut kdbx_context = KdbxContext::default();
+    kdbx_context.kdbx_file = kdbx_file;
+
+    // Arc<T> automatically dereferences to T (via the Deref trait),
+    // so you can call T’s methods on a value of type Arc<T>
+    let mut store = main_store().lock().unwrap();
+    // Each database has a unique uri (File Path) and accordingly only one db with that name can be opened at a time
+    // The 'db_file_name' is the full uri and used as a unique db_key throughout all db specific calls
+    store.insert(db_file_name.into(), kdbx_context);
+    info!("Reading KDBX file {} is completed", db_file_name);
+    Ok(kdbx_loaded)
+}
+
+// Desktop
+pub fn reload_kdbx(db_key: &str) -> Result<KdbxLoaded> {
+    call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
+        // db_key is full database file uri
+        let mut db_file_reader = db::open_db_file(db_key)?;
+        let reloaded_kdbx_file = db::reload(&mut db_file_reader, &ctx.kdbx_file)?;
+        let kp = to_keepassfile!(reloaded_kdbx_file);
+
+        let kdbx_loaded = KdbxLoaded {
+            db_key: db_key.into(),
+            database_name: kp.meta.database_name.clone(),
+        };
+        
+        ctx.kdbx_file = reloaded_kdbx_file;
+        
+        Ok(kdbx_loaded)
+    })
+}
+
 pub fn all_kdbx_cache_keys() -> Result<Vec<String>> {
     let store = main_store().lock().unwrap();
     let mut vec = vec![];
@@ -285,6 +367,8 @@ pub fn all_kdbx_cache_keys() -> Result<Vec<String>> {
     }
     Ok(vec)
 }
+
+// IMPORTANT: Need to use SecuredDbKeys
 
 // TODO: Refactor create_kdbx (used mainly for desktop app) and create_and_write_to_writer to use common functionalties
 /// Called to create a new KDBX database and perists the file
@@ -328,6 +412,8 @@ pub fn create_kdbx(new_db: NewDatabase) -> Result<KdbxLoaded> {
     Ok(kdbx_loaded)
 }
 
+// IMPORTANT: Need to use SecuredDbKeys
+
 // Mobile
 /// Creates a new db and writes into the supplied writer as kdbx db
 pub fn create_and_write_to_writer<W: Read + Write + Seek>(
@@ -366,11 +452,11 @@ pub fn create_and_write_to_writer<W: Read + Write + Seek>(
     // Mutex guard is now released
     // Save the newly created db to the file system for persistence
     // See above block comment. The drop(main_store()) is not working;Also there is no method 'unclock' in Mutex yet;
-    save_kdbx_to_writer(&mut buf , &new_db.database_file_name)?; //new_db.database_file_name is the db_key
+    save_kdbx_to_writer(&mut buf, &new_db.database_file_name)?; //new_db.database_file_name is the db_key
     buf.rewind()?;
     debug!("Setting the checksum for the new database");
     calculate_db_file_checksum(&new_db.database_file_name, &mut buf)?;
-    buf.rewind()?;  //do we require this
+    buf.rewind()?; //do we require this
     std::io::copy(&mut buf, writer)?;
     debug!("New db data is copied from buf to file");
 
@@ -409,7 +495,7 @@ pub fn save_kdbx_with_backup(
     Ok(kdbx_saved)
 }
 
-// Mobile 
+// Mobile
 pub fn verify_db_file_checksum<R: Read + Seek>(db_key: &str, reader: &mut R) -> Result<()> {
     call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
         db::verify_db_file_checksum(&mut ctx.kdbx_file, reader)
@@ -527,7 +613,7 @@ pub fn save_as_kdbx(db_key: &str, database_file_name: &str) -> Result<KdbxLoaded
     Ok(kdbx_loaded)
 }
 
-// Mobile 
+// Mobile
 /// Called to rename the db key used and the database_file_name as we know
 /// the full db file name and db_key are used interchangeabley
 pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
@@ -547,6 +633,16 @@ pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
     Ok(kdbx_loaded)
 }
 
+pub fn unlock_kdbx_with_biometeric_authentication(db_key: &str) {
+    // Need to reload the database if the db has changed in the file system and
+    // no changes pending
+
+    // SecuredDbKeys to be copied from the memmory and reload db
+
+    // In case, the db has changed in the file system and we have pending changes
+    // provide the same options done during "Save" action
+}
+
 /// Compares the entered credentials with the stored one for a quick unlock of the db
 pub fn unlock_kdbx(
     db_key: &str,
@@ -555,6 +651,9 @@ pub fn unlock_kdbx(
 ) -> Result<KdbxLoaded> {
     kdbx_context_action!(db_key, |ctx: &KdbxContext| {
         if ctx.kdbx_file.compare_key(password, key_file_name)? {
+            // May need to reload the changed db. See the comment in
+            //unlock_kdbx_on_biometeric_authentication
+
             Ok(KdbxLoaded {
                 db_key: db_key.into(),
                 database_name: ctx.kdbx_file.get_database_name().into(),
@@ -563,6 +662,12 @@ pub fn unlock_kdbx(
             // Same error as if db file verification failure as in load_kdbx
             Err(Error::HeaderHmacHashCheckFailed)
         }
+    })
+}
+
+pub fn read_and_verify_db_file(db_key: &str) -> Result<()> {
+    call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
+        db::read_and_verify_db_file(&mut ctx.kdbx_file)
     })
 }
 
@@ -611,9 +716,11 @@ pub fn set_db_settings(db_key: &str, db_settings: DbSettings) -> Result<()> {
         kp.meta.update((&db_settings.meta).into())?;
         // Password changed
         if let Some(s) = db_settings.password {
-            ctx.kdbx_file.set_password(&s);
+            ctx.kdbx_file.set_password(&s)?;
         }
-        // TODO: Check the existence of 'key_file_name' and return error before calling set_file_key
+        // TODO:
+        // Need to add some flag in DbSettings so that we can avoid calling 'set_file_key' if there is no change in key file use.
+        // For now some checks are done in kdbx_file.set_file_key and avoids reading and creating file content hash etc i
         ctx.kdbx_file
             .set_file_key(db_settings.key_file_name.as_deref())?;
 

@@ -1,12 +1,12 @@
 {
 	"folders": [
 		{
-			"path": "."
+			"path": "../onekeepass-core"
 		}
 	],
 	"settings": {
 
-		"rust-analyzer.diagnostics.disabled":["unresolved-proc-macro"]
+		"rust-analyzer.diagnostics.disabled":["unresolved-proc-macro"],
 
 		"editor.semanticTokenColorCustomizations": {
 	        "enabled": true,
