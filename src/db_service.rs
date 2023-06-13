@@ -1,6 +1,5 @@
 pub use crate::db::{
-    set_key_store_service_instance, KeyStoreService, KeyStoreServiceType, NewDatabase,
-    SecureKeyInfo,
+    KeyStoreOperation, KeyStoreService, KeyStoreServiceType, NewDatabase, SecureKeyInfo,
 };
 pub use crate::db_content::{AllTags, Entry, EntryType, FieldDataType, Group};
 pub use crate::error;
@@ -9,10 +8,7 @@ pub use crate::form_data::*;
 pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions, PasswordScore};
 pub use crate::util::string_to_simple_hash;
 
-use crate::db::{
-    self, get_key_store_service_instance, write_kdbx_file, write_kdbx_file_with_backup_file,
-    KdbxFile, SessionKeyCallback,
-};
+use crate::db::{self, write_kdbx_file, write_kdbx_file_with_backup_file, KdbxFile};
 use crate::db_content::{standard_types_ordered_by_id, AttachmentHashValue, KeepassFile};
 use crate::password_generator;
 use crate::searcher;
@@ -283,67 +279,6 @@ pub fn read_kdbx<R: Read + Seek>(
     Ok(kdbx_loaded)
 }
 
-pub fn load_kdbx_NEW<SF>(
-    db_file_name: &str,
-    password: &str,
-    key_file_name: Option<&str>,
-    store_key_callback: SF,
-    get_key_callback: SessionKeyCallback,
-) -> Result<KdbxLoaded>
-where
-    SF: FnMut(&str, Vec<u8>) -> Result<()>,
-{
-    let mut db_file_reader = db::open_db_file(db_file_name)?;
-    read_kdbx_NEW(
-        &mut db_file_reader,
-        db_file_name,
-        password,
-        key_file_name,
-        store_key_callback,
-        get_key_callback,
-    )
-}
-
-pub fn read_kdbx_NEW<R: Read + Seek, SF>(
-    reader: &mut R,
-    db_file_name: &str,
-    password: &str,
-    key_file_name: Option<&str>,
-    store_key_callback: SF,
-    get_key_callback: SessionKeyCallback,
-) -> Result<KdbxLoaded>
-where
-    SF: FnMut(&str, Vec<u8>) -> Result<()>,
-{
-    let kdbx_file = db::read_db_from_reader_NEW(
-        reader,
-        db_file_name,
-        password,
-        key_file_name,
-        store_key_callback,
-        get_key_callback,
-    )?;
-
-    let kp = to_keepassfile!(kdbx_file);
-
-    let kdbx_loaded = KdbxLoaded {
-        db_key: db_file_name.into(),
-        database_name: kp.meta.database_name.clone(),
-    };
-
-    let mut kdbx_context = KdbxContext::default();
-    kdbx_context.kdbx_file = kdbx_file;
-
-    // Arc<T> automatically dereferences to T (via the Deref trait),
-    // so you can call T’s methods on a value of type Arc<T>
-    let mut store = main_store().lock().unwrap();
-    // Each database has a unique uri (File Path) and accordingly only one db with that name can be opened at a time
-    // The 'db_file_name' is the full uri and used as a unique db_key throughout all db specific calls
-    store.insert(db_file_name.into(), kdbx_context);
-    info!("Reading KDBX file {} is completed", db_file_name);
-    Ok(kdbx_loaded)
-}
-
 // Desktop
 pub fn reload_kdbx(db_key: &str) -> Result<KdbxLoaded> {
     call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
@@ -371,8 +306,6 @@ pub fn all_kdbx_cache_keys() -> Result<Vec<String>> {
     }
     Ok(vec)
 }
-
-// IMPORTANT: Need to use SecuredDbKeys
 
 // TODO: Refactor create_kdbx (used mainly for desktop app) and create_and_write_to_writer to use common functionalties
 /// Called to create a new KDBX database and perists the file
@@ -415,8 +348,6 @@ pub fn create_kdbx(new_db: NewDatabase) -> Result<KdbxLoaded> {
     save_kdbx_with_backup(&new_db.database_file_name, None, true)?;
     Ok(kdbx_loaded)
 }
-
-// IMPORTANT: Need to use SecuredDbKeys
 
 // Mobile
 /// Creates a new db and writes into the supplied writer as kdbx db
@@ -477,6 +408,7 @@ pub fn close_kdbx(db_key: &str) -> Result<()> {
     // ask the user to save or not if there are any unsaved changes
 
     store.remove(db_key);
+    KeyStoreOperation::delete_key(db_key)?;
     Ok(())
 }
 
@@ -598,25 +530,14 @@ pub fn save_all_modified_dbs_with_backups(
 
 /// Saves to a new db file in desktop app and returns the db key in KdbxLoaded when successfully the file is saved
 pub fn save_as_kdbx(db_key: &str, database_file_name: &str) -> Result<KdbxLoaded> {
+    // Need to copy the encrytion key for the new name from the existing one
+    db::KeyStoreOperation::copy_key(db_key, database_file_name)?;
+
     let kdbx_loaded = call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
-        
-        // Need to copy the encrytion key for the new name from the existing one
-        {
-            let mut ks = get_key_store_service_instance().lock().unwrap();
-            ks.copy_key(db_key, database_file_name)?;
-        }
-        
         ctx.kdbx_file.set_database_file_name(database_file_name);
         write_kdbx_file(&mut ctx.kdbx_file, true)?;
         // All changes are now saved to file
         ctx.save_pending = false;
-
-        // Remove the old key for the old db_key
-        {
-            let mut ks = get_key_store_service_instance().lock().unwrap();
-            ks.delete_key(db_key);
-        }
-        
         Ok(KdbxLoaded {
             db_key: database_file_name.into(),
             database_name: ctx.kdbx_file.get_database_name().into(),
@@ -628,6 +549,10 @@ pub fn save_as_kdbx(db_key: &str, database_file_name: &str) -> Result<KdbxLoaded
     if let Some(v) = store.remove(db_key) {
         store.insert(database_file_name.into(), v);
     }
+
+    // Remove the old encryption key for the old db_key
+    db::KeyStoreOperation::delete_key(db_key)?;
+
     Ok(kdbx_loaded)
 }
 
