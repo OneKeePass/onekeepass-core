@@ -1,4 +1,7 @@
-pub use crate::db::{NewDatabase, SecureKeyInfo};
+pub use crate::db::{
+    set_key_store_service_instance, KeyStoreService, KeyStoreServiceType, NewDatabase,
+    SecureKeyInfo,
+};
 pub use crate::db_content::{AllTags, Entry, EntryType, FieldDataType, Group};
 pub use crate::error;
 pub use crate::error::{Error, Result};
@@ -7,7 +10,8 @@ pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions,
 pub use crate::util::string_to_simple_hash;
 
 use crate::db::{
-    self, write_kdbx_file, write_kdbx_file_with_backup_file, KdbxFile, SessionKeyCallback,
+    self, get_key_store_service_instance, write_kdbx_file, write_kdbx_file_with_backup_file,
+    KdbxFile, SessionKeyCallback,
 };
 use crate::db_content::{standard_types_ordered_by_id, AttachmentHashValue, KeepassFile};
 use crate::password_generator;
@@ -352,9 +356,9 @@ pub fn reload_kdbx(db_key: &str) -> Result<KdbxLoaded> {
             db_key: db_key.into(),
             database_name: kp.meta.database_name.clone(),
         };
-        
+
         ctx.kdbx_file = reloaded_kdbx_file;
-        
+
         Ok(kdbx_loaded)
     })
 }
@@ -595,10 +599,24 @@ pub fn save_all_modified_dbs_with_backups(
 /// Saves to a new db file in desktop app and returns the db key in KdbxLoaded when successfully the file is saved
 pub fn save_as_kdbx(db_key: &str, database_file_name: &str) -> Result<KdbxLoaded> {
     let kdbx_loaded = call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
+        
+        // Need to copy the encrytion key for the new name from the existing one
+        {
+            let mut ks = get_key_store_service_instance().lock().unwrap();
+            ks.copy_key(db_key, database_file_name)?;
+        }
+        
         ctx.kdbx_file.set_database_file_name(database_file_name);
         write_kdbx_file(&mut ctx.kdbx_file, true)?;
         // All changes are now saved to file
         ctx.save_pending = false;
+
+        // Remove the old key for the old db_key
+        {
+            let mut ks = get_key_store_service_instance().lock().unwrap();
+            ks.delete_key(db_key);
+        }
+        
         Ok(KdbxLoaded {
             db_key: database_file_name.into(),
             database_name: ctx.kdbx_file.get_database_name().into(),

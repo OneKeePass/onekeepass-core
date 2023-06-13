@@ -5,8 +5,10 @@ use std::fs::{File, OpenOptions};
 use std::hash::Hasher;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use log::{debug, error, info};
+use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
 use crate::constants::{self, EMPTY_STR};
@@ -382,6 +384,315 @@ impl InnerHeader {
         Ok(())
     }
 }
+
+////////////////////////////////////////////
+
+static KEY_STORE_SERVICE_INSTANCE: OnceCell<KeyStoreServiceType> = OnceCell::new();
+
+pub fn set_key_store_service_instance(kss: &KeyStoreServiceType) {
+    let _r = KEY_STORE_SERVICE_INSTANCE.set(kss.clone());
+    debug!("key_secure - set_key_store_service_instance call is completed and KEY_STORE_SERVICE_INSTANCE initalized ");
+}
+
+pub fn get_key_store_service_instance() -> &'static KeyStoreServiceType {
+    KEY_STORE_SERVICE_INSTANCE.get().expect("Error: KeyStoreService is not initialzed")
+}
+
+pub trait KeyStoreService {
+    fn store_key(&mut self, db_key: &str, val: Vec<u8>) -> Result<()>;
+    fn get_key(&self, db_key: &str) -> Option<Vec<u8>>;
+    fn delete_key(&mut self, db_key: &str);
+    fn copy_key(&mut self,source_db_key: &str, target_db_key: &str) -> Result<()>;
+}
+
+pub type KeyStoreServiceType = Arc<Mutex<dyn KeyStoreService + Sync + Send>>;
+
+#[derive(Clone)]
+struct SecuredDatabaseKeys {
+    key_store_service: Option<KeyStoreServiceType>,
+    password_hash: Vec<u8>,
+    key_file_data_hash: Option<Vec<u8>>,
+    composite_key: Vec<u8>,
+    transformed_key: Vec<u8>,
+    hmac_part_key: Vec<u8>,
+    hmac_key: Vec<u8>,
+    master_key: Vec<u8>,
+    encrypted: bool,
+}
+
+impl Default for SecuredDatabaseKeys {
+    fn default() -> Self {
+        Self {
+            key_store_service: None,
+            password_hash: vec![],
+            key_file_data_hash: None,
+            composite_key: vec![],
+            transformed_key: vec![],
+            hmac_part_key: vec![],
+            hmac_key: vec![],
+            master_key: vec![],
+            encrypted: false,
+        }
+    }
+}
+
+impl SecuredDatabaseKeys {
+
+    fn from_keys(password: &str, file_key: &Option<FileKey>) -> Result<Self> {
+        let (p, f, c) = if let Some(fk) = file_key {
+            // Final hash is sha256(sha256(password) + sha256(keyfile-content))
+            let phash = crypto::do_slice_sha256_hash(password.as_bytes())?;
+            let fhash = crypto::do_slice_sha256_hash(&fk.content)?;
+
+            let p = phash.to_vec();
+            let f = fhash.to_vec();
+            let data = vec![&p, &f];
+            let final_hash = crypto::do_vecs_sha256_hash(&data)?;
+
+            (p, Some(f), final_hash.to_vec())
+        } else {
+            // Final hash is sha256(sha256(password))
+            let phash = crypto::do_slice_sha256_hash(password.as_bytes())?;
+            let final_hash = crypto::do_slice_sha256_hash(phash.as_ref())?;
+
+            (phash.to_vec(), None, final_hash.to_vec())
+        };
+
+        let sk = Self {
+            key_store_service: None,
+            password_hash: p,
+            key_file_data_hash: f,
+            composite_key: c,
+            transformed_key: vec![],
+            hmac_part_key: vec![],
+            hmac_key: vec![],
+            master_key: vec![],
+            encrypted: false,
+        };
+        debug!("SecuredDatabaseKeys is created in from_keys");
+        Ok(sk)
+    }
+
+    pub(crate) fn secure_keys(
+        &mut self,
+        db_key: &str,
+        key_store_service: KeyStoreServiceType,
+    ) -> Result<()> {
+        debug!("SecuredDatabaseKeys In secure_keys method and going to encrypt all keys");
+        let kc = crypto::KeyCipher::new();
+
+        let enc_p = kc.encrypt(&self.password_hash)?;
+        self.password_hash = enc_p.into();
+
+        let enc_c = kc.encrypt(&self.composite_key)?;
+        self.composite_key = enc_c.into();
+
+        if let Some(file_data) = &self.key_file_data_hash {
+            let enc_f = kc.encrypt(file_data)?;
+            self.key_file_data_hash = Some(enc_f);
+        }
+
+        let mut data = kc.key.clone();
+        data.extend_from_slice(&kc.nonce);
+
+        // Need to store the encryption key for future use
+        let mut kss = key_store_service.lock().unwrap();
+        kss.store_key(db_key, data)?;
+        debug!("SecuredDatabaseKeys store_key_callback is called");
+
+        // Keep a clone of KeyStoreServiceType for any key store service calls
+        self.key_store_service = Some(key_store_service.clone());
+        self.encrypted = true;
+
+        Ok(())
+    }
+
+    fn compute_keys(&mut self, master_seed: &Vec<u8>, transformed_key: Vec<u8>) -> Result<()> {
+        debug!("SecuredDatabaseKeys compute_keys is called");
+        self.transformed_key = transformed_key;
+        let suffix = vec![1u8; 1]; // 1 byte with value 1 added as suffix
+        self.hmac_part_key =
+            crypto::do_sha512_hash(&[master_seed, &self.transformed_key, &suffix])?;
+
+        let prefix = vec![255u8; 8]; //8 bytes of value 255 prefixed ; -1 in i8
+        self.hmac_key = crypto::do_sha512_hash(&[&prefix, &self.hmac_part_key])?;
+        self.master_key = crypto::do_sha256_hash(&[master_seed, &self.transformed_key])?;
+
+        Ok(())
+    }
+
+    fn compute_all_keys(
+        &mut self,
+        db_key: &str,
+        kdf_algorithm: &KdfAlgorithm,
+        master_seed: &Vec<u8>,
+    ) -> Result<()> {
+        debug!("SecuredDatabaseKeys compute_all_keys is called");
+        if let KdfAlgorithm::Argon2(kdf) = &kdf_algorithm {
+            let ck = self.get_composite_key(db_key)?;
+            debug!("SecuredDatabaseKeys ck is {}",hex::encode(&ck));
+            //Then transform the composite key using KDF
+            let transformed_key = kdf.transform_key(ck)?;
+
+            //Determine the HMAC and Payload Encryption/Decryption Key
+            self.compute_keys(&master_seed, transformed_key)?;
+        } else {
+            return Err(Error::SupportedOnlyArgon2dKdfAlgorithm);
+        }
+        Ok(())
+    }
+
+    // Gets the composite key; This decrypts the key if required
+    fn get_composite_key(&self, db_key: &str) -> Result<Vec<u8>> {
+        debug!("SecuredDatabaseKeys get_composite_key is called");
+        if self.encrypted {
+            debug!("Keys are encrypted and going to decrypt composite_key");
+            self.decrypt_composite_key(db_key)
+        } else {
+            debug!("Keys are not encrypted and returning the composite_key");
+            Ok(self.composite_key.clone())
+        }
+    }
+
+    fn decrypt_key(&self, db_key: &str, data: &[u8]) -> Result<Vec<u8>> {
+        if let Some(kservice) = &self.key_store_service {
+            let kss = kservice.lock().unwrap();
+            if let Some(keydata) = kss.get_key(db_key) {
+                let keyinfo = SecureKeyInfo::from_key_nonce(keydata);
+                let kc = crypto::KeyCipher::from(&keyinfo.key, &keyinfo.nonce);
+                kc.decrypt(data)
+            } else {
+                Err(Error::Other(format!(
+                    "No key is available for the decryption"
+                )))
+            }
+        } else {
+            Err(Error::Other(format!(
+                "No callback is available to get the decryption key"
+            )))
+        }
+    }
+
+    fn encrypt_key(&self, db_key: &str, data: &[u8]) -> Result<Vec<u8>> {
+        if let Some(kservice) = &self.key_store_service {
+            let kss = kservice.lock().unwrap();
+            if let Some(keydata) = kss.get_key(db_key) {
+                let keyinfo = SecureKeyInfo::from_key_nonce(keydata);
+                let kc = crypto::KeyCipher::from(&keyinfo.key, &keyinfo.nonce);
+                kc.encrypt(data)
+            } else {
+                Err(Error::Other(format!(
+                    "No key is available for the decryption"
+                )))
+            }
+        } else {
+            Err(Error::Other(format!(
+                "No callback is available to get the decryption key"
+            )))
+        }
+    }
+
+    // Called before saving the database
+    // composite_key is required to create other keys
+    fn decrypt_composite_key(&self, db_key: &str) -> Result<Vec<u8>> {
+        self.decrypt_key(db_key, &self.composite_key)
+    }
+
+    fn decrypt_password_key(&self, db_key: &str) -> Result<Vec<u8>> {
+        self.decrypt_key(db_key, &self.password_hash)
+    }
+
+    fn decrypt_key_file_data_hash(&self, db_key: &str) -> Result<Vec<u8>> {
+        if let Some(fk) = &self.key_file_data_hash {
+            self.decrypt_key(db_key, fk)
+        } else {
+            Ok(vec![])
+        }
+    }
+
+    // Called for quick unlock when user uses credentials
+    // Assumed that we will be able to get the encryption key
+    fn compare_keys(
+        &self,
+        db_key: &str,
+        password: &str,
+        file_key: &Option<FileKey>,
+    ) -> Result<bool> {
+        let current_phash = self.decrypt_password_key(db_key)?;
+        let phash = crypto::do_slice_sha256_hash(password.as_bytes())?.to_vec();
+
+        if current_phash != phash {
+            return Ok(false);
+        }
+
+        if let Some(fk) = file_key {
+            let fhash = crypto::do_slice_sha256_hash(&fk.content)?.to_vec();
+            let current_fhash = self.decrypt_key_file_data_hash(db_key)?;
+            if current_fhash != fhash {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
+
+    // Called whenever user changes the password
+    pub fn set_password(&mut self, db_key: &str, password: &str) -> Result<()> {
+        let phash = crypto::do_slice_sha256_hash(password.as_bytes())?;
+        let phash = phash.to_vec();
+
+        // Need to recalculate composite key whenever the password is changed
+        let chash = if let Some(key_file_hash) = &self.key_file_data_hash {
+            // First decrypt the previously encrypted key file hash
+            let fhash = self.decrypt_key(db_key, key_file_hash)?;
+            let data = vec![&phash, &fhash];
+            let final_hash = crypto::do_vecs_sha256_hash(&data)?;
+            final_hash.to_vec()
+        } else {
+            let final_hash = crypto::do_slice_sha256_hash(&phash)?;
+            final_hash.to_vec()
+        };
+
+        // Set the newly encrypted hashes
+        self.password_hash = self.encrypt_key(db_key, &phash)?;
+        self.composite_key = self.encrypt_key(db_key, &chash)?;
+
+        Ok(())
+    }
+
+    // Called whenever user changes the key file usage
+    pub fn set_file_key(&mut self, db_key: &str, file_key_opt: Option<&FileKey>) -> Result<()> {
+        if let Some(file_key) = file_key_opt {
+            let fhash = crypto::do_slice_sha256_hash(&file_key.content)?;
+            let fhash = fhash.to_vec();
+
+            let phash = self.decrypt_key(db_key, &self.password_hash)?;
+
+            let data = vec![&phash, &fhash];
+            let final_hash = crypto::do_vecs_sha256_hash(&data)?;
+            let chash = final_hash.to_vec();
+
+            // Need to encrypt the changed hahses
+            self.key_file_data_hash = Some(self.encrypt_key(db_key, &fhash)?);
+            self.composite_key = self.encrypt_key(db_key, &chash)?;
+        } else {
+            // Remove any previously used file key
+            self.remove_file_key(db_key)?;
+        }
+        Ok(())
+    }
+
+    // Called to remove the previously used key file based hash
+    pub fn remove_file_key(&mut self, db_key: &str) -> Result<()> {
+        let phash = self.decrypt_key(db_key, &self.password_hash)?;
+        let chash = crypto::do_slice_sha256_hash(&phash)?;
+        let chash = chash.to_vec();
+        self.composite_key = self.encrypt_key(db_key, &chash)?;
+        Ok(())
+    }
+}
+
+////////////////////////////////////////////////
 
 #[derive(Debug, Default, Clone)]
 pub struct SecureKeyInfo {
@@ -836,6 +1147,7 @@ impl NewDatabase {
             main_header: mh,
             inner_header: ih,
             db_key: DbKey::default(),
+            secured_database_keys:SecuredDatabaseKeys::default(),
             keepass_main_content: Some(kc),
             checksum_hash: vec![],
         };
@@ -854,6 +1166,7 @@ pub struct KdbxFile {
     main_header: MainHeader,
     inner_header: InnerHeader,
     db_key: DbKey,
+    secured_database_keys:SecuredDatabaseKeys,
     pub(crate) keepass_main_content: Option<KeepassFile>,
     pub(crate) checksum_hash: Vec<u8>,
 }
@@ -873,21 +1186,87 @@ impl KdbxFile {
             .secure_keys(db_key, store_key_callback, get_key_callback)
     }
 
+
+//===============
+/* 
+    #[inline]
+    fn hmac_part_key(&self) -> &Vec<u8> {
+        //&self.secured_database_keys.hmac_part_key
+        &self.db_key.hmac_part_key
+    }
+
+    #[inline]
+    fn hmac_key(&self) -> &Vec<u8> {
+        //&self.secured_database_keys.hmac_key
+        &self.db_key.hmac_key
+    }
+
+    #[inline]
+    fn master_key(&self) -> &Vec<u8> {
+        //&self.secured_database_keys.master_key
+        &self.db_key.master_key
+    }
+
     fn compute_all_keys(&mut self) -> Result<()> {
         self.db_key.compute_all_keys(
             &self.database_file_name,
             &self.main_header.kdf_algorithm,
             &self.main_header.master_seed,
         )
+
+        // self.secured_database_keys.compute_all_keys(
+        //     &self.database_file_name,
+        //     &self.main_header.kdf_algorithm,
+        //     &self.main_header.master_seed,
+        // )
     }
 
     pub fn compare_key(&self, password: &str, key_file_name: Option<&str>) -> Result<bool> {
         let file_key = FileKey::from(key_file_name)?;
-        self.db_key
-            .secured_db_keys
-            .compare_keys(&self.database_file_name, password, &file_key)
+        
+        self.db_key.secured_db_keys.compare_keys(&self.database_file_name, password, &file_key)
+
+        //self.secured_database_keys.compare_keys(&self.database_file_name, password, &file_key)
     }
 
+*/
+
+//--------------------------
+
+
+#[inline]
+fn hmac_part_key(&self) -> &Vec<u8> {
+    &self.secured_database_keys.hmac_part_key
+    
+}
+
+#[inline]
+fn hmac_key(&self) -> &Vec<u8> {
+    &self.secured_database_keys.hmac_key
+    
+}
+
+#[inline]
+fn master_key(&self) -> &Vec<u8> {
+    &self.secured_database_keys.master_key
+}
+
+fn compute_all_keys(&mut self) -> Result<()> {
+    
+    self.secured_database_keys.compute_all_keys(
+        &self.database_file_name,
+        &self.main_header.kdf_algorithm,
+        &self.main_header.master_seed,
+    )
+}
+
+pub fn compare_key(&self, password: &str, key_file_name: Option<&str>) -> Result<bool> {
+    let file_key = FileKey::from(key_file_name)?;
+    self.secured_database_keys.compare_keys(&self.database_file_name, password, &file_key)
+}
+
+
+//----------------------------
     pub fn get_database_name(&self) -> &str {
         if let Some(kp) = self.keepass_main_content.as_ref() {
             kp.meta.database_name.as_str()
@@ -926,9 +1305,10 @@ impl KdbxFile {
             None => None,
         };
 
-        self.db_key
-            .secured_db_keys
-            .set_file_key(&self.database_file_name, self.file_key.as_ref())?;
+        //self.db_key.secured_db_keys.set_file_key(&self.database_file_name, self.file_key.as_ref())?;
+
+        self.secured_database_keys.set_file_key(&self.database_file_name, self.file_key.as_ref())?;
+
         Ok(())
     }
 
@@ -943,10 +1323,8 @@ impl KdbxFile {
 
     pub fn set_password(&mut self, password: &str) -> Result<()> {
         self.password = password.as_bytes().to_vec();
-        self.db_key
-            .secured_db_keys
-            .set_password(&self.database_file_name, password)
-        //self
+        //self.db_key.secured_db_keys.set_password(&self.database_file_name, password)
+        self.secured_database_keys.set_password(&self.database_file_name, password)
     }
 
     /// Called when user uploads an attachment in UI
@@ -971,7 +1349,6 @@ impl KdbxFile {
         let (cid, eiv) = content_cipher_id.to_uuid_id()?;
         self.main_header.cipher_id = cid;
         self.main_header.encryption_iv = eiv;
-
         Ok(())
     }
 
@@ -1150,7 +1527,7 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
             self.header_data_end_position,
         )?;
         let r = crypto::verify_hmac_sha256(
-            &self.kdbx_file.db_key.hmac_key,
+            self.kdbx_file.hmac_key(),
             &[&header_data],
             &stored_hmac_hash,
         )?;
@@ -1195,7 +1572,7 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
             let blk_idx_bytes = blk_idx.to_le_bytes();
             let block_key = crypto::do_sha512_hash(&[
                 &blk_idx_bytes.to_vec(),
-                &self.kdbx_file.db_key.hmac_part_key,
+                self.kdbx_file.hmac_part_key(),
             ])?;
             // Verify the stored block hmac to the calculated one
             // The data for hmac calc is blk_index + blk_size + blk_data
@@ -1221,7 +1598,7 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
             &self.kdbx_file.main_header.cipher_id,
             &self.kdbx_file.main_header.encryption_iv,
         )?;
-        let mut payload = cipher.decrypt(&encrypted_data, &self.kdbx_file.db_key.master_key)?;
+        let mut payload = cipher.decrypt(&encrypted_data, self.kdbx_file.master_key())?;
 
         if self.kdbx_file.main_header.compression_flag == 1 {
             payload = util::decompress(&payload[..])?
@@ -1364,7 +1741,7 @@ impl<'a, W: Read + Write + Seek> KdbxFileWriter<'a, W> {
         self.writer.write(&cal_hash)?;
 
         let header_hmac_hash =
-            crypto::do_hmac_sha256(&self.kdbx_file.db_key.hmac_key, &[&header_data])?;
+            crypto::do_hmac_sha256(self.kdbx_file.hmac_key(), &[&header_data])?;
         self.writer.write(&header_hmac_hash)?;
 
         Ok(())
@@ -1413,7 +1790,7 @@ impl<'a, W: Read + Write + Seek> KdbxFileWriter<'a, W> {
             &self.kdbx_file.main_header.encryption_iv,
         )?;
         // payload is not encrypted
-        payload = cipher.encrypt(&payload, &self.kdbx_file.db_key.master_key)?;
+        payload = cipher.encrypt(&payload, self.kdbx_file.master_key())?;
         // Returns the encrypted payload
         Ok(payload)
     }
@@ -1439,7 +1816,7 @@ impl<'a, W: Read + Write + Seek> KdbxFileWriter<'a, W> {
             let blk_idx_bytes = blk_idx.to_le_bytes();
             let block_key = crypto::do_sha512_hash(&[
                 &blk_idx_bytes.to_vec(),
-                &self.kdbx_file.db_key.hmac_part_key,
+                self.kdbx_file.hmac_part_key(),
             ])?;
 
             let blk_size_in_bytes = (data_read as u32).to_le_bytes();
@@ -1548,6 +1925,7 @@ pub fn read_db_from_reader<R: Read + Seek>(
 ) -> Result<KdbxFile> {
     let file_key = FileKey::from(key_file_name)?;
     let pb = password.as_bytes().to_vec();
+    let secured_database_keys = SecuredDatabaseKeys::from_keys(password, &file_key)?;
     //let kb = file_key.map(|k| k.content); //converts Option<FileKey> to Option<Vec<u8>>
     let kdbx = KdbxFile {
         // database_file_name is full uri and used as db_key in all subsequent calls
@@ -1558,6 +1936,7 @@ pub fn read_db_from_reader<R: Read + Seek>(
         main_header: MainHeader::default(),
         inner_header: InnerHeader::default(),
         db_key: DbKey::default(),
+        secured_database_keys,
         keepass_main_content: None,
         checksum_hash: vec![],
     };
@@ -1567,6 +1946,10 @@ pub fn read_db_from_reader<R: Read + Seek>(
     let cs = calculate_db_file_checksum(reader)?;
     debug!("Calculated checksum on reading the db");
     updated_kdbx.checksum_hash = cs;
+
+    updated_kdbx.secured_database_keys.secure_keys(db_file_name, get_key_store_service_instance().clone())?;
+    debug!("Keys are now secured...");
+
     Ok(updated_kdbx)
 
     // read_db(reader, kdbx)
@@ -1587,7 +1970,6 @@ where
     let pb = password.as_bytes().to_vec();
 
     let db_keys = DbKey::from(password, file_key.clone())?;
-
     //let kb = file_key.map(|k| k.content); //converts Option<FileKey> to Option<Vec<u8>>
     let kdbx = KdbxFile {
         // database_file_name is full uri and used as db_key in all subsequent calls
@@ -1598,6 +1980,7 @@ where
         main_header: MainHeader::default(),
         inner_header: InnerHeader::default(),
         db_key: db_keys,
+        secured_database_keys:SecuredDatabaseKeys::default(),
         keepass_main_content: None,
         checksum_hash: vec![],
     };
@@ -1836,7 +2219,7 @@ pub fn import_from_xml(
 
 #[cfg(test)]
 mod tests {
-    use once_cell::sync::Lazy;
+    use once_cell::sync::{Lazy, OnceCell};
     use std::sync::{Arc, Mutex};
 
     use super::*;
@@ -1854,6 +2237,117 @@ mod tests {
             .get(db_key)
             .cloned()
             .map(|v| SecureKeyInfo::from_key_nonce(v))
+    }
+
+    type StoreServiceStore = Arc<Mutex<dyn StoreService + Sync + Send>>;
+
+    fn key_main_store() -> &'static StoreServiceStore {
+        static KEY_MAIN_STORE: Lazy<StoreServiceStore> =
+            Lazy::new(|| Arc::new(Mutex::new(StoreServiceImpl::default())));
+        set_instance(&KEY_MAIN_STORE);
+        &KEY_MAIN_STORE
+    }
+
+    static INSTANCE: OnceCell<StoreServiceStore> = OnceCell::new();
+
+    fn set_instance(kss: &StoreServiceStore) {
+        let r = INSTANCE.set(kss.clone());
+    }
+
+    fn get_instance() -> &'static StoreServiceStore {
+        INSTANCE.get().expect("msg")
+    }
+
+    pub trait StoreService {
+        fn store_key(&mut self, db_key: &str, val: Vec<u8>) -> Result<()>;
+        fn get_key(&self, db_key: &str) -> Option<Vec<u8>>;
+    }
+
+    #[derive(Default)]
+    struct StoreServiceImpl {
+        store: HashMap<String, Vec<u8>>,
+    }
+
+    impl StoreService for StoreServiceImpl {
+        fn store_key(&mut self, db_key: &str, val: Vec<u8>) -> Result<()> {
+            self.store.insert(db_key.into(), val);
+            Ok(())
+        }
+
+        fn get_key(&self, db_key: &str) -> Option<Vec<u8>> {
+            self.store.get(db_key).cloned()
+        }
+    }
+
+    #[derive(Default)]
+    struct StoreServiceDummy {}
+
+    impl StoreService for StoreServiceDummy {
+        fn store_key(&mut self, db_key: &str, val: Vec<u8>) -> Result<()> {
+            unimplemented!()
+        }
+
+        fn get_key(&self, db_key: &str) -> Option<Vec<u8>> {
+            unimplemented!()
+        }
+    }
+
+    #[derive(Clone)]
+    struct Holder {
+        my_store: StoreServiceStore,
+    }
+
+    #[test]
+    fn test1() {
+        let ks = key_main_store();
+        let mut store = ks.lock().unwrap();
+        let r = store.store_key("db_key1", vec![1, 2]);
+        let r = store.store_key("db_key2", vec![4, 5]);
+        drop(store);
+
+        caller();
+
+        let r = key_main_store().clone();
+        let h = Holder { my_store: r };
+
+        caller2(h.clone());
+
+        caller3();
+
+        // Again
+        caller2(h.clone());
+
+        let mut holder_with_dummy_impl = Holder {
+            my_store: Arc::new(Mutex::new(StoreServiceDummy::default())),
+        };
+
+        let r = key_main_store().clone();
+        holder_with_dummy_impl.my_store = r;
+        caller2(holder_with_dummy_impl);
+
+        caller();
+    }
+
+    fn caller() {
+        let store = key_main_store().lock().unwrap();
+
+        println!("store val1 is  {:?}", store.get_key("db_key1"));
+        println!("store val2 is  {:?}", store.get_key("db_key2"));
+        println!("store val3 is  {:?}", store.get_key("db_key3"));
+    }
+
+    fn caller2(holder: Holder) {
+        let store = holder.my_store.lock().unwrap();
+        println!("holder val1 is  {:?}", store.get_key("db_key1"));
+        println!("holder val2 is  {:?}", store.get_key("db_key2"));
+    }
+
+    fn caller3() {
+        let mut store = get_instance().lock().unwrap();
+        println!("caller3 val1 is  {:?}", store.get_key("db_key1"));
+        println!("caller3 val2 is  {:?}", store.get_key("db_key2"));
+
+        let r = store.store_key("db_key3", vec![11, 21]);
     }
 
     // #[test]

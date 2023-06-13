@@ -126,7 +126,6 @@ pub fn add_months<DateTime: Datelike>(old_dt: DateTime, months: u32) -> DateTime
 
 pub fn decompress(encoded_data: &[u8]) -> Result<Vec<u8>> {
     let mut decoder = Decoder::new(encoded_data)?;
-    //println!("decoder header {:?}", decoder.header());
     let mut decoded_data = Vec::new();
     decoder.read_to_end(&mut decoded_data)?;
     Ok(decoded_data)
@@ -149,7 +148,6 @@ pub fn compress_with_fixed_timestamp(data: &[u8]) -> Result<Vec<u8>> {
     let header = HeaderBuilder::new().modification_time(10).finish();
     let options = EncodeOptions::new().header(header);
     let mut encoder = Encoder::with_options(Vec::new(), options)?;
-    //println!("encoder header {:?}", encoder.header());
     encoder.write(data)?;
     encoder.flush()?;
     let encoded_data = encoder.finish().into_result()?;
@@ -328,6 +326,7 @@ mod tests {
         assert_eq!(u.is_none(), true);
         //println!("Uuid is {}", u.unwrap());
     }
+    
     #[test]
     fn encode_uuid_to_b64() {
         let ur = Uuid::parse_str("dda058f8-070b-4268-8f6a-cd2f8cadb39e");
@@ -336,8 +335,8 @@ mod tests {
         assert_eq!(u == "3aBY+AcLQmiPas0vjK2zng==", true);
     }
     #[allow(dead_code)]
-    use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, TimeZone, Utc, Weekday};
-    use uuid::Builder;
+    use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, TimeZone, Utc,};
+
     #[test]
     fn verify_decode_datetime_b64() {
         let ndt = decode_datetime_b64("mNxg1g4AAAA=");
@@ -378,17 +377,6 @@ mod tests {
     }
 
     #[test]
-    fn decode_datetime_b64_experiment1() {
-        let ndt = decode_datetime_b64("L0Fc2g4AAAA="); //  empty string results in Some(0001-01-01T00:00:00)
-        println!("dt is {:?}", ndt); //Some(2020-05-27T22:11:36)
-
-        let dt = ndt.unwrap();
-        println!("Date {}", dt.format("%Y-%m-%dT%H:%M:%S").to_string());
-
-        println!("{}", now_utc());
-    }
-
-    #[test]
     fn verify_utc_parsing() {
         let dt = Utc.ymd(2022, 01, 04).and_hms_milli(1, 37, 8, 811);
 
@@ -396,12 +384,12 @@ mod tests {
         //(.toISOString (js/Date.)) returns UTC time 2022-01-04T01:37:08.811Z
         let parsed_dt = "2022-01-04T01:37:08.811Z".parse::<DateTime<Utc>>().unwrap();
 
-        println!("UTC Dt {:?}", parsed_dt);
+        //println!("UTC Dt {:?}", parsed_dt);
         let parsed_dt_pacific = parsed_dt.with_timezone(&chrono_tz::US::Pacific);
-        println!("Parsed dt in Pacific TimeZone {:?}", parsed_dt_pacific);
+        //println!("Parsed dt in Pacific TimeZone {:?}", parsed_dt_pacific);
 
         let n1 = parsed_dt.checked_add_signed(Duration::weeks(52));
-        println!("New Dt {:?}", n1);
+        //println!("New Dt {:?}", n1);
 
         // let n2 = Utc.ymd(parsed_dt.year(),
         //     parsed_dt.month(),
@@ -410,7 +398,7 @@ mod tests {
         //let n2 = add_years(parsed_dt,10);//parsed_dt.with_year(parsed_dt.year()+1);
         let n2 = add_months(parsed_dt, 23); //parsed_dt.with_year(parsed_dt.year()+1);
 
-        println!("New Dt2 {:?}", n2);
+        //println!("New Dt2 {:?}", n2);
 
         assert_eq!(dt == parsed_dt, true);
     }
@@ -574,69 +562,25 @@ mod tests {
     }
 
     #[test]
-    fn hex_conversion_experiment() {
-        // let data = b"hello";
-        // println!("{:x?}", data);
-        // println!("{:X?}", data);
-
-        // println!("{}", to_hex_string_with_space(data));
-
-        // let a = as_hex_array_formatted(data);
-        // println!("{}", a);
-
-        let uid = Uuid::new_v4();
-        println!("{}", as_hex_array_formatted(uid.as_bytes()));
-        println!("{}", uid.to_string());
-
-        let uid = Uuid::new_v4();
-        println!("{}", as_hex_array_formatted(uid.as_bytes()));
-        println!("{}", uid.to_string());
-
-        let uid = Uuid::new_v4();
-        println!("{}", as_hex_array_formatted(uid.as_bytes()));
-        println!("{}", uid.to_string());
-
-        // let bytes: &[u8] = &[
-        //     0xFF, 0xEF, 0x5F, 0x51, 0x7E, 0xFC, 0x43, 0x73, 0x9E, 0xB5, 0x38, 0x2D, 0x5B, 0x50, 0x17,
-        //     0x68,
-        // ];
-        // let uid2  = Builder::from_slice(&bytes).unwrap().build();
-
-        //ffef5f51-7efc-4373-9eb5-382d5b501768
-        //println!("uid2 {}, {}", uid2.to_string(), "ffef5f51-7efc-4373-9eb5-382d5b501768" == uid2.to_string());
-    }
-
-    #[test]
-    fn date_experiment3() {
-        let utc: DateTime<Utc> = Utc::now();
-        let local: DateTime<Local> = Local::now();
-        let years: Vec<String> = (local.year()..(local.year() + 10))
-            .map(|n| n.to_string())
-            .collect();
-
-        println!(
-            "Utc now {:?} and local now {:?} local.year {}, years {:?}",
-            utc,
-            local,
-            local.year(),
-            years
-        );
-    }
-
-    #[test]
-    fn some_experiments2() {
-        use std::path::{Path, PathBuf};
-
-        let a = Path::new("/home/jey");
-        println!(" a is {:?}", a);
-
-        let pf = a.to_path_buf();
-        println!(" pf is {:?}", pf.as_path().to_str());
-        //let s:Option<String> = pf.as_path().to_str().map(|s|s.into());
-        let pfo: Option<PathBuf> = Some(pf);
-        //.map(str::to_string)
-        let s: Option<String> = pfo.map(|p| p.as_path().to_str().unwrap().into());
-
-        //let s:Option<String> = pfo.map(|p| p.as_path().to_str().map(str::to_string));
+    fn hex_str_test() {
+        let b:Vec<u8> = vec![12,3,44,7,6,22,34];
+        use hex;
+        println!("{:x?}",&b);
+        assert_eq!("0c032c07061622",hex::encode(&b));
+        assert_eq!(&b,&hex::decode("0c032c07061622").unwrap());
     }
 }
+
+
+/*
+#[test]
+    fn decode_datetime_b64_experiment1() {
+        let ndt = decode_datetime_b64("L0Fc2g4AAAA="); //  empty string results in Some(0001-01-01T00:00:00)
+        println!("dt is {:?}", ndt); //Some(2020-05-27T22:11:36)
+
+        let dt = ndt.unwrap();
+        println!("Date {}", dt.format("%Y-%m-%dT%H:%M:%S").to_string());
+
+        println!("{}", now_utc());
+    }
+ */
