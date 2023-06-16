@@ -307,6 +307,17 @@ pub fn all_kdbx_cache_keys() -> Result<Vec<String>> {
     Ok(vec)
 }
 
+pub fn close_all_databases() -> Result<()>{
+    debug!("close_all_databases is called and all databases will be closed assuming any pending changes saved");
+    
+     if let Ok(keys) = all_kdbx_cache_keys() {
+        for k in keys {
+            let _r = close_kdbx(&k);
+        }
+    }
+    Ok(())
+}
+
 // TODO: Refactor create_kdbx (used mainly for desktop app) and create_and_write_to_writer to use common functionalties
 /// Called to create a new KDBX database and perists the file
 /// Returns KdbxLoaded with dbkey to locate this KDBX database in cache
@@ -576,14 +587,14 @@ pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
     Ok(kdbx_loaded)
 }
 
-pub fn unlock_kdbx_with_biometeric_authentication(db_key: &str) {
-    // Need to reload the database if the db has changed in the file system and
-    // no changes pending
-
-    // SecuredDbKeys to be copied from the memmory and reload db
-
-    // In case, the db has changed in the file system and we have pending changes
-    // provide the same options done during "Save" action
+// Called after user has successfully completed the biometeric based authentication
+pub fn unlock_kdbx_on_biometric_authentication(db_key: &str) -> Result<KdbxLoaded> {
+    kdbx_context_action!(db_key, |ctx: &KdbxContext| {
+        Ok(KdbxLoaded {
+            db_key: db_key.into(),
+            database_name: ctx.kdbx_file.get_database_name().into(),
+        })
+    })
 }
 
 /// Compares the entered credentials with the stored one for a quick unlock of the db
@@ -594,9 +605,6 @@ pub fn unlock_kdbx(
 ) -> Result<KdbxLoaded> {
     kdbx_context_action!(db_key, |ctx: &KdbxContext| {
         if ctx.kdbx_file.compare_key(password, key_file_name)? {
-            // May need to reload the changed db. See the comment in
-            //unlock_kdbx_on_biometeric_authentication
-
             Ok(KdbxLoaded {
                 db_key: db_key.into(),
                 database_name: ctx.kdbx_file.get_database_name().into(),
