@@ -66,6 +66,7 @@ pub struct DbSettings {
 pub struct KdbxLoaded {
     pub db_key: String,
     pub database_name: String,
+    pub file_name:Option<String>,
 }
 
 impl KdbxLoaded {
@@ -73,6 +74,7 @@ impl KdbxLoaded {
         Self {
             db_key: String::default(),
             database_name: String::default(),
+            file_name:None,
         }
     }
 }

@@ -271,6 +271,31 @@ pub fn remove_dir_contents<P: AsRef<Path>>(path: P) -> Result<()> {
 pub fn empty_str() -> String {
     EMPTY_STR.to_string()
 }
+
+pub fn file_name(full_file_uri:&str) -> Option<String> {
+    let p = Path::new(full_file_uri);
+    p.file_name().map(|s|s.to_string_lossy().to_string())
+}
+
+// From https://users.rust-lang.org/t/solved-how-to-split-string-into-multiple-sub-strings-with-given-length/10542/9
+// This takes care of any utf-8
+// For now this is sufficent 
+pub fn sub_strings(string: &str, sub_len: usize) -> Vec<&str> {
+    let mut subs = Vec::with_capacity(string.len() / sub_len);
+    let mut iter = string.chars();
+    let mut pos = 0;
+
+    while pos < string.len() {
+        let mut len = 0;
+        for ch in iter.by_ref().take(sub_len) {
+            len += ch.len_utf8();
+        }
+        subs.push(&string[pos..pos + len]);
+        pos += len;
+    }
+    subs
+}
+
 // const TAGS_SEPARATORS: [char; 2] = [';', ','];
 // /// Splits tags string into vector of tags
 // pub fn split_tags(tags: &str) -> Vec<String> {
@@ -569,6 +594,7 @@ mod tests {
         assert_eq!("0c032c07061622",hex::encode(&b));
         assert_eq!(&b,&hex::decode("0c032c07061622").unwrap());
     }
+
 }
 
 

@@ -260,10 +260,11 @@ pub fn read_kdbx<R: Read + Seek>(
     let kdbx_file = db::read_db_from_reader(reader, db_file_name, password, key_file_name)?;
 
     let kp = to_keepassfile!(kdbx_file);
-
+    let file_name = util::file_name(&db_file_name);
     let kdbx_loaded = KdbxLoaded {
         db_key: db_file_name.into(),
         database_name: kp.meta.database_name.clone(),
+        file_name,
     };
 
     let mut kdbx_context = KdbxContext::default();
@@ -286,10 +287,12 @@ pub fn reload_kdbx(db_key: &str) -> Result<KdbxLoaded> {
         let mut db_file_reader = db::open_db_file(db_key)?;
         let reloaded_kdbx_file = db::reload(&mut db_file_reader, &ctx.kdbx_file)?;
         let kp = to_keepassfile!(reloaded_kdbx_file);
-
+        
+        let file_name = util::file_name(db_key);
         let kdbx_loaded = KdbxLoaded {
             db_key: db_key.into(),
             database_name: kp.meta.database_name.clone(),
+            file_name,
         };
 
         ctx.kdbx_file = reloaded_kdbx_file;
@@ -307,10 +310,8 @@ pub fn all_kdbx_cache_keys() -> Result<Vec<String>> {
     Ok(vec)
 }
 
-pub fn close_all_databases() -> Result<()>{
-    debug!("close_all_databases is called and all databases will be closed assuming any pending changes saved");
-    
-     if let Ok(keys) = all_kdbx_cache_keys() {
+pub fn close_all_databases() -> Result<()> {
+    if let Ok(keys) = all_kdbx_cache_keys() {
         for k in keys {
             let _r = close_kdbx(&k);
         }
@@ -333,9 +334,11 @@ pub fn create_kdbx(new_db: NewDatabase) -> Result<KdbxLoaded> {
     }
     let kdbx_file = new_db.create()?;
     let kp = to_keepassfile!(kdbx_file);
+    let file_name = util::file_name(&new_db.database_file_name);
     let kdbx_loaded = KdbxLoaded {
         db_key: new_db.database_file_name.clone(),
         database_name: kp.meta.database_name.clone(),
+        file_name,
     };
 
     // IMPORTANT:
@@ -379,6 +382,7 @@ pub fn create_and_write_to_writer<W: Read + Write + Seek>(
     let kdbx_loaded = KdbxLoaded {
         db_key: new_db.database_file_name.clone(),
         database_name: kp.meta.database_name.clone(),
+        file_name:None,
     };
 
     // IMPORTANT:
@@ -400,11 +404,9 @@ pub fn create_and_write_to_writer<W: Read + Write + Seek>(
     // See above block comment. The drop(main_store()) is not working;Also there is no method 'unclock' in Mutex yet;
     save_kdbx_to_writer(&mut buf, &new_db.database_file_name)?; //new_db.database_file_name is the db_key
     buf.rewind()?;
-    debug!("Setting the checksum for the new database");
     calculate_db_file_checksum(&new_db.database_file_name, &mut buf)?;
     buf.rewind()?; //do we require this
     std::io::copy(&mut buf, writer)?;
-    debug!("New db data is copied from buf to file");
 
     //Ok(new_db.database_file_name.clone())
     Ok(kdbx_loaded)
@@ -549,9 +551,11 @@ pub fn save_as_kdbx(db_key: &str, database_file_name: &str) -> Result<KdbxLoaded
         write_kdbx_file(&mut ctx.kdbx_file, true)?;
         // All changes are now saved to file
         ctx.save_pending = false;
+        let file_name = util::file_name(&database_file_name);
         Ok(KdbxLoaded {
             db_key: database_file_name.into(),
             database_name: ctx.kdbx_file.get_database_name().into(),
+            file_name,
         })
     })?;
 
@@ -573,9 +577,11 @@ pub fn save_as_kdbx(db_key: &str, database_file_name: &str) -> Result<KdbxLoaded
 pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
     let kdbx_loaded = call_kdbx_context_mut_action(old_db_key, |ctx: &mut KdbxContext| {
         ctx.kdbx_file.set_database_file_name(new_db_key);
+        
         Ok(KdbxLoaded {
             db_key: new_db_key.into(),
             database_name: ctx.kdbx_file.get_database_name().into(),
+            file_name:None,
         })
     })?;
 
@@ -593,6 +599,7 @@ pub fn unlock_kdbx_on_biometric_authentication(db_key: &str) -> Result<KdbxLoade
         Ok(KdbxLoaded {
             db_key: db_key.into(),
             database_name: ctx.kdbx_file.get_database_name().into(),
+            file_name:util::file_name(db_key),
         })
     })
 }
@@ -608,6 +615,7 @@ pub fn unlock_kdbx(
             Ok(KdbxLoaded {
                 db_key: db_key.into(),
                 database_name: ctx.kdbx_file.get_database_name().into(),
+                file_name:util::file_name(db_key),
             })
         } else {
             // Same error as if db file verification failure as in load_kdbx

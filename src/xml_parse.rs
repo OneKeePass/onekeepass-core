@@ -8,9 +8,11 @@ use std::collections::HashMap;
 use std::io::Cursor;
 use std::io::{BufRead, Write};
 
+use crate::constants::key_file_xml_element::*;
 use crate::constants::xml_element::*;
 use crate::constants::GENERATOR_NAME;
 use crate::crypto::ProtectedContentStreamCipher;
+use crate::db::KeyFileData;
 use crate::db_content::*;
 use crate::error::{Error, Result};
 use crate::util;
@@ -840,7 +842,6 @@ impl<W: Write> XmlWriter<W> {
             .write_event(Event::Start(BytesStart::borrowed_name(CUSTOM_DATA)))?;
 
         for item in custom_data.get_items().iter() {
-            
             // Need to evaluate 'last_modification_time' before passing it to the macro.
             // Otherwise this match will be evaluated twice - first time here
             // and again while executing the expanded code
@@ -942,7 +943,7 @@ impl<W: Write> XmlWriter<W> {
                 self,
                 STRING,
                 KEY, empty_attr, s.key,
-                VALUE, vp, content 
+                VALUE, vp, content
             };
         }
         // Binary tag for attachment where Value tag has an attribute
@@ -1044,6 +1045,263 @@ pub fn write_xml_with_indent(
     Ok(v)
 }
 
+////////////////////////  Xml based Key file ////////////////
+
+// For now FileKeyXmlReader and FileKeyXmlWriter are using similar struct XmlReader and XmlWriter
+// but with FileKey xml specific methods supported
+pub struct FileKeyXmlReader<B: BufRead> {
+    reader: QuickXmlReader<B>,
+    // We need this dummy member just to reuse the macros that are used for reading and writing databse xml content
+    stream_cipher: Option<ProtectedContentStreamCipher>,
+}
+
+impl<B: BufRead> FileKeyXmlReader<B> {
+    pub fn new(data: B) -> Self {
+        let mut qxmlreader = QuickXmlReader::from_reader(data);
+        qxmlreader.trim_text(true);
+        FileKeyXmlReader {
+            reader: qxmlreader,
+            stream_cipher: None,
+        }
+    }
+
+    pub fn parse(&mut self) -> Result<KeyFileData> {
+        let mut buf: Vec<u8> = vec![];
+        let mut xml_decl_available = false;
+        let mut key_file_data = KeyFileData::default();
+        loop {
+            match self.reader.read_event(&mut buf) {
+                Ok(Event::Decl(ref _e)) => {
+                    xml_decl_available = true;
+                    // return Err(Error::NotXmlKeyFile);
+                }
+                Ok(Event::DocType(_)) => {}
+                Ok(Event::PI(_)) => {}
+                Ok(Event::Text(_)) => {}
+
+                Ok(Event::Start(ref e)) => {
+                    if !xml_decl_available {
+                        return Err(Error::NotXmlKeyFile);
+                        // return Err(Error::XmlReadingFailed(format!(
+                        //     "Xml content does not have XML decl"
+                        // )));
+                    }
+                    match e.name() {
+                        KEY_FILE => {
+                            let _r = self.read_top_level(&mut key_file_data)?;
+                        }
+                        x => {
+                            //debug!("MAIN: in match {:?}", std::str::from_utf8(e.name()).unwrap());
+                            //debug!("MAIN: in match {:?} KEEPASS_FILE", std::str::from_utf8(KEEPASS_FILE).unwrap());
+                            return Err(Error::XmlReadingFailed(format!(
+                                "Unexpected starting tag {:?}",
+                                std::str::from_utf8(x)
+                            )));
+                        }
+                    }
+                }
+
+                Ok(Event::Empty(ref _e)) => {}
+                Ok(Event::End(ref e)) => {
+                    // KeyFile end tag should have been consumed in read_top_level
+                    info!("PARSE:End of tag {:?}", self.reader.decode(e));
+                }
+
+                Ok(Event::CData(ref _e)) => {}
+
+                Ok(Event::Comment(ref _e)) => {}
+
+                Ok(Event::Eof) => {
+                    if !xml_decl_available {
+                        return Err(Error::NotXmlKeyFile);
+                    }
+                    break;
+                }
+
+                Err(e) => {
+                    if !xml_decl_available {
+                        return Err(Error::NotXmlKeyFile);
+                    } else {
+                        return Err(Error::from(e));
+                    }
+                }
+            }
+        }
+        Ok(key_file_data)
+    }
+
+    fn read_top_level(&mut self, key_file_data: &mut KeyFileData) -> Result<()> {
+        read_tags!(self,
+            start_tag_fns {},
+            start_tag_blks {
+                KEY_FILE_META => {
+                    self.read_meta(key_file_data)?;
+                },
+                KEY_FILE_KEY => {
+                    self.read_key(key_file_data)?;
+                }
+            },
+            empty_tags {},
+            KEY_FILE);
+
+        Ok(())
+    }
+
+    fn read_meta(&mut self, key_file_data: &mut KeyFileData) -> Result<()> {
+        read_tags!(self,
+            start_tag_fns {
+                KEY_FILE_VERSION =>
+                (|content:String, _,  _|
+                    key_file_data.version  = Some(content)
+                )
+            },
+            start_tag_blks {},
+            empty_tags {},
+            KEY_FILE_META
+        );
+
+        if key_file_data.version.is_none() || key_file_data.version != Some("2.0".into()) {
+            return Err(Error::UnsupportedXmlKeyFileVersion);
+        }
+
+        Ok(())
+    }
+
+    fn read_key(&mut self, key_file_data: &mut KeyFileData) -> Result<()> {
+        read_tags!(self,
+            start_tag_fns {
+                KEY_FILE_DATA =>
+                (|content:String, attributes:&mut Attributes,  _| {
+                    let format_removed_content = Self::remove_formatting(&content);
+                    key_file_data.data  = Some(format_removed_content);
+                    key_file_data.hash = Self::read_data_hash(attributes);
+                })
+            },
+            start_tag_blks {},
+            empty_tags {},
+            KEY_FILE_KEY
+        );
+
+        Ok(())
+    }
+
+    #[inline]
+    fn remove_formatting(data: &str) -> String {
+        data.split_whitespace()
+            .map(|s| s)
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    fn read_data_hash(attributes: &mut Attributes) -> Option<String> {
+        let mut data_hash: Option<String> = None;
+        let mut v = attributes
+            .by_ref()
+            .filter_map(|a| a.ok())
+            .collect::<Vec<_>>();
+        // Expected at leaset one attribute or no attributes for the the tag <Data>
+        // e.g <Data Hash="F205E6EB">
+        if !v.is_empty() {
+            match v.pop() {
+                Some(Attribute {
+                    key: KEY_FILE_DATA_HASH,
+                    value: x,
+                }) => {
+                    //debug!("!!!!!! in fn attributes of Value are {:?}",v);
+                    if let std::borrow::Cow::Borrowed(a) = x {
+                        // println!("@@@@ a is {:?}", std::str::from_utf8(a).ok());
+                        data_hash = std::str::from_utf8(a).map(|s| s.to_string()).ok();
+                    }
+                }
+                // Log as error if these happen when reading other KeePass app generated
+                // xml. This may happen if such apps introduce app specific changes. So far we never saw these
+                Some(x) => error!(
+                "Some unexpected attribute {:?} for the protected value for String -> Value tag",
+                x
+            ),
+                None => error!("No protected attribute for this Value tag - String -> Value tag"),
+            }
+        }
+
+        data_hash
+    }
+}
+
+pub struct FileKeyXmlWriter<W: Write> {
+    writer: QuickXmlWriter<W>,
+}
+
+impl<W: Write> FileKeyXmlWriter<W> {
+    pub fn new_with_indent(writer: W) -> Self {
+        Self {
+            writer: QuickXmlWriter::new_with_indent(writer, b" "[0], 2),
+        }
+    }
+
+    fn write_meta(&mut self, key_file_data: &KeyFileData) -> Result<()> {
+        self.writer
+            .write_event(Event::Start(BytesStart::borrowed_name(KEY_FILE_META)))?;
+
+        write_tags! { self,
+            KEY_FILE_VERSION, "2.0"
+        };
+        self.writer
+            .write_event(Event::End(BytesEnd::borrowed(KEY_FILE_META)))?;
+
+        Ok(())
+    }
+
+    fn write_key_data(&mut self, key_file_data: &KeyFileData) -> Result<()> {
+        let h = key_file_data
+            .hash
+            .as_ref()
+            .map_or_else(|| "".into(), |s| s.clone());
+        let d = key_file_data
+            .data
+            .as_ref()
+            .map_or_else(|| "".into(), |s| s.clone());
+
+        let fs = Self::format_hash_data(&d);
+        write_parent_child_with_attributes! {
+            self,
+            KEY_FILE_KEY,
+            KEY_FILE_DATA, vec![("Hash", h.as_str())], fs.as_str()
+
+        };
+        Ok(())
+    }
+
+    // These formatting are not required. As other implementations are formatting the
+    // key xml file, a simple formatting attempt is done here
+    fn format_hash_data(data: &str) -> String {
+        // Splits the full hex string into 8 sub strings of each size 8
+        let r = util::sub_strings(data, 8);
+        // Split the vec r into two groups of 4 members each
+        let ss = r.split_at(4);
+        // Form str from each group
+        let s1 = ss.0.to_vec().join(" ");
+        let s2 = ss.1.to_vec().join(" ");
+        // Final formatted text to use as Text of <Data> tag
+        vec!["\n          ", &s1, "\n          ", &s2, "\n    "].join("")
+    }
+
+    pub fn write(&mut self, key_file_data: &KeyFileData) -> Result<()> {
+        self.writer
+            .write_event(Event::Decl(BytesDecl::new(b"1.0", Some(b"UTF-8"), None)))?;
+
+        self.writer
+            .write_event(Event::Start(BytesStart::borrowed_name(KEY_FILE)))?;
+
+        self.write_meta(key_file_data)?;
+        self.write_key_data(key_file_data)?;
+
+        self.writer
+            .write_event(Event::End(BytesEnd::borrowed(KEY_FILE)))?;
+
+        Ok(())
+    }
+}
+
 // cargo test test_mod_name::test_fn_name -- --exact
 // Need to use " cargo test -- --nocapture " to see println! output in the console
 // cargo test -- --show-output
@@ -1053,6 +1311,8 @@ pub fn write_xml_with_indent(
 
 #[cfg(test)]
 mod tests {
+    use crate::crypto;
+
     use super::*;
     use std::env;
     use std::fs;
@@ -1082,7 +1342,7 @@ mod tests {
         init();
         log::info!("This record will be captured by `cargo test`");
         let file_name = test_file("PasswordsXC1-Tags.xml"); //PasswordsXC1-Tags.xml
-        //let file_name = "/path/to/test_file.xml".to_string();
+                                                            //let file_name = "/path/to/test_file.xml".to_string();
 
         // This is the inner stream key used to decrypt the Protected data. This should have been the key
         // used to encrypt the protected data in this test xml file
@@ -1108,7 +1368,7 @@ mod tests {
     #[test]
     fn read_write_sample_xml() {
         let file_name = test_file("PasswordsXC1-Tags.xml");
-        
+
         //This is the inner stream key used to decrypt the Protected data
         let key = vec![
             42u8, 60, 253, 132, 99, 97, 132, 162, 253, 31, 45, 229, 230, 138, 239, 197, 67, 148,
@@ -1138,5 +1398,99 @@ mod tests {
 
         //let _xml_content = write_result.unwrap();
         //println!("XML content is \n {}", std::str::from_utf8(&xml_content).unwrap()); //Need to use {} and not the debug one {:?} to avoid \" in the printed output
+    }
+
+    /// Key xml file related reading and writing tests
+    #[test]
+    fn verify_reading_file_key_xml() {
+        // Data text is formatted
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <KeyFile>
+            <Meta>
+                <Version>2.0</Version>
+            </Meta>
+            <Key>
+                <Data Hash="F205E6EB">
+                    ABA681B2 C6E19C74 E671EDEC 41D5AC09
+                    9089F4B4 605937B5 B3E211AD 0056B325
+                </Data>
+            </Key>
+        </KeyFile>
+        "#;
+
+        // Data text is one line
+        // let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        // <KeyFile>
+        //     <Meta>
+        //         <Version>2.0</Version>
+        //     </Meta>
+        //     <Key>
+        //         <Data Hash="F205E6EB">ABA681B2C6E19C74E671EDEC41D5AC099089F4B4605937B5B3E211AD0056B325</Data>
+        //     </Key>
+        // </KeyFile>
+        // "#;
+
+        let mut reader = FileKeyXmlReader::new(xml.as_bytes());
+
+        let r: Result<KeyFileData> = reader.parse();
+
+        assert!(r.is_ok());
+        let r1 = r.unwrap();
+        //println!(" r1 is {:?}",r1);
+        assert!(r1.verify_checksum().is_ok());
+    }
+
+    #[test]
+    fn verify_write_file_key_xml() {
+        let data = "ABA681B2C6E19C74E671EDEC41D5AC099089F4B4605937B5B3E211AD0056B325";
+
+        let key_file_data = KeyFileData {
+            version: Some("2.0".into()),
+            hash: Some("F205E6EB".into()),
+            data: Some(data.into()),
+        };
+
+        let mut xml_writer = FileKeyXmlWriter::new_with_indent(Cursor::new(Vec::new()));
+        let w = xml_writer.write(&key_file_data);
+        assert!(w.is_ok());
+
+        // First into_inner() returns the inner writer Cursor and second into_inner() gives the underlying 'Vec'
+        let v = xml_writer.writer.into_inner().into_inner();
+        let xs = std::str::from_utf8(&v).unwrap();
+
+        // println!("In write_xml method: XML content is \n{}", &xs);
+
+        // Read back and verify
+        let mut reader = FileKeyXmlReader::new(xs.as_bytes());
+        let r: Result<KeyFileData> = reader.parse();
+        assert!(r.is_ok());
+        let r1 = r.unwrap();
+
+        assert!(r1.verify_checksum().is_ok());
+    }
+
+    #[test]
+    fn verify_generate_xml_key() {
+        let r = KeyFileData::generate_key_data();
+        let key_file_data = r.unwrap();
+
+        //println!("kd is {:?}",key_file_data);
+
+        let mut xml_writer = FileKeyXmlWriter::new_with_indent(Cursor::new(Vec::new()));
+        let w = xml_writer.write(&key_file_data);
+        assert!(w.is_ok());
+
+        let v = xml_writer.writer.into_inner().into_inner();
+        let xs = std::str::from_utf8(&v).unwrap();
+
+        //println!("In write_xml method: XML content is \n{}", &xs);
+
+        // Read back and verify
+        let mut reader = FileKeyXmlReader::new(xs.as_bytes());
+        let r: Result<KeyFileData> = reader.parse();
+        assert!(r.is_ok());
+        let r1 = r.unwrap();
+
+        assert!(r1.verify_checksum().is_ok());
     }
 }

@@ -188,6 +188,16 @@ pub mod xml_element {
     //pub const KEEPASS_FILE_TAGS:&[&[u8]] = &[META,ROOT];
 }
 
+pub mod key_file_xml_element {
+    pub const KEY_FILE: &[u8] = b"KeyFile";
+    pub const KEY_FILE_META: &[u8] = b"Meta";
+    pub const KEY_FILE_VERSION: &[u8] = b"Version"; 
+    pub const KEY_FILE_KEY: &[u8] = b"Key";
+    pub const KEY_FILE_DATA: &[u8] = b"Data";
+    pub const KEY_FILE_DATA_HASH: &[u8] = b"Hash";
+}
+
+
 #[allow(dead_code)]
 pub mod uuid {
     pub const ARGON2_KDF: &[u8] = &[

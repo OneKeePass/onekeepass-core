@@ -1,7 +1,8 @@
 mod kdbx_file;
 mod key_secure;
-mod reader_writer;
 mod new_db;
+mod reader_writer;
+mod file_key;
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -14,6 +15,7 @@ use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 
 use self::kdbx_file::InnerHeader;
+
 
 use self::reader_writer::{KdbxFileReader, KdbxFileWriter};
 use crate::constants::{self, EMPTY_STR};
@@ -28,10 +30,9 @@ use crate::xml_parse;
 use kdbx_file::MainHeader;
 
 pub use kdbx_file::KdbxFile;
+pub use key_secure::{KeyStoreOperation, KeyStoreService, KeyStoreServiceType};
 pub use new_db::NewDatabase;
-pub use key_secure::{ KeyStoreService,
-    KeyStoreServiceType,KeyStoreOperation,
-};
+pub(crate) use self::file_key::{KeyFileData,FileKey};
 
 /// Writes the header type byte and header data of Vec<u8> type with size le bytes as prefix
 /// This macro is used for both MainHeader and InnerHeader Vec<u8> data writing
@@ -167,20 +168,19 @@ impl SecuredDatabaseKeys {
         let (p, f, c) = if let Some(fk) = file_key {
             // Final hash is sha256(sha256(password) + sha256(keyfile-content))
             let phash = crypto::do_slice_sha256_hash(password.as_bytes())?;
-            let fhash = crypto::do_slice_sha256_hash(&fk.content)?;
-
-            let p = phash.to_vec();
-            let f = fhash.to_vec();
-            let data = vec![&p, &f];
+            let fhash = fk.content_hash();
+            
+            let data = vec![&phash, &fhash];
+            
             let final_hash = crypto::do_vecs_sha256_hash(&data)?;
-
-            (p, Some(f), final_hash.to_vec())
+            
+            (phash, Some(fhash), final_hash)
         } else {
             // Final hash is sha256(sha256(password))
             let phash = crypto::do_slice_sha256_hash(password.as_bytes())?;
             let final_hash = crypto::do_slice_sha256_hash(phash.as_ref())?;
 
-            (phash.to_vec(), None, final_hash.to_vec())
+            (phash, None, final_hash)
         };
 
         let sk = Self {
@@ -243,10 +243,8 @@ impl SecuredDatabaseKeys {
         kdf_algorithm: &KdfAlgorithm,
         master_seed: &Vec<u8>,
     ) -> Result<()> {
-        debug!("SecuredDatabaseKeys compute_all_keys is called");
         if let KdfAlgorithm::Argon2(kdf) = &kdf_algorithm {
             let ck = self.get_composite_key(db_key)?;
-            debug!("SecuredDatabaseKeys ck is {}", hex::encode(&ck));
             //Then transform the composite key using KDF
             let transformed_key = kdf.transform_key(ck)?;
 
@@ -260,12 +258,9 @@ impl SecuredDatabaseKeys {
 
     // Gets the composite key; This decrypts the key if required
     fn get_composite_key(&self, db_key: &str) -> Result<Vec<u8>> {
-        debug!("SecuredDatabaseKeys get_composite_key is called");
         if self.encrypted {
-            debug!("Keys are encrypted and going to decrypt composite_key");
             self.decrypt_composite_key(db_key)
         } else {
-            debug!("Keys are not encrypted and returning the composite_key");
             Ok(self.composite_key.clone())
         }
     }
@@ -301,7 +296,6 @@ impl SecuredDatabaseKeys {
     }
 
     fn encrypt_key(&self, db_key: &str, data: &[u8]) -> Result<Vec<u8>> {
-
         if let Some(keydata) = KeyStoreOperation::get_key(db_key) {
             let keyinfo = SecureKeyInfo::from_key_nonce(keydata);
             let kc = crypto::KeyCipher::from(&keyinfo.key, &keyinfo.nonce);
@@ -312,7 +306,6 @@ impl SecuredDatabaseKeys {
                 db_key
             )))
         }
-
 
         // if let Some(kservice) = &self.key_store_service {
         //     let kss = kservice.lock().unwrap();
@@ -358,36 +351,35 @@ impl SecuredDatabaseKeys {
         password: &str,
         file_key: &Option<FileKey>,
     ) -> Result<bool> {
-        let current_phash = self.decrypt_password_key(db_key)?;
-        let phash = crypto::do_slice_sha256_hash(password.as_bytes())?.to_vec();
+        let phash = crypto::do_slice_sha256_hash(password.as_bytes())?;
+        let chash = if let Some(fk) = file_key {
+            debug!("Forming the composite key with password and key file for quick unlock");
+            let fhash = fk.content_hash();
+            let data = vec![&phash, &fhash];
+            let final_hash = crypto::do_vecs_sha256_hash(&data)?;
+            final_hash
+        } else {
+            debug!("Forming the composite key with password only");
+            let final_hash = crypto::do_slice_sha256_hash(&phash)?;
+            final_hash.to_vec()
+        };
 
-        if current_phash != phash {
-            return Ok(false);
-        }
-
-        if let Some(fk) = file_key {
-            let fhash = crypto::do_slice_sha256_hash(&fk.content)?.to_vec();
-            let current_fhash = self.decrypt_key_file_data_hash(db_key)?;
-            if current_fhash != fhash {
-                return Ok(false);
-            }
-        }
-
-        Ok(true)
+        let existing_chash = self.decrypt_composite_key(db_key)?;
+        debug!("Comparing composite key for quick unlock and the result is {}",chash == existing_chash);
+        Ok(chash == existing_chash)
     }
 
     // Called whenever user changes the password
     pub fn set_password(&mut self, db_key: &str, password: &str) -> Result<()> {
         let phash = crypto::do_slice_sha256_hash(password.as_bytes())?;
-        let phash = phash.to_vec();
-
-        // Need to recalculate composite key whenever the password is changed
+        
+        // Need to recalculate composite key whenever the password or key file added/changed is changed
         let chash = if let Some(key_file_hash) = &self.key_file_data_hash {
             // First decrypt the previously encrypted key file hash
             let fhash = self.decrypt_key(db_key, key_file_hash)?;
             let data = vec![&phash, &fhash];
             let final_hash = crypto::do_vecs_sha256_hash(&data)?;
-            final_hash.to_vec()
+            final_hash
         } else {
             let final_hash = crypto::do_slice_sha256_hash(&phash)?;
             final_hash.to_vec()
@@ -403,15 +395,11 @@ impl SecuredDatabaseKeys {
     // Called whenever user changes the key file usage
     pub fn set_file_key(&mut self, db_key: &str, file_key_opt: Option<&FileKey>) -> Result<()> {
         if let Some(file_key) = file_key_opt {
-            let fhash = crypto::do_slice_sha256_hash(&file_key.content)?;
-            let fhash = fhash.to_vec();
-
+            let fhash = file_key.content_hash();
             let phash = self.decrypt_key(db_key, &self.password_hash)?;
-
             let data = vec![&phash, &fhash];
-            let final_hash = crypto::do_vecs_sha256_hash(&data)?;
-            let chash = final_hash.to_vec();
-
+            let chash = crypto::do_vecs_sha256_hash(&data)?;
+            
             // Need to encrypt the changed hahses
             self.key_file_data_hash = Some(self.encrypt_key(db_key, &fhash)?);
             self.composite_key = self.encrypt_key(db_key, &chash)?;
@@ -426,7 +414,6 @@ impl SecuredDatabaseKeys {
     pub fn remove_file_key(&mut self, db_key: &str) -> Result<()> {
         let phash = self.decrypt_key(db_key, &self.password_hash)?;
         let chash = crypto::do_slice_sha256_hash(&phash)?;
-        let chash = chash.to_vec();
         self.composite_key = self.encrypt_key(db_key, &chash)?;
         Ok(())
     }
@@ -474,42 +461,19 @@ impl ContentCipherId {
             _ => return Err(Error::UnsupportedCipher(vec![])),
         }
     }
-}
 
-/// Used when user selects to use any file as a key for the db
-#[derive(Clone)]
-pub struct FileKey {
-    pub(crate) file_name: String,
-    pub(crate) content: Vec<u8>,
-}
-
-impl FileKey {
-    fn open(key_file_name: &str) -> Result<FileKey> {
-        if !key_file_name.trim().is_empty() & !Path::new(key_file_name).exists() {
-            return Err(Error::NotFound(format!(
-                "The key file {} is not valid one",
-                key_file_name
-            )));
+    fn generate_master_seed_iv(&self) -> Result<(Vec<u8>, Vec<u8>)> {
+        let mut rng = crypto::SecureRandom::new();
+        match self {
+            ContentCipherId::Aes256 => {
+                Ok((rng.get_bytes::<32>(), rng.get_bytes::<16>()))
+            }
+            ContentCipherId::ChaCha20 => {
+                Ok((rng.get_bytes::<32>(), rng.get_bytes::<12>()))
+            }
+            _ => return Err(Error::UnsupportedCipher(vec![])),
         }
-        let file = File::open(key_file_name)?;
-        let mut reader = BufReader::new(file);
-        let mut buf = vec![];
-        reader.read_to_end(&mut buf)?;
-        Ok(Self {
-            file_name: key_file_name.into(),
-            content: buf,
-        })
-    }
-
-    // Need to return Result so that the invalid file name error can be propagated to caller
-    fn from(key_file_name: Option<&str>) -> Result<Option<FileKey>> {
-        let key_file: Result<Option<FileKey>> = match key_file_name {
-            Some(n) if !n.trim().is_empty() => Ok(Some(FileKey::open(n)?)),
-            Some(_) => Ok(None),
-            None => Ok(None),
-        };
-        key_file
-    }
+    } 
 }
 
 pub fn open_db_file(db_file_name: &str) -> Result<BufReader<File>> {
@@ -610,15 +574,7 @@ pub fn verify_db_file_checksum<R: Read + Seek>(
     kdbx_file: &mut KdbxFile,
     reader: &mut R,
 ) -> Result<()> {
-    debug!(
-        "verify_db_file_checksum called and reader position {:?}",
-        reader.stream_position()
-    );
     let cs = calculate_db_file_checksum(reader)?;
-    debug!(
-        "verify_db_file_checksum called and reader position after calculation {:?}",
-        reader.stream_position()
-    );
     if cs.eq(&kdbx_file.checksum_hash) {
         Ok(())
     } else {

@@ -39,10 +39,11 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
     }
 
     pub (crate) fn read(&mut self) -> Result<()> {
+        debug!("Starting the dataabse read_file_signature call");
         self.read_file_signature()?;
         self.read_header()?;
         self.verify_stored_hash()?;
-        self.kdbx_file.compute_all_keys()?; //Uses password and key file content
+        self.kdbx_file.compute_all_keys(false)?; //Uses password and key file content
         self.verify_header_hmac()?;
         let mut buf = self.read_hmac_data_blocks()?;
         buf = self.decrypt_data(&buf)?;
@@ -358,8 +359,12 @@ impl<'a, W: Read + Write + Seek> KdbxFileWriter<'a, W> {
     }
 
     pub (crate) fn write(&mut self) -> Result<()> {
-        //IMPORATNT: we need to recompute the keys for encryption so that any changes in main header fields (seed, iv, cipher id etc) are taken care of.
-        self.kdbx_file.compute_all_keys()?;
+        //IMPORATNT: 
+        // we need to recompute the keys for encryption so that any changes 
+        // in main header fields (seed, iv, cipher id etc) or credential changes 
+        // are taken care of. Even if there are no changes to the avove mentioned,
+        // we reset the seed and iv for every save
+        self.kdbx_file.compute_all_keys(true)?;
 
         self.write_file_signature()?;
         self.kdbx_file.main_header.write_bytes(&mut self.writer)?;

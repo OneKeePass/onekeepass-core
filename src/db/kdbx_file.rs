@@ -31,13 +31,22 @@ impl KdbxFile {
         &self.secured_database_keys.master_key
     }
 
-    pub fn compute_all_keys(&mut self) -> Result<()> {
+    pub fn compute_all_keys(&mut self,seed_reset:bool) -> Result<()> {
+        if seed_reset {
+            // Before the next save, we need to reset the master seed and encryption iv to new set of values
+            let _r = self.main_header.reset_master_seed_iv()?;
+        }
         self.secured_database_keys.compute_all_keys(
             &self.database_file_name,
             &self.main_header.kdf_algorithm,
             &self.main_header.master_seed,
         )
     }
+
+    // #[inline]
+    // pub fn reset_master_seed_iv(&mut self) -> Result<(Vec<u8>,Vec<u8>)> {
+    //     self.main_header.reset_master_seed_iv()
+    // }
 
     pub fn compare_key(&self, password: &str, key_file_name: Option<&str>) -> Result<bool> {
         let file_key = FileKey::from(key_file_name)?;
@@ -148,14 +157,14 @@ impl KdbxFile {
     }
 }
 
-
-
 #[derive(Default, Clone)]
 pub(crate) struct MainHeader {
     pub(crate) cipher_id: Vec<u8>,
+    // Required in determining various keys
     pub(crate) master_seed: Vec<u8>,
     /// Formed from 4 LE bytes [1, 0, 0, 0]  
     pub(crate) compression_flag: i32,
+    // Required to use with a cryptographic primitive to provide the initial state
     pub(crate) encryption_iv: Vec<u8>,
     pub(crate) public_custom_data: Vec<u8>,
     pub(crate) comment: Vec<u8>,
@@ -342,6 +351,20 @@ impl MainHeader {
         writer.write(&(4 as u32).to_le_bytes())?;
         writer.write(&vec![13, 10, 13, 10])?; //End Data
 
+        Ok(())
+    }
+
+    // Reset the master seed and encryption iv for the next saving
+    pub(crate) fn reset_master_seed_iv(&mut self) -> Result<()>{
+        let cid = match self.cipher_id.as_slice() {
+            constants::uuid::AES256 => ContentCipherId::Aes256,
+            constants::uuid::CHACHA20 => ContentCipherId::ChaCha20,
+            _ => ContentCipherId::UnKnownCipher
+        };
+        let (ms,iv) = cid.generate_master_seed_iv()?;
+        self.master_seed = ms;
+        self.encryption_iv = iv;
+        debug!("Master seed and encryption IV are reset");
         Ok(())
     }
 }

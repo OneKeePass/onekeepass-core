@@ -22,7 +22,7 @@ pub enum Error {
     #[error("{0}")]
     Io(#[from] io::Error),
 
-    #[error("The database file is not a valid one")]
+    #[error("The database file is not a valid one. Only KDBX formats version 4.x are supported")]
     InvalidKeePassFile,
 
     /// Unknown database cipher UUID.
@@ -81,6 +81,15 @@ pub enum Error {
 
     #[error("{0}")]
     JsonConversionError(#[from] serde_json::Error),
+
+    #[error("HexDecodeError:{0}")]
+    HexDecodeError(#[from]hex::FromHexError),
+
+    #[error("Key file is not a xml file")]
+    NotXmlKeyFile,
+
+    #[error("Key file xml file with version 1 is not supported")]
+    UnsupportedXmlKeyFileVersion,
 
     // See DataError where we can use str
     // Other is used where we can use format!
