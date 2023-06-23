@@ -1,4 +1,3 @@
-
 use std::cmp;
 
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
@@ -22,14 +21,14 @@ where
     T: Read + Seek,
 {
     reader: &'a mut T,
-    pub (crate) kdbx_file: KdbxFile,
+    pub(crate) kdbx_file: KdbxFile,
     header_data_start_position: u64,
     header_data_end_position: u64,
 }
 
 #[allow(dead_code)]
 impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
-    pub (crate) fn new(reader: &'a mut T, kdbx_file: KdbxFile) -> KdbxFileReader<'a, T> {
+    pub(crate) fn new(reader: &'a mut T, kdbx_file: KdbxFile) -> KdbxFileReader<'a, T> {
         KdbxFileReader {
             reader,
             kdbx_file,
@@ -38,7 +37,7 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
         }
     }
 
-    pub (crate) fn read(&mut self) -> Result<()> {
+    pub(crate) fn read(&mut self) -> Result<()> {
         debug!("Starting the dataabse read_file_signature call");
         self.read_file_signature()?;
         self.read_header()?;
@@ -66,6 +65,18 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
 
         // TODO: Need to modifiy to verify (using higher 4 bytes ?) ver as any 4.x instead of the specific 4.0 or 4.1
         match (sig1, sig2, ver) {
+            (constants::OLD_SIG1, constants::OLD_SIG2, _) => {
+                return Err(Error::OldUnsupportedKeePass1);
+            }
+
+            (_, _, v)
+                if v == constants::VERSION_20
+                    || v == constants::VERSION_30
+                    || v == constants::VERSION_31 =>
+            {
+                return Err(Error::OldUnsupportedKdbxFormat);
+            }
+
             (constants::SIG1, constants::SIG2, constants::VERSION_40) => (),
             (constants::SIG1, constants::SIG2, constants::VERSION_41) => (),
             _ => {
@@ -354,14 +365,14 @@ where
 }
 
 impl<'a, W: Read + Write + Seek> KdbxFileWriter<'a, W> {
-    pub (crate) fn new(writer: &'a mut W, kdbx_file: &'a mut KdbxFile) -> KdbxFileWriter<'a, W> {
+    pub(crate) fn new(writer: &'a mut W, kdbx_file: &'a mut KdbxFile) -> KdbxFileWriter<'a, W> {
         KdbxFileWriter { writer, kdbx_file }
     }
 
-    pub (crate) fn write(&mut self) -> Result<()> {
-        //IMPORATNT: 
-        // we need to recompute the keys for encryption so that any changes 
-        // in main header fields (seed, iv, cipher id etc) or credential changes 
+    pub(crate) fn write(&mut self) -> Result<()> {
+        //IMPORATNT:
+        // we need to recompute the keys for encryption so that any changes
+        // in main header fields (seed, iv, cipher id etc) or credential changes
         // are taken care of. Even if there are no changes to the avove mentioned,
         // we reset the seed and iv for every save
         self.kdbx_file.compute_all_keys(true)?;

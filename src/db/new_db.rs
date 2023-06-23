@@ -78,7 +78,9 @@ impl NewDatabase {
         kc.root.all_groups.insert(root_g.uuid, root_g);
 
 
-        let secured_database_keys = SecuredDatabaseKeys::from_keys(&self.password, &file_key)?;
+        let mut secured_database_keys = SecuredDatabaseKeys::from_keys(&self.password, &file_key)?;
+        // Call to secure the keys and use in subsequent calls
+        secured_database_keys.secure_keys(&self.database_file_name)?;
 
         let k = KdbxFile {
             database_file_name: self.database_file_name.clone(),

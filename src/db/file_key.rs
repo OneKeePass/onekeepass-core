@@ -55,7 +55,7 @@ impl FileKey {
         self.content_hash.clone()
     }
 
-    pub fn write_xml_key_file(key_file_name: &str) -> Result<()> {
+    pub fn create_xml_key_file(key_file_name: &str) -> Result<()> {
         let mut file_buf = OpenOptions::new()
             .write(true)
             .create(true)
@@ -169,7 +169,7 @@ mod tests {
         let h = fk.content_hash();
 
         println!("h is {:?}", h);
-        
+
         assert!(final_hash == h)
     }
 

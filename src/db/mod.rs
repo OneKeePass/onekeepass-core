@@ -164,6 +164,7 @@ impl Default for SecuredDatabaseKeys {
 }
 
 impl SecuredDatabaseKeys {
+
     fn from_keys(password: &str, file_key: &Option<FileKey>) -> Result<Self> {
         let (p, f, c) = if let Some(fk) = file_key {
             // Final hash is sha256(sha256(password) + sha256(keyfile-content))
@@ -183,7 +184,7 @@ impl SecuredDatabaseKeys {
             (phash, None, final_hash)
         };
 
-        let sk = Self {
+        let mut sk = Self {
             password_hash: p,
             key_file_data_hash: f,
             composite_key: c,
@@ -197,6 +198,7 @@ impl SecuredDatabaseKeys {
         Ok(sk)
     }
 
+    // IMPORTANT: Need to call this to encrypt the keys and store it in a secure store
     pub(crate) fn secure_keys(&mut self, db_key: &str) -> Result<()> {
         debug!("SecuredDatabaseKeys In secure_keys method and going to encrypt all keys");
         let kc = crypto::KeyCipher::new();
@@ -736,6 +738,11 @@ pub fn import_from_xml(
     kdbx_file.keepass_main_content = Some(kp);
 
     Ok(kdbx_file)
+}
+
+#[inline]
+pub fn create_key_file(key_file_name: &str) -> Result<()> {
+    FileKey::create_xml_key_file(key_file_name)
 }
 
 #[cfg(test)]

@@ -265,6 +265,7 @@ pub fn read_kdbx<R: Read + Seek>(
         db_key: db_file_name.into(),
         database_name: kp.meta.database_name.clone(),
         file_name,
+        key_file_name:key_file_name.map(|s| s.to_string()),
     };
 
     let mut kdbx_context = KdbxContext::default();
@@ -281,6 +282,7 @@ pub fn read_kdbx<R: Read + Seek>(
 }
 
 // Desktop
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows",))]
 pub fn reload_kdbx(db_key: &str) -> Result<KdbxLoaded> {
     call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
         // db_key is full database file uri
@@ -293,6 +295,8 @@ pub fn reload_kdbx(db_key: &str) -> Result<KdbxLoaded> {
             db_key: db_key.into(),
             database_name: kp.meta.database_name.clone(),
             file_name,
+            key_file_name:ctx.kdbx_file.get_key_file_name(),
+
         };
 
         ctx.kdbx_file = reloaded_kdbx_file;
@@ -319,6 +323,11 @@ pub fn close_all_databases() -> Result<()> {
     Ok(())
 }
 
+// Called to generate random 32 bytes key and stored in a (Version 2.0) xml file 
+pub fn generate_key_file(key_file_name: &str) -> Result<()> {
+    db::create_key_file(key_file_name)
+}
+
 // TODO: Refactor create_kdbx (used mainly for desktop app) and create_and_write_to_writer to use common functionalties
 /// Called to create a new KDBX database and perists the file
 /// Returns KdbxLoaded with dbkey to locate this KDBX database in cache
@@ -339,6 +348,7 @@ pub fn create_kdbx(new_db: NewDatabase) -> Result<KdbxLoaded> {
         db_key: new_db.database_file_name.clone(),
         database_name: kp.meta.database_name.clone(),
         file_name,
+        key_file_name:kdbx_file.get_key_file_name(),
     };
 
     // IMPORTANT:
@@ -383,6 +393,7 @@ pub fn create_and_write_to_writer<W: Read + Write + Seek>(
         db_key: new_db.database_file_name.clone(),
         database_name: kp.meta.database_name.clone(),
         file_name:None,
+        key_file_name:None,
     };
 
     // IMPORTANT:
@@ -556,6 +567,7 @@ pub fn save_as_kdbx(db_key: &str, database_file_name: &str) -> Result<KdbxLoaded
             db_key: database_file_name.into(),
             database_name: ctx.kdbx_file.get_database_name().into(),
             file_name,
+            key_file_name:ctx.kdbx_file.get_key_file_name(),
         })
     })?;
 
@@ -582,6 +594,7 @@ pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
             db_key: new_db_key.into(),
             database_name: ctx.kdbx_file.get_database_name().into(),
             file_name:None,
+            key_file_name:None,
         })
     })?;
 
@@ -600,6 +613,7 @@ pub fn unlock_kdbx_on_biometric_authentication(db_key: &str) -> Result<KdbxLoade
             db_key: db_key.into(),
             database_name: ctx.kdbx_file.get_database_name().into(),
             file_name:util::file_name(db_key),
+            key_file_name:ctx.kdbx_file.get_key_file_name(),
         })
     })
 }
@@ -616,6 +630,7 @@ pub fn unlock_kdbx(
                 db_key: db_key.into(),
                 database_name: ctx.kdbx_file.get_database_name().into(),
                 file_name:util::file_name(db_key),
+                key_file_name:ctx.kdbx_file.get_key_file_name(),
             })
         } else {
             // Same error as if db file verification failure as in load_kdbx

@@ -4,6 +4,15 @@ pub const SIG1: u32 = 0x9AA2_D903;
 pub const SIG2: u32 = 0xB54B_FB67;
 pub const VERSION_40: u32 = 0x0004_0000;
 pub const VERSION_41: u32 = 0x0004_0001;
+
+//Not supported versions
+pub const OLD_SIG1: u32 = 0x9AA2_D903 ;
+pub const OLD_SIG2: u32 = 0xB54B_FB65;
+pub const VERSION_30: u32 = 0x0003_0000;
+pub const VERSION_31: u32 = 0x0003_0001;
+pub const VERSION_20: u32 = 0x0002_0000;
+
+
 #[allow(dead_code)]
 pub const VD_VER: u16 = 0x0100;
 #[allow(dead_code)]
