@@ -184,7 +184,7 @@ impl SecuredDatabaseKeys {
             (phash, None, final_hash)
         };
 
-        let mut sk = Self {
+        let sk = Self {
             password_hash: p,
             key_file_data_hash: f,
             composite_key: c,

@@ -95,6 +95,9 @@ pub enum Error {
     #[error("Key file xml file with version 1 is not supported")]
     UnsupportedXmlKeyFileVersion,
 
+    #[error("SecureKeyOperationError {0}")]
+    SecureKeyOperationError(String),
+
     // See DataError where we can use str
     // Other is used where we can use format!
     #[error("{0}")]

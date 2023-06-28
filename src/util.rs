@@ -173,6 +173,14 @@ pub fn string_to_simple_hash(name: &str) -> u64 {
     hasher.finish()
 }
 
+// Forms a key to use in all Key Chain/Store calls
+#[inline]
+pub fn formatted_key(db_key: &str) -> String {
+  format!("OKP-{}", string_to_simple_hash(db_key))
+    .as_str()
+    .into()
+}
+
 #[allow(dead_code)]
 pub fn to_hex_string(data: &[u8]) -> String {
     let mut output = String::new();

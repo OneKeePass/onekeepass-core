@@ -6,7 +6,7 @@ pub use crate::error;
 pub use crate::error::{Error, Result};
 pub use crate::form_data::*;
 pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions, PasswordScore};
-pub use crate::util::string_to_simple_hash;
+pub use crate::util::{formatted_key, string_to_simple_hash};
 
 use crate::db::{self, write_kdbx_file, write_kdbx_file_with_backup_file, KdbxFile};
 use crate::db_content::{standard_types_ordered_by_id, AttachmentHashValue, KeepassFile};
@@ -265,7 +265,7 @@ pub fn read_kdbx<R: Read + Seek>(
         db_key: db_file_name.into(),
         database_name: kp.meta.database_name.clone(),
         file_name,
-        key_file_name:key_file_name.map(|s| s.to_string()),
+        key_file_name: key_file_name.map(|s| s.to_string()),
     };
 
     let mut kdbx_context = KdbxContext::default();
@@ -289,14 +289,13 @@ pub fn reload_kdbx(db_key: &str) -> Result<KdbxLoaded> {
         let mut db_file_reader = db::open_db_file(db_key)?;
         let reloaded_kdbx_file = db::reload(&mut db_file_reader, &ctx.kdbx_file)?;
         let kp = to_keepassfile!(reloaded_kdbx_file);
-        
+
         let file_name = util::file_name(db_key);
         let kdbx_loaded = KdbxLoaded {
             db_key: db_key.into(),
             database_name: kp.meta.database_name.clone(),
             file_name,
-            key_file_name:ctx.kdbx_file.get_key_file_name(),
-
+            key_file_name: ctx.kdbx_file.get_key_file_name(),
         };
 
         ctx.kdbx_file = reloaded_kdbx_file;
@@ -323,7 +322,7 @@ pub fn close_all_databases() -> Result<()> {
     Ok(())
 }
 
-// Called to generate random 32 bytes key and stored in a (Version 2.0) xml file 
+// Called to generate random 32 bytes key and stored in a (Version 2.0) xml file
 pub fn generate_key_file(key_file_name: &str) -> Result<()> {
     db::create_key_file(key_file_name)
 }
@@ -348,7 +347,7 @@ pub fn create_kdbx(new_db: NewDatabase) -> Result<KdbxLoaded> {
         db_key: new_db.database_file_name.clone(),
         database_name: kp.meta.database_name.clone(),
         file_name,
-        key_file_name:kdbx_file.get_key_file_name(),
+        key_file_name: kdbx_file.get_key_file_name(),
     };
 
     // IMPORTANT:
@@ -392,8 +391,8 @@ pub fn create_and_write_to_writer<W: Read + Write + Seek>(
     let kdbx_loaded = KdbxLoaded {
         db_key: new_db.database_file_name.clone(),
         database_name: kp.meta.database_name.clone(),
-        file_name:None,
-        key_file_name:None,
+        file_name: None,
+        key_file_name: None,
     };
 
     // IMPORTANT:
@@ -567,7 +566,7 @@ pub fn save_as_kdbx(db_key: &str, database_file_name: &str) -> Result<KdbxLoaded
             db_key: database_file_name.into(),
             database_name: ctx.kdbx_file.get_database_name().into(),
             file_name,
-            key_file_name:ctx.kdbx_file.get_key_file_name(),
+            key_file_name: ctx.kdbx_file.get_key_file_name(),
         })
     })?;
 
@@ -589,12 +588,12 @@ pub fn save_as_kdbx(db_key: &str, database_file_name: &str) -> Result<KdbxLoaded
 pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
     let kdbx_loaded = call_kdbx_context_mut_action(old_db_key, |ctx: &mut KdbxContext| {
         ctx.kdbx_file.set_database_file_name(new_db_key);
-        
+
         Ok(KdbxLoaded {
             db_key: new_db_key.into(),
             database_name: ctx.kdbx_file.get_database_name().into(),
-            file_name:None,
-            key_file_name:None,
+            file_name: None,
+            key_file_name: None,
         })
     })?;
 
@@ -612,8 +611,8 @@ pub fn unlock_kdbx_on_biometric_authentication(db_key: &str) -> Result<KdbxLoade
         Ok(KdbxLoaded {
             db_key: db_key.into(),
             database_name: ctx.kdbx_file.get_database_name().into(),
-            file_name:util::file_name(db_key),
-            key_file_name:ctx.kdbx_file.get_key_file_name(),
+            file_name: util::file_name(db_key),
+            key_file_name: ctx.kdbx_file.get_key_file_name(),
         })
     })
 }
@@ -629,8 +628,8 @@ pub fn unlock_kdbx(
             Ok(KdbxLoaded {
                 db_key: db_key.into(),
                 database_name: ctx.kdbx_file.get_database_name().into(),
-                file_name:util::file_name(db_key),
-                key_file_name:ctx.kdbx_file.get_key_file_name(),
+                file_name: util::file_name(db_key),
+                key_file_name: ctx.kdbx_file.get_key_file_name(),
             })
         } else {
             // Same error as if db file verification failure as in load_kdbx
