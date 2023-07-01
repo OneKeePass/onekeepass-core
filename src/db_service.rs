@@ -235,7 +235,8 @@ pub fn load_kdbx(
     key_file_name: Option<&str>,
 ) -> Result<KdbxLoaded> {
     let mut db_file_reader = db::open_db_file(db_file_name)?;
-    read_kdbx(&mut db_file_reader, db_file_name, password, key_file_name)
+    let file_name = util::file_name(&db_file_name);
+    read_kdbx(&mut db_file_reader, db_file_name, password,key_file_name,file_name.as_deref(),)
 }
 
 // Gets a ref to the main keepass content
@@ -256,16 +257,17 @@ pub fn read_kdbx<R: Read + Seek>(
     db_file_name: &str,
     password: &str,
     key_file_name: Option<&str>,
+    file_name: Option<&str>,
 ) -> Result<KdbxLoaded> {
     let kdbx_file = db::read_db_from_reader(reader, db_file_name, password, key_file_name)?;
 
     let kp = to_keepassfile!(kdbx_file);
-    let file_name = util::file_name(&db_file_name);
+    //let file_name = util::file_name(&db_file_name);
     let kdbx_loaded = KdbxLoaded {
         db_key: db_file_name.into(),
         database_name: kp.meta.database_name.clone(),
-        file_name,
         key_file_name: key_file_name.map(|s| s.to_string()),
+        file_name: file_name.map(|s| s.to_string()),
     };
 
     let mut kdbx_context = KdbxContext::default();
@@ -632,7 +634,7 @@ pub fn unlock_kdbx(
                 key_file_name: ctx.kdbx_file.get_key_file_name(),
             })
         } else {
-            // Same error as if db file verification failure as in load_kdbx
+            // Same error as if db file verification failure happening in load_kdbx 
             Err(Error::HeaderHmacHashCheckFailed)
         }
     })
