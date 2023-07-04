@@ -6,7 +6,7 @@ pub use crate::error;
 pub use crate::error::{Error, Result};
 pub use crate::form_data::*;
 pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions, PasswordScore};
-pub use crate::util::{formatted_key, string_to_simple_hash};
+pub use crate::util::{formatted_key, string_to_simple_hash,file_name};
 
 use crate::db::{self, write_kdbx_file, write_kdbx_file_with_backup_file, KdbxFile};
 use crate::db_content::{standard_types_ordered_by_id, AttachmentHashValue, KeepassFile};
@@ -393,8 +393,11 @@ pub fn create_and_write_to_writer<W: Read + Write + Seek>(
     let kdbx_loaded = KdbxLoaded {
         db_key: new_db.database_file_name.clone(),
         database_name: kp.meta.database_name.clone(),
-        file_name: None,
-        key_file_name: None,
+        // only for android 'file_name' will have some value. 
+        // In case of iOS, not done as full uri is temp one
+        // For desktop, see create_kdbx
+        file_name: new_db.file_name, 
+        key_file_name: new_db.key_file_name,
     };
 
     // IMPORTANT:

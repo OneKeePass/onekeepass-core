@@ -8,7 +8,10 @@ use super::{KdfAlgorithm, ContentCipherId, KdbxFile, FileKey, kdbx_file::{MainHe
 pub struct NewDatabase {
     pub(crate) database_name: String,
     pub(crate) database_description: Option<String>,
+    // This is the full uri and used as db_key
     pub database_file_name: String,
+    // This is the just the file name part derived from the full uri (used in mobile)
+    pub file_name: Option<String>,
     pub(crate) kdf: KdfAlgorithm,
     pub(crate) cipher_id: ContentCipherId,
     pub(crate) password: String,
@@ -30,6 +33,7 @@ impl Default for NewDatabase {
             database_name: "NewDatabase".into(),
             database_description: Some("New Database".into()),
             database_file_name: "NO_NAME".into(),
+            file_name:None,
             kdf: KdfAlgorithm::Argon2(crypto::kdf::Argon2Kdf::default()),
             cipher_id: ContentCipherId::Aes256,
             password: "ThisIsTest".into(),
