@@ -58,6 +58,9 @@ pub struct DbSettings {
     pub cipher_id: ContentCipherId,
     pub password: Option<String>,
     pub key_file_name: Option<String>,
+    // Just the file name component of the full key file name 'key_file_name'
+    // Used in mobile mainly
+    pub key_file_name_part:Option<String>,
     pub database_file_name: String,
     pub meta: MetaFormData,
 }

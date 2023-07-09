@@ -98,6 +98,9 @@ pub enum Error {
     #[error("SecureKeyOperationError {0}")]
     SecureKeyOperationError(String),
 
+    #[error("DuplicateKeyFileName:{0}")]
+    DuplicateKeyFileName(String),
+
     // See DataError where we can use str
     // Other is used where we can use format!
     #[error("{0}")]

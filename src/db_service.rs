@@ -6,7 +6,7 @@ pub use crate::error;
 pub use crate::error::{Error, Result};
 pub use crate::form_data::*;
 pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions, PasswordScore};
-pub use crate::util::{formatted_key, string_to_simple_hash,file_name};
+pub use crate::util::{file_name, formatted_key, string_to_simple_hash};
 
 use crate::db::{self, write_kdbx_file, write_kdbx_file_with_backup_file, KdbxFile};
 use crate::db_content::{standard_types_ordered_by_id, AttachmentHashValue, KeepassFile};
@@ -236,7 +236,13 @@ pub fn load_kdbx(
 ) -> Result<KdbxLoaded> {
     let mut db_file_reader = db::open_db_file(db_file_name)?;
     let file_name = util::file_name(&db_file_name);
-    read_kdbx(&mut db_file_reader, db_file_name, password,key_file_name,file_name.as_deref(),)
+    read_kdbx(
+        &mut db_file_reader,
+        db_file_name,
+        password,
+        key_file_name,
+        file_name.as_deref(),
+    )
 }
 
 // Gets a ref to the main keepass content
@@ -393,10 +399,10 @@ pub fn create_and_write_to_writer<W: Read + Write + Seek>(
     let kdbx_loaded = KdbxLoaded {
         db_key: new_db.database_file_name.clone(),
         database_name: kp.meta.database_name.clone(),
-        // only for android 'file_name' will have some value. 
+        // only for android 'file_name' will have some value.
         // In case of iOS, not done as full uri is temp one
         // For desktop, see create_kdbx
-        file_name: new_db.file_name, 
+        file_name: new_db.file_name,
         key_file_name: new_db.key_file_name,
     };
 
@@ -637,7 +643,7 @@ pub fn unlock_kdbx(
                 key_file_name: ctx.kdbx_file.get_key_file_name(),
             })
         } else {
-            // Same error as if db file verification failure happening in load_kdbx 
+            // Same error as if db file verification failure happening in load_kdbx
             Err(Error::HeaderHmacHashCheckFailed)
         }
     })
@@ -671,11 +677,16 @@ pub fn get_db_settings(db_key: &str) -> Result<DbSettings> {
     kdbx_context_action!(db_key, |ctx: &KdbxContext| {
         let kp = to_keepassfile!(ctx.kdbx_file);
 
+        let key_file_name = ctx.kdbx_file.get_key_file_name();
+        //Used only in Mobile apps
+        let key_file_name_part = key_file_name.as_ref().and_then(|s| util::file_name(s));
+
         let db_settings = DbSettings {
             kdf: ctx.kdbx_file.get_kdf_algorithm(),
             cipher_id: ctx.kdbx_file.get_content_cipher_id(),
             password: None,
-            key_file_name: ctx.kdbx_file.get_key_file_name(),
+            key_file_name,
+            key_file_name_part,
             database_file_name: ctx.kdbx_file.get_database_file_name().to_string(),
             meta: (&kp.meta).into(),
         };
