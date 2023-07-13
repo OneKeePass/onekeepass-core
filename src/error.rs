@@ -89,7 +89,7 @@ pub enum Error {
     #[error("HexDecodeError:{0}")]
     HexDecodeError(#[from]hex::FromHexError),
 
-    #[error("Key file is not a xml file")]
+    #[error("Key file is not an xml file")]
     NotXmlKeyFile,
 
     #[error("Key file xml file with version 1 is not supported")]

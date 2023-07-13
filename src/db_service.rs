@@ -330,7 +330,7 @@ pub fn close_all_databases() -> Result<()> {
     Ok(())
 }
 
-// Called to generate random 32 bytes key and stored in a (Version 2.0) xml file
+// Called to generate random 32 bytes key and stored in an xml file (Version 2.0) 
 pub fn generate_key_file(key_file_name: &str) -> Result<()> {
     db::create_key_file(key_file_name)
 }
