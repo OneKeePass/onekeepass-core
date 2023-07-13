@@ -6,7 +6,7 @@ pub use self::block_cipher::ContentCipher;
 pub use self::stream_cipher::ProtectedContentStreamCipher;
 
 use hmac::{Hmac, Mac, NewMac};
-use sha2::digest::generic_array::{typenum::U32, GenericArray};
+use sha2::digest::generic_array::GenericArray;
 use sha2::{Digest, Sha256, Sha512};
 
 use crate::error::{Error, Result};

@@ -1238,7 +1238,7 @@ impl<W: Write> FileKeyXmlWriter<W> {
         }
     }
 
-    fn write_meta(&mut self, key_file_data: &KeyFileData) -> Result<()> {
+    fn write_meta(&mut self, _key_file_data: &KeyFileData) -> Result<()> {
         self.writer
             .write_event(Event::Start(BytesStart::borrowed_name(KEY_FILE_META)))?;
 

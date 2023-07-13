@@ -1,5 +1,4 @@
 use chrono::{DateTime, Datelike, Local, NaiveDateTime};
-use log::debug;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::From;

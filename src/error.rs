@@ -24,9 +24,9 @@ pub enum Error {
 
     #[error("The database file is not a valid Keepass file")]
     InvalidKeePassFile,
-    #[error("The database file is a Keepass 1 database. This is not supported by OneKeePass. Only Keepass 2 databases with KDBX formats version 4.x are supported")]
+    #[error("The database file is a Keepass 1 database. This is not supported by OneKeePass. Only Keepass 2 database with KDBX format version 4.x is supported")]
     OldUnsupportedKeePass1,
-    #[error("The database file is an older version Kdbx 2 or Kdbx 3 formatted file. This is not supported by OneKeePass. Only Keepass 2 databases with KDBX formats version 4.x are supported")]
+    #[error("The database file is an older version Kdbx 2 or Kdbx 3 formatted file. This is not supported by OneKeePass. Only Keepass 2 database with KDBX format version 4.x is supported")]
     OldUnsupportedKdbxFormat,
 
     /// Unknown database cipher UUID.

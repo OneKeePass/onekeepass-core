@@ -278,23 +278,6 @@ impl SecuredDatabaseKeys {
                 db_key
             )))
         }
-
-        // if let Some(kservice) = &self.key_store_service {
-        //     let kss = kservice.lock().unwrap();
-        //     if let Some(keydata) = kss.get_key(db_key) {
-        //         let keyinfo = SecureKeyInfo::from_key_nonce(keydata);
-        //         let kc = crypto::KeyCipher::from(&keyinfo.key, &keyinfo.nonce);
-        //         kc.decrypt(data)
-        //     } else {
-        //         Err(Error::Other(format!(
-        //             "No key is available for the decryption"
-        //         )))
-        //     }
-        // } else {
-        //     Err(Error::Other(format!(
-        //         "No callback is available to get the decryption key"
-        //     )))
-        // }
     }
 
     fn encrypt_key(&self, db_key: &str, data: &[u8]) -> Result<Vec<u8>> {
@@ -308,23 +291,6 @@ impl SecuredDatabaseKeys {
                 db_key
             )))
         }
-
-        // if let Some(kservice) = &self.key_store_service {
-        //     let kss = kservice.lock().unwrap();
-        //     if let Some(keydata) = kss.get_key(db_key) {
-        //         let keyinfo = SecureKeyInfo::from_key_nonce(keydata);
-        //         let kc = crypto::KeyCipher::from(&keyinfo.key, &keyinfo.nonce);
-        //         kc.encrypt(data)
-        //     } else {
-        //         Err(Error::Other(format!(
-        //             "No key is available for the decryption"
-        //         )))
-        //     }
-        // } else {
-        //     Err(Error::Other(format!(
-        //         "No callback is available to get the decryption key"
-        //     )))
-        // }
     }
 
     // Called before saving the database
@@ -333,11 +299,11 @@ impl SecuredDatabaseKeys {
         self.decrypt_key(db_key, &self.composite_key)
     }
 
-    fn decrypt_password_key(&self, db_key: &str) -> Result<Vec<u8>> {
+    fn _decrypt_password_key(&self, db_key: &str) -> Result<Vec<u8>> {
         self.decrypt_key(db_key, &self.password_hash)
     }
 
-    fn decrypt_key_file_data_hash(&self, db_key: &str) -> Result<Vec<u8>> {
+    fn _decrypt_key_file_data_hash(&self, db_key: &str) -> Result<Vec<u8>> {
         if let Some(fk) = &self.key_file_data_hash {
             self.decrypt_key(db_key, fk)
         } else {
@@ -745,189 +711,3 @@ pub fn create_key_file(key_file_name: &str) -> Result<()> {
     FileKey::create_xml_key_file(key_file_name)
 }
 
-#[cfg(test)]
-mod tests {
-    use once_cell::sync::{Lazy, OnceCell};
-    use std::sync::{Arc, Mutex};
-
-    use super::*;
-
-    type MainStore = Arc<Mutex<HashMap<String, Vec<u8>>>>;
-
-    fn main_store() -> &'static MainStore {
-        static MAIN_STORE: Lazy<MainStore> = Lazy::new(Default::default);
-        &MAIN_STORE
-    }
-
-    fn get_key_info(db_key: &str) -> Option<SecureKeyInfo> {
-        let store = main_store().lock().unwrap();
-        store
-            .get(db_key)
-            .cloned()
-            .map(|v| SecureKeyInfo::from_key_nonce(v))
-    }
-
-    type StoreServiceStore = Arc<Mutex<dyn StoreService + Sync + Send>>;
-
-    fn key_main_store() -> &'static StoreServiceStore {
-        static KEY_MAIN_STORE: Lazy<StoreServiceStore> =
-            Lazy::new(|| Arc::new(Mutex::new(StoreServiceImpl::default())));
-        set_instance(&KEY_MAIN_STORE);
-        &KEY_MAIN_STORE
-    }
-
-    static INSTANCE: OnceCell<StoreServiceStore> = OnceCell::new();
-
-    fn set_instance(kss: &StoreServiceStore) {
-        let r = INSTANCE.set(kss.clone());
-    }
-
-    fn get_instance() -> &'static StoreServiceStore {
-        INSTANCE.get().expect("msg")
-    }
-
-    pub trait StoreService {
-        fn store_key(&mut self, db_key: &str, val: Vec<u8>) -> Result<()>;
-        fn get_key(&self, db_key: &str) -> Option<Vec<u8>>;
-    }
-
-    #[derive(Default)]
-    struct StoreServiceImpl {
-        store: HashMap<String, Vec<u8>>,
-    }
-
-    impl StoreService for StoreServiceImpl {
-        fn store_key(&mut self, db_key: &str, val: Vec<u8>) -> Result<()> {
-            self.store.insert(db_key.into(), val);
-            Ok(())
-        }
-
-        fn get_key(&self, db_key: &str) -> Option<Vec<u8>> {
-            self.store.get(db_key).cloned()
-        }
-    }
-
-    #[derive(Default)]
-    struct StoreServiceDummy {}
-
-    impl StoreService for StoreServiceDummy {
-        fn store_key(&mut self, db_key: &str, val: Vec<u8>) -> Result<()> {
-            unimplemented!()
-        }
-
-        fn get_key(&self, db_key: &str) -> Option<Vec<u8>> {
-            unimplemented!()
-        }
-    }
-
-    #[derive(Clone)]
-    struct Holder {
-        my_store: StoreServiceStore,
-    }
-
-    #[test]
-    fn test1() {
-        let ks = key_main_store();
-        let mut store = ks.lock().unwrap();
-        let r = store.store_key("db_key1", vec![1, 2]);
-        let r = store.store_key("db_key2", vec![4, 5]);
-        drop(store);
-
-        caller();
-
-        let r = key_main_store().clone();
-        let h = Holder { my_store: r };
-
-        caller2(h.clone());
-
-        caller3();
-
-        // Again
-        caller2(h.clone());
-
-        let mut holder_with_dummy_impl = Holder {
-            my_store: Arc::new(Mutex::new(StoreServiceDummy::default())),
-        };
-
-        let r = key_main_store().clone();
-        holder_with_dummy_impl.my_store = r;
-        caller2(holder_with_dummy_impl);
-
-        caller();
-    }
-
-    fn caller() {
-        let store = key_main_store().lock().unwrap();
-
-        println!("store val1 is  {:?}", store.get_key("db_key1"));
-        println!("store val2 is  {:?}", store.get_key("db_key2"));
-        println!("store val3 is  {:?}", store.get_key("db_key3"));
-    }
-
-    fn caller2(holder: Holder) {
-        let store = holder.my_store.lock().unwrap();
-        println!("holder val1 is  {:?}", store.get_key("db_key1"));
-        println!("holder val2 is  {:?}", store.get_key("db_key2"));
-    }
-
-    fn caller3() {
-        let mut store = get_instance().lock().unwrap();
-        println!("caller3 val1 is  {:?}", store.get_key("db_key1"));
-        println!("caller3 val2 is  {:?}", store.get_key("db_key2"));
-
-        let r = store.store_key("db_key3", vec![11, 21]);
-    }
-
-    // #[test]
-    // fn verify_secure_keys() {
-    //     let db_key = "dbKey1";
-    //     let mut keys = SecuredDbKeys::from_keys("ThisIsTest", &None).unwrap();
-    //     // Just the hash
-    //     let phash1 = keys.password_hash.clone();
-    //     let chash1 = keys.composite_key.clone();
-
-    //     // Encrypt all keys
-    //     let key_info = keys.secure(&get_key_info).unwrap();
-
-    //     assert_ne!(phash1, keys.password_hash);
-    //     assert_ne!(chash1, keys.composite_key);
-
-    //     {
-    //         // Simulate storing in the caller side
-    //         let mut store = main_store().lock().unwrap();
-    //         store.insert(db_key.into(), key_info.combine_key_nonce());
-    //     }
-
-    //     // Gets the key and decrypts password hash
-    //     let phash2 = keys.decrypt_password_key(db_key).unwrap();
-    //     assert_eq!(phash1, phash2);
-
-    //     let chash2 = keys.decrypt_composite_key(db_key).unwrap();
-    //     assert_eq!(chash1, chash2);
-    // }
-}
-
-/*
-fn secure(&mut self, callback: SessionKeyCallback) -> Result<SecureKeyInfo> {
-        let kc = crypto::KeyCipher::new();
-
-        let enc_p = kc.encrypt(&self.password_hash)?;
-        self.password_hash = enc_p.into();
-
-        let enc_c = kc.encrypt(&self.composite_key)?;
-        self.composite_key = enc_c.into();
-
-        if let Some(file_data) = &self.key_file_data_hash {
-            let enc_f = kc.encrypt(file_data)?;
-            self.key_file_data_hash = Some(enc_f);
-        }
-
-        self.session_key_callback = Some(callback);
-        self.encrypted = true;
-        Ok(SecureKeyInfo {
-            key: kc.key,
-            nonce: kc.nonce,
-        })
-    }
-
- */

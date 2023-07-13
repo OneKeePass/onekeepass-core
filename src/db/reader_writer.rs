@@ -2,7 +2,7 @@ use std::cmp;
 
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
-use log::{debug, error, info};
+use log::{debug, error,};
 
 use crate::constants;
 use crate::constants::{header_type, inner_header_type, PAYLOAD_BLOCK_SIZE};
