@@ -1,6 +1,6 @@
 [package]
 name = "onekeepass-core"
-version = "0.5.0"
+version = "0.7.0"
 authors = ["jeyasankar"]
 edition = "2021"
 
@@ -15,10 +15,14 @@ block-modes = "0.8.1"
 chacha20 = "0.7.1"
 cipher = "0.3.0"
 
-rand = "0.8.4"
+aes-gcm = "0.10.2"
+
+rand = "0.8.5"
 rand_chacha = "0.3.1"
 
-base64 = "0.13.0"
+secstr = "0.5.1"
+
+base64 = "0.21.2"
 uuid = { version = "0.8.2", features = ["serde", "v4"] }
 chrono =  {version = "0.4.23", features = ["serde"]}
 chrono-tz = "0.8.1"
@@ -27,7 +31,8 @@ quick-xml = "0.23.0"
 slice_as_array = "1.1.0"
 log = "0.4.17"
 hex-literal = "0.3.1"
-once_cell = "1.12.0"
+hex = "0.4.3"
+once_cell = "1.18.0"
 thiserror = "1.0.31"
 regex = "1.7.1"
 lazy_static = "1.4.0"
@@ -37,7 +42,6 @@ serde_json = "1.0.81"
 #serde_json = { version = "1.0", features = [ "raw_value" ] }
 
 rmp-serde = "1.1.0" 
-bincode = "1.3.3"
 
 #passwords = "3.1.9"
 [dependencies.passwords]
@@ -48,7 +52,7 @@ features = ["common-password"]
 env_logger = "0.8.4"
 mockall = "0.10.2"
 rstest = "0.11.0"
-bincode = "1.3.3"
-bson = "2.3.0"
+botan = {version = "0.10.3", features = ["vendored"] } 
+alkali = { version = "0.3.0", features = ["aes","hazmat"] }
 
 

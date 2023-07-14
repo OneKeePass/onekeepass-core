@@ -623,23 +623,20 @@ impl Entry {
     ) {
         let he_encoded_et_opt = hist_entry.custom_data.get_item_value(OKP_ENTRY_TYPE_DATA);
         if let Some(he_encoded_et_str) = he_encoded_et_opt {
-            debug!(
-                "History type data {:?} found in custom item",
-                he_encoded_et_str
-            );
+            //debug!("History type data {:?} found in custom item", he_encoded_et_str);
             if encoded_entry_types.contains(&he_encoded_et_str.into()) {
                 // unwrap will not fail as he_encoded_et_str is found in encoded_entry_types
                 let index = encoded_entry_types
                     .iter()
                     .position(|x| x == &he_encoded_et_str)
                     .unwrap();
-                debug!("Index of history type data is {} and will be set as value of  OKP_ENTRY_TYPE_DATA_INDEX", index);
+                //debug!("Index of history type data is {} and will be set as value of  OKP_ENTRY_TYPE_DATA_INDEX", index);
                 hist_entry
                     .custom_data
                     .insert_item(Item::from_kv(OKP_ENTRY_TYPE_DATA_INDEX, &index.to_string()));
             } else {
                 if current_entry_type == he_encoded_et_opt {
-                    debug!("Entry type of history entry and entry matched and will not be added to the encoded_entry_types list");
+                    //debug!("Entry type of history entry and entry matched and will not be added to the encoded_entry_types list");
                     // this history entry's entry type is the same as entry's and it is the last entry in history entries
                     hist_entry.custom_data.insert_item(Item::from_kv(
                         OKP_ENTRY_TYPE_DATA_INDEX,
@@ -652,10 +649,7 @@ impl Entry {
                         OKP_ENTRY_TYPE_DATA_INDEX,
                         &(encoded_entry_types.len() - 1).to_string(),
                     ));
-                    debug!(
-                        "Else Index of history type data is {} and  added encoded_entry_type",
-                        (encoded_entry_types.len() - 1)
-                    );
+                    //debug!("Else Index of history type data is {} and  added encoded_entry_type",(encoded_entry_types.len() - 1));
                 }
             }
             // Remove the Item OKP_ENTRY_TYPE_DATA (if any) of the history entry 'he' as
@@ -667,10 +661,9 @@ impl Entry {
     // Only the last history entry' entry type data serialization is taken care of
     fn serialize_last_history_entry_entry_type_data(&mut self) {
         let mut encoded_entry_types: Vec<String> = self.encoded_entry_types(false);
-        debug!(
-            "Last history_entry Begin Entry's encoded_entry_types is {:?}",
-            encoded_entry_types
-        );
+
+        // debug!("Last history_entry Begin Entry's encoded_entry_types is {:?}",encoded_entry_types);
+
         let current_entry_type = self.custom_data.get_item_value(OKP_ENTRY_TYPE_DATA);
         // Get the recently inserted history entry
         if let Some(he) = self.history.entries.last_mut() {
@@ -681,10 +674,8 @@ impl Entry {
             );
         }
 
-        debug!(
-            "Last history_entry End Entry's encoded_entry_types is {:?}",
-            encoded_entry_types
-        );
+        //debug!("Last history_entry End Entry's encoded_entry_types is {:?}",encoded_entry_types);
+
         // Update the entry's OKP_ENTRY_TYPE_LIST_DATA using v from above
         self.update_encoded_entry_type_list_data(encoded_entry_types);
     }

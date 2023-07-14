@@ -58,14 +58,23 @@ pub struct DbSettings {
     pub cipher_id: ContentCipherId,
     pub password: Option<String>,
     pub key_file_name: Option<String>,
+    // Just the file name component of the full key file name 'key_file_name'
+    // Used in mobile mainly
+    pub key_file_name_part:Option<String>,
     pub database_file_name: String,
     pub meta: MetaFormData,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct KdbxLoaded {
+    // Full database uri
     pub db_key: String,
+    // Just the database name
     pub database_name: String,
+    // The file name part of full database uri
+    pub file_name:Option<String>,
+    // Full key file uri
+    pub key_file_name:Option<String>,
 }
 
 impl KdbxLoaded {
@@ -73,6 +82,8 @@ impl KdbxLoaded {
         Self {
             db_key: String::default(),
             database_name: String::default(),
+            file_name:None,
+            key_file_name:None,
         }
     }
 }

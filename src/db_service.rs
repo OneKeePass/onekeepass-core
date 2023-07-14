@@ -1,10 +1,12 @@
-pub use crate::db::NewDatabase;
+pub use crate::db::{
+    KeyStoreOperation, KeyStoreService, KeyStoreServiceType, NewDatabase, SecureKeyInfo,
+};
 pub use crate::db_content::{AllTags, Entry, EntryType, FieldDataType, Group};
 pub use crate::error;
 pub use crate::error::{Error, Result};
 pub use crate::form_data::*;
 pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions, PasswordScore};
-pub use crate::util::string_to_simple_hash;
+pub use crate::util::{file_name, formatted_key, string_to_simple_hash};
 
 use crate::db::{self, write_kdbx_file, write_kdbx_file_with_backup_file, KdbxFile};
 use crate::db_content::{standard_types_ordered_by_id, AttachmentHashValue, KeepassFile};
@@ -15,7 +17,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs::File;
-use std::io::{BufReader, Read, Seek, Write, Cursor};
+use std::io::{BufReader, Cursor, Read, Seek, Write};
 use std::path::Path;
 use std::{
     collections::HashMap,
@@ -232,8 +234,15 @@ pub fn load_kdbx(
     password: &str,
     key_file_name: Option<&str>,
 ) -> Result<KdbxLoaded> {
-    let mut db_file_read = db::open_db_file(db_file_name)?;
-    read_kdbx(&mut db_file_read, db_file_name, password, key_file_name)
+    let mut db_file_reader = db::open_db_file(db_file_name)?;
+    let file_name = util::file_name(&db_file_name);
+    read_kdbx(
+        &mut db_file_reader,
+        db_file_name,
+        password,
+        key_file_name,
+        file_name.as_deref(),
+    )
 }
 
 // Gets a ref to the main keepass content
@@ -248,19 +257,23 @@ macro_rules! to_keepassfile {
 }
 
 // Used for both desktop and mobile
+// db_file_name is full uri and used as db_key in all subsequent calls
 pub fn read_kdbx<R: Read + Seek>(
     reader: &mut R,
     db_file_name: &str,
     password: &str,
     key_file_name: Option<&str>,
+    file_name: Option<&str>,
 ) -> Result<KdbxLoaded> {
     let kdbx_file = db::read_db_from_reader(reader, db_file_name, password, key_file_name)?;
 
     let kp = to_keepassfile!(kdbx_file);
-
+    //let file_name = util::file_name(&db_file_name);
     let kdbx_loaded = KdbxLoaded {
         db_key: db_file_name.into(),
         database_name: kp.meta.database_name.clone(),
+        key_file_name: key_file_name.map(|s| s.to_string()),
+        file_name: file_name.map(|s| s.to_string()),
     };
 
     let mut kdbx_context = KdbxContext::default();
@@ -276,6 +289,29 @@ pub fn read_kdbx<R: Read + Seek>(
     Ok(kdbx_loaded)
 }
 
+// Desktop
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows",))]
+pub fn reload_kdbx(db_key: &str) -> Result<KdbxLoaded> {
+    call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
+        // db_key is full database file uri
+        let mut db_file_reader = db::open_db_file(db_key)?;
+        let reloaded_kdbx_file = db::reload(&mut db_file_reader, &ctx.kdbx_file)?;
+        let kp = to_keepassfile!(reloaded_kdbx_file);
+
+        let file_name = util::file_name(db_key);
+        let kdbx_loaded = KdbxLoaded {
+            db_key: db_key.into(),
+            database_name: kp.meta.database_name.clone(),
+            file_name,
+            key_file_name: ctx.kdbx_file.get_key_file_name(),
+        };
+
+        ctx.kdbx_file = reloaded_kdbx_file;
+
+        Ok(kdbx_loaded)
+    })
+}
+
 pub fn all_kdbx_cache_keys() -> Result<Vec<String>> {
     let store = main_store().lock().unwrap();
     let mut vec = vec![];
@@ -283,6 +319,20 @@ pub fn all_kdbx_cache_keys() -> Result<Vec<String>> {
         vec.push(k.clone());
     }
     Ok(vec)
+}
+
+pub fn close_all_databases() -> Result<()> {
+    if let Ok(keys) = all_kdbx_cache_keys() {
+        for k in keys {
+            let _r = close_kdbx(&k);
+        }
+    }
+    Ok(())
+}
+
+// Called to generate random 32 bytes key and stored in an xml file (Version 2.0) 
+pub fn generate_key_file(key_file_name: &str) -> Result<()> {
+    db::create_key_file(key_file_name)
 }
 
 // TODO: Refactor create_kdbx (used mainly for desktop app) and create_and_write_to_writer to use common functionalties
@@ -300,9 +350,12 @@ pub fn create_kdbx(new_db: NewDatabase) -> Result<KdbxLoaded> {
     }
     let kdbx_file = new_db.create()?;
     let kp = to_keepassfile!(kdbx_file);
+    let file_name = util::file_name(&new_db.database_file_name);
     let kdbx_loaded = KdbxLoaded {
         db_key: new_db.database_file_name.clone(),
         database_name: kp.meta.database_name.clone(),
+        file_name,
+        key_file_name: kdbx_file.get_key_file_name(),
     };
 
     // IMPORTANT:
@@ -346,6 +399,11 @@ pub fn create_and_write_to_writer<W: Read + Write + Seek>(
     let kdbx_loaded = KdbxLoaded {
         db_key: new_db.database_file_name.clone(),
         database_name: kp.meta.database_name.clone(),
+        // only for android 'file_name' will have some value.
+        // In case of iOS, not done as full uri is temp one
+        // For desktop, see create_kdbx
+        file_name: new_db.file_name,
+        key_file_name: new_db.key_file_name,
     };
 
     // IMPORTANT:
@@ -365,13 +423,11 @@ pub fn create_and_write_to_writer<W: Read + Write + Seek>(
     // Mutex guard is now released
     // Save the newly created db to the file system for persistence
     // See above block comment. The drop(main_store()) is not working;Also there is no method 'unclock' in Mutex yet;
-    save_kdbx_to_writer(&mut buf , &new_db.database_file_name)?; //new_db.database_file_name is the db_key
+    save_kdbx_to_writer(&mut buf, &new_db.database_file_name)?; //new_db.database_file_name is the db_key
     buf.rewind()?;
-    debug!("Setting the checksum for the new database");
     calculate_db_file_checksum(&new_db.database_file_name, &mut buf)?;
-    buf.rewind()?;  //do we require this
+    buf.rewind()?; //do we require this
     std::io::copy(&mut buf, writer)?;
-    debug!("New db data is copied from buf to file");
 
     //Ok(new_db.database_file_name.clone())
     Ok(kdbx_loaded)
@@ -386,6 +442,7 @@ pub fn close_kdbx(db_key: &str) -> Result<()> {
     // ask the user to save or not if there are any unsaved changes
 
     store.remove(db_key);
+    KeyStoreOperation::delete_key(db_key)?;
     Ok(())
 }
 
@@ -408,7 +465,7 @@ pub fn save_kdbx_with_backup(
     Ok(kdbx_saved)
 }
 
-// Mobile 
+// Mobile
 pub fn verify_db_file_checksum<R: Read + Seek>(db_key: &str, reader: &mut R) -> Result<()> {
     call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
         db::verify_db_file_checksum(&mut ctx.kdbx_file, reader)
@@ -507,14 +564,20 @@ pub fn save_all_modified_dbs_with_backups(
 
 /// Saves to a new db file in desktop app and returns the db key in KdbxLoaded when successfully the file is saved
 pub fn save_as_kdbx(db_key: &str, database_file_name: &str) -> Result<KdbxLoaded> {
+    // Need to copy the encrytion key for the new name from the existing one
+    db::KeyStoreOperation::copy_key(db_key, database_file_name)?;
+
     let kdbx_loaded = call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
         ctx.kdbx_file.set_database_file_name(database_file_name);
         write_kdbx_file(&mut ctx.kdbx_file, true)?;
         // All changes are now saved to file
         ctx.save_pending = false;
+        let file_name = util::file_name(&database_file_name);
         Ok(KdbxLoaded {
             db_key: database_file_name.into(),
             database_name: ctx.kdbx_file.get_database_name().into(),
+            file_name,
+            key_file_name: ctx.kdbx_file.get_key_file_name(),
         })
     })?;
 
@@ -523,18 +586,25 @@ pub fn save_as_kdbx(db_key: &str, database_file_name: &str) -> Result<KdbxLoaded
     if let Some(v) = store.remove(db_key) {
         store.insert(database_file_name.into(), v);
     }
+
+    // Remove the old encryption key for the old db_key
+    db::KeyStoreOperation::delete_key(db_key)?;
+
     Ok(kdbx_loaded)
 }
 
-// Mobile 
+// Mobile
 /// Called to rename the db key used and the database_file_name as we know
 /// the full db file name and db_key are used interchangeabley
 pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
     let kdbx_loaded = call_kdbx_context_mut_action(old_db_key, |ctx: &mut KdbxContext| {
         ctx.kdbx_file.set_database_file_name(new_db_key);
+
         Ok(KdbxLoaded {
             db_key: new_db_key.into(),
             database_name: ctx.kdbx_file.get_database_name().into(),
+            file_name: None,
+            key_file_name: None,
         })
     })?;
 
@@ -544,6 +614,18 @@ pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
     }
 
     Ok(kdbx_loaded)
+}
+
+// Called after user has successfully completed the biometeric based authentication
+pub fn unlock_kdbx_on_biometric_authentication(db_key: &str) -> Result<KdbxLoaded> {
+    kdbx_context_action!(db_key, |ctx: &KdbxContext| {
+        Ok(KdbxLoaded {
+            db_key: db_key.into(),
+            database_name: ctx.kdbx_file.get_database_name().into(),
+            file_name: util::file_name(db_key),
+            key_file_name: ctx.kdbx_file.get_key_file_name(),
+        })
+    })
 }
 
 /// Compares the entered credentials with the stored one for a quick unlock of the db
@@ -557,11 +639,19 @@ pub fn unlock_kdbx(
             Ok(KdbxLoaded {
                 db_key: db_key.into(),
                 database_name: ctx.kdbx_file.get_database_name().into(),
+                file_name: util::file_name(db_key),
+                key_file_name: ctx.kdbx_file.get_key_file_name(),
             })
         } else {
-            // Same error as if db file verification failure as in load_kdbx
+            // Same error as if db file verification failure happening in load_kdbx
             Err(Error::HeaderHmacHashCheckFailed)
         }
+    })
+}
+
+pub fn read_and_verify_db_file(db_key: &str) -> Result<()> {
+    call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
+        db::read_and_verify_db_file(&mut ctx.kdbx_file)
     })
 }
 
@@ -587,11 +677,16 @@ pub fn get_db_settings(db_key: &str) -> Result<DbSettings> {
     kdbx_context_action!(db_key, |ctx: &KdbxContext| {
         let kp = to_keepassfile!(ctx.kdbx_file);
 
+        let key_file_name = ctx.kdbx_file.get_key_file_name();
+        //Used only in Mobile apps
+        let key_file_name_part = key_file_name.as_ref().and_then(|s| util::file_name(s));
+
         let db_settings = DbSettings {
             kdf: ctx.kdbx_file.get_kdf_algorithm(),
             cipher_id: ctx.kdbx_file.get_content_cipher_id(),
             password: None,
-            key_file_name: ctx.kdbx_file.get_key_file_name(),
+            key_file_name,
+            key_file_name_part,
             database_file_name: ctx.kdbx_file.get_database_file_name().to_string(),
             meta: (&kp.meta).into(),
         };
@@ -610,9 +705,11 @@ pub fn set_db_settings(db_key: &str, db_settings: DbSettings) -> Result<()> {
         kp.meta.update((&db_settings.meta).into())?;
         // Password changed
         if let Some(s) = db_settings.password {
-            ctx.kdbx_file.set_password(&s);
+            ctx.kdbx_file.set_password(&s)?;
         }
-        // TODO: Check the existence of 'key_file_name' and return error before calling set_file_key
+        // TODO:
+        // Need to add some flag in DbSettings so that we can avoid calling 'set_file_key' if there is no change in key file use.
+        // For now some checks are done in kdbx_file.set_file_key and avoids reading and creating file content hash etc i
         ctx.kdbx_file
             .set_file_key(db_settings.key_file_name.as_deref())?;
 

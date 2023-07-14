@@ -22,8 +22,12 @@ pub enum Error {
     #[error("{0}")]
     Io(#[from] io::Error),
 
-    #[error("The database file is not a valid one")]
+    #[error("The database file is not a valid Keepass file")]
     InvalidKeePassFile,
+    #[error("The database file is a Keepass 1 database. This is not supported by OneKeePass. Only Keepass 2 database with KDBX format version 4.x is supported")]
+    OldUnsupportedKeePass1,
+    #[error("The database file is an older version Kdbx 2 or Kdbx 3 formatted file. This is not supported by OneKeePass. Only Keepass 2 database with KDBX format version 4.x is supported")]
+    OldUnsupportedKdbxFormat,
 
     /// Unknown database cipher UUID.
     /// Only `ChaCha20` and `AES256` are supported.
@@ -44,8 +48,8 @@ pub enum Error {
     BlockHashCheckFailed,
 
     /// Unknown key derivation function UUID.
-    #[error("Invalid KDF ID.Only `Argon2` and `AES` are supported")]
-    UnsupportedKdf(Vec<u8>),
+    // #[error("Invalid KDF ID.Only `Argon2` and `AES` are supported")]
+    // UnsupportedKdf(Vec<u8>),
     #[error("{0}")]
     UnsupportedKdfAlgorithm(String),
     #[error("Only Argon 2d kdf algorithm is supported")]
@@ -81,6 +85,21 @@ pub enum Error {
 
     #[error("{0}")]
     JsonConversionError(#[from] serde_json::Error),
+
+    #[error("HexDecodeError:{0}")]
+    HexDecodeError(#[from]hex::FromHexError),
+
+    #[error("Key file is not an xml file")]
+    NotXmlKeyFile,
+
+    #[error("Key file xml file with version 1 is not supported")]
+    UnsupportedXmlKeyFileVersion,
+
+    #[error("SecureKeyOperationError {0}")]
+    SecureKeyOperationError(String),
+
+    #[error("DuplicateKeyFileName:{0}")]
+    DuplicateKeyFileName(String),
 
     // See DataError where we can use str
     // Other is used where we can use format!

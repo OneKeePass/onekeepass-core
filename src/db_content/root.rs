@@ -58,7 +58,7 @@ impl GroupVisitor for InOrderIds {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct Root {
     pub(crate) root_uuid: Uuid,
     pub(crate) recycle_bin_uuid: Uuid,
