@@ -42,7 +42,7 @@ pub enum Error {
 
     #[error("Header corrupted")] //#[error("Header Hash Check Failed")]
     HeaderHashCheckFailed,
-    #[error("Please enter valid password")]
+    #[error("Invalid credentials were provided, please try again")]
     HeaderHmacHashCheckFailed,
     #[error("BlockHashCheckFailed")]
     BlockHashCheckFailed,

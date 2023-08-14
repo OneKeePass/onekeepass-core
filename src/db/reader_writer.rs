@@ -313,8 +313,8 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
     fn read_xml_content(&mut self, xml_bytes: &[u8]) -> Result<()> {
         // TODO:
         // Following are used for any debugging to see the XML content during development.
-        // This should be removed after making some commnad line program
-        // write_xml_to_file("xml-dump/test_read.xml", xml_bytes)?;
+        // This should be removed after making some command line program
+        // super::write_xml_to_file("xml-dump/test_read.xml", xml_bytes)?;
         // println!("xml_bytes size {}", std::str::from_utf8(xml_bytes).expect("utf conversion failed"));
 
         let cipher = ProtectedContentStreamCipher::try_from(
