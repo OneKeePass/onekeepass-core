@@ -314,15 +314,21 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
         // TODO:
         // Following are used for any debugging to see the XML content during development.
         // This should be removed after making some command line program
-        // super::write_xml_to_file("xml-dump/test_read.xml", xml_bytes)?;
-        // println!("xml_bytes size {}", std::str::from_utf8(xml_bytes).expect("utf conversion failed"));
+        // super::write_xml_to_file("xml-dump/test_read.xml", &xml_bytes)?;
+        
+        let dump_xml_file_name = temp_raw_xml_dump_file_name("test_read.xml");
+        super::write_xml_to_file(&dump_xml_file_name,xml_bytes).unwrap();
+        println!("Wrote the raw xml to the file {}",&dump_xml_file_name);
+        //println!("xml_bytes size {}", std::str::from_utf8(xml_bytes).expect("utf conversion failed"));
 
         let cipher = ProtectedContentStreamCipher::try_from(
             self.kdbx_file.inner_header.stream_cipher_id,
             &self.kdbx_file.inner_header.inner_stream_key,
         )
         .unwrap();
+        
         let mut r = xml_parse::parse(xml_bytes, Some(cipher))?;
+
         // IMPORTANT:We need to set attachment hashes in all entries read from xml
         r.after_xml_reading(
             self.kdbx_file
@@ -334,6 +340,15 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
         Ok(())
     }
 }
+
+fn temp_raw_xml_dump_file_name(name: &str) -> String {
+    let mut path = std::env::temp_dir();
+    //println!("The current directory is {}", path.display());
+    path.push(name);
+    //println!("The current directory is {}", path.display());
+    path.to_str().unwrap().into()
+}
+
 
 /////
 

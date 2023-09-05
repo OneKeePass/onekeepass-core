@@ -574,7 +574,6 @@ pub fn write_kdbx_file(kdbx_file: &mut KdbxFile, overwrite: bool) -> Result<()> 
     if !overwrite {
         // Need to ensure that file is not changed outside our app
         verify_db_file_checksum(kdbx_file, &mut file)?;
-        debug!("No backup is done.Called read_and_verify_db_file and no changes found");
         // file stream position is reset to the start. Is it required?
         file.rewind()?;
     }

@@ -568,7 +568,9 @@ pub fn save_as_kdbx(db_key: &str, database_file_name: &str) -> Result<KdbxLoaded
     db::KeyStoreOperation::copy_key(db_key, database_file_name)?;
 
     let kdbx_loaded = call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
+        // database_file_name is full name uri and will be used the new saved as file's db_key
         ctx.kdbx_file.set_database_file_name(database_file_name);
+        
         write_kdbx_file(&mut ctx.kdbx_file, true)?;
         // All changes are now saved to file
         ctx.save_pending = false;

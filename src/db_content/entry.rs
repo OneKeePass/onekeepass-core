@@ -141,6 +141,7 @@ pub struct Entry {
     //pub key_values: Vec<KeyValue>,
     pub binary_key_values: Vec<BinaryKeyValue>,
     pub custom_data: CustomData,
+    pub auto_type: AutoType,
     pub history: History,
     #[serde(skip)]
     pub(crate) meta_share: Arc<MetaShare>,
@@ -158,6 +159,7 @@ impl Entry {
             //key_values: vec![],
             binary_key_values: vec![],
             custom_data: CustomData::default(),
+            auto_type: AutoType::default(),
             //history has a list of previous entries and those entries listed will have its 'history' empty
             history: History::default(),
             meta_share: Arc::default(),
@@ -714,6 +716,27 @@ pub struct BinaryKeyValue {
     #[serde(with = "util::from_or_to::string")]
     pub data_hash: AttachmentHashValue,
     pub data_size: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoType {
+    pub(crate) enabled: bool,
+    // None means inherits the parent group's sequence if enabled
+    // default_sequence can be set at entry level overriding the inherited one
+    pub(crate) default_sequence: Option<String>,
+    pub (crate) associations: Vec<Association>,
+}
+
+impl Default for AutoType {
+    fn default() -> Self {
+        Self { enabled: true, default_sequence: None, associations: vec![]}
+    }
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct Association {
+    pub(crate) window: String,
+    pub(crate) key_stroke_sequence: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
