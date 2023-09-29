@@ -315,7 +315,7 @@ impl Root {
     pub fn update_group(&mut self, group: Group) {
         //TODO: Need return error if this group is not present
 
-        if let Some(mut g) = self.all_groups.get_mut(&group.uuid) {
+        if let Some(g) = self.all_groups.get_mut(&group.uuid) {
             let mut times = g.times.clone();
             times.last_access_time = util::now_utc();
             times.last_modification_time = times.last_access_time.clone();
@@ -356,7 +356,7 @@ impl Root {
                 .ok_or("The recycled entry is not found in All Entries map")?;
         }
 
-        let mut recycle_group = self
+        let recycle_group = self
             .all_groups
             .get_mut(&recycle_group_uuid)
             .ok_or("The recycle group is not found in All Groups map")?;

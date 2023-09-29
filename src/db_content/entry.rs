@@ -249,6 +249,8 @@ impl Entry {
         self.icon_id = updated_entry.icon_id;
         self.tags = updated_entry.tags;
 
+        self.auto_type = updated_entry.auto_type;
+
         self.entry_field = updated_entry.entry_field;
 
         // Call copy_to_custom_data after we set entry_field from the incoming updated_entry
@@ -379,6 +381,15 @@ impl Entry {
         self.entry_field
             .find_key_value(name)
             .map(|x| x.value.clone())
+    }
+
+    // Collects all entry field names and values (not in any particular order)
+    pub fn field_values(&self) -> HashMap<String, String> {
+        self.entry_field
+            .get_key_values()
+            .into_iter()
+            .map(|k| (k.key.clone(), k.value.clone()))
+            .collect()
     }
 }
 
@@ -724,12 +735,16 @@ pub struct AutoType {
     // None means inherits the parent group's sequence if enabled
     // default_sequence can be set at entry level overriding the inherited one
     pub(crate) default_sequence: Option<String>,
-    pub (crate) associations: Vec<Association>,
+    pub(crate) associations: Vec<Association>,
 }
 
 impl Default for AutoType {
     fn default() -> Self {
-        Self { enabled: true, default_sequence: None, associations: vec![]}
+        Self {
+            enabled: true,
+            default_sequence: None,
+            associations: vec![],
+        }
     }
 }
 

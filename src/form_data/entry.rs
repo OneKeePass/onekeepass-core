@@ -11,7 +11,7 @@ use crate::util::{self, empty_str};
 
 use crate::db_content::{
     join_tags, split_tags, BinaryKeyValue, Entry, EntryField, EntryType, FieldDataType, FieldDef,
-    KeyValue, Section,
+    KeyValue, Section, AutoType,
 };
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -109,7 +109,7 @@ lazy_static! {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 //#[serde(rename_all = "kebab-case")]
 // Using the rename will only this struct. It will not rename the child struct fields 'kebab-case' unless
-// that child is also this attribute. For now the UI layer changes to the required case
+// that child is also has this attribute. For now the UI layer changes to the required case
 pub struct EntryFormData {
     pub uuid: Uuid,
     pub group_uuid: Uuid,
@@ -132,6 +132,8 @@ pub struct EntryFormData {
     pub standard_section_names: Vec<String>,
     pub section_names: Vec<String>,
     pub section_fields: HashMap<String, Vec<KeyValueData>>,
+
+    pub auto_type: AutoType,
 }
 
 impl EntryFormData {
@@ -261,6 +263,8 @@ impl EntryFormData {
             expires: entry.times.expires,
             expiry_time: entry.times.expiry_time,
 
+            auto_type:entry.auto_type.clone(),
+
             history_count: entry.history.entries.len() as i32,
             entry_type_name,
             entry_type_uuid,
@@ -272,6 +276,7 @@ impl EntryFormData {
             standard_section_names,
             section_names,
             section_fields,
+            
         }
     }
 
@@ -333,7 +338,9 @@ impl EntryFormData {
         entry.tags = join_tags(&entry_form_data.tags);
         entry.times.expires = entry_form_data.expires;
         entry.times.expiry_time = entry_form_data.expiry_time;
-
+        
+        entry.auto_type = entry_form_data.auto_type.clone();
+        
         entry
     }
 

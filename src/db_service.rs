@@ -949,6 +949,16 @@ pub fn get_entry_form_data_by_id(db_key: &str, entry_uuid: &Uuid) -> Result<Entr
     })
 }
 
+// Collects all entry field names and its values (not in any particular order)
+pub fn entry_key_value_fields(db_key: &str, entry_uuid: &Uuid) -> Result<HashMap<String,String>> {
+    main_content_action!(db_key, move |k: &KeepassFile| {
+        match k.root.entry_by_id(entry_uuid) {
+            Some(e) => Ok(e.field_values()),
+            None => Err(Error::NotFound("No entry Entry found for the id".into())),
+        }
+    })
+}
+
 pub fn history_entry_by_index(
     db_key: &str,
     entry_uuid: &Uuid,
