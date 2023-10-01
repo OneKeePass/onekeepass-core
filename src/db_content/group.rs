@@ -22,6 +22,10 @@ pub struct Group {
     #[serde(skip)]
     pub(crate) last_top_visible_group: Uuid,
     pub(crate) marked_category: bool,
+
+    pub(crate) default_auto_type_sequence: Option<String>,
+    pub(crate) enable_auto_type: Option<bool>,
+
     //Only the child group uuids are kept here and used to do lookup in 'root.all_groups'
     #[serde(default)]
     pub(crate) group_uuids: Vec<Uuid>,
@@ -44,6 +48,14 @@ impl Group {
             custom_data: CustomData::default(),
             last_top_visible_group: Uuid::default(),
             marked_category: true,
+
+            // Not sure these are used by keepass at all and it looks like mostly used whatever set in entries
+            // None means inherit from parent settings for all entries
+            // False if auto type is diabled for entries for this group
+            // True if auto type is enabled for entries for this group 
+            enable_auto_type: None,
+            default_auto_type_sequence: None,
+
             group_uuids: vec![],
             entry_uuids: vec![],
         }

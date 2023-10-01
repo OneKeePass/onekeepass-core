@@ -568,7 +568,9 @@ pub fn save_as_kdbx(db_key: &str, database_file_name: &str) -> Result<KdbxLoaded
     db::KeyStoreOperation::copy_key(db_key, database_file_name)?;
 
     let kdbx_loaded = call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
+        // database_file_name is full name uri and will be used the new saved as file's db_key
         ctx.kdbx_file.set_database_file_name(database_file_name);
+        
         write_kdbx_file(&mut ctx.kdbx_file, true)?;
         // All changes are now saved to file
         ctx.save_pending = false;
@@ -942,6 +944,16 @@ pub fn get_entry_form_data_by_id(db_key: &str, entry_uuid: &Uuid) -> Result<Entr
     main_content_action!(db_key, move |k: &KeepassFile| {
         match k.root.entry_by_id(entry_uuid) {
             Some(e) => Ok(e.into()),
+            None => Err(Error::NotFound("No entry Entry found for the id".into())),
+        }
+    })
+}
+
+// Collects all entry field names and its values (not in any particular order)
+pub fn entry_key_value_fields(db_key: &str, entry_uuid: &Uuid) -> Result<HashMap<String,String>> {
+    main_content_action!(db_key, move |k: &KeepassFile| {
+        match k.root.entry_by_id(entry_uuid) {
+            Some(e) => Ok(e.field_values()),
             None => Err(Error::NotFound("No entry Entry found for the id".into())),
         }
     })

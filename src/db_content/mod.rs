@@ -8,7 +8,9 @@ mod root;
 mod standard_entry_types;
 
 pub(crate) use self::custom_data::{CustomData, Item};
-pub use self::entry::{BinaryKeyValue, Entry, EntryField, History, KeyValue};
+pub use self::entry::{
+    Association, AutoType, BinaryKeyValue, Entry, EntryField, History, KeyValue,
+};
 pub use self::entry_type::{EntryType, FieldDataType, FieldDef, Section};
 pub use self::group::Group;
 pub use self::keepass::KeepassFile;

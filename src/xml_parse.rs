@@ -178,6 +178,25 @@ fn content_to_uuid(content: &String) -> uuid::Uuid {
     }
 }
 
+#[inline]
+fn content_to_string_opt(content: String) -> Option<String> {
+    if content.trim().is_empty() {
+        None
+    } else {
+        Some(content)
+    }
+}
+
+#[inline]
+fn bool_to_xml_bool(flag:bool) -> String {
+    if flag {
+        "True".into()
+    } else {
+        "False".into()
+    }
+}
+
+
 impl<B: BufRead> XmlReader<B> {
     pub fn new(data: B, cipher: Option<ProtectedContentStreamCipher>) -> XmlReader<B> {
         let mut qxmlreader = QuickXmlReader::from_reader(data);
@@ -460,7 +479,14 @@ impl<B: BufRead> XmlReader<B> {
                 LAST_TOP_VISIBLE_ENTRY => (|content:String, _,  _| group.last_top_visible_group = content_to_uuid(&content)),
                 IS_EXPANDED => (|content:String, _,  _| group.is_expanded = content_to_bool(content)),
                 NOTES => (|content:String, _,  _| group.notes = content),
-                TAGS => (|content:String, _,  _| group.tags = content)
+                TAGS => (|content:String, _,  _| group.tags = content),
+                ENABLE_AUTO_TYPE => (|content:String, _,  _| {
+                    if content.trim().to_lowercase() == "null" {
+                        group.enable_auto_type = None
+                    } else {
+                        group.enable_auto_type = Some(content_to_bool(content))
+                    }
+                })
             },
             start_tag_blks {
                 TIMES => {
@@ -515,6 +541,9 @@ impl<B: BufRead> XmlReader<B> {
                 },
                 CUSTOM_DATA => {
                     self.read_custom_data(&mut entry.custom_data)?;
+                },
+                AUTO_TYPE => {
+                    entry.auto_type = self.read_auto_type()?;
                 }
             },
             empty_tags {},
@@ -607,6 +636,49 @@ impl<B: BufRead> XmlReader<B> {
         );
 
         Ok(kv)
+    }
+
+    /// Reads the "AutoType" tag content. Each "AutoType" tag has 0 or more Association
+    fn read_auto_type(&mut self) -> Result<AutoType> {
+        let mut auto_type = AutoType::default();
+        read_tags!(self,
+            start_tag_fns {
+                ENABLED =>
+                (|content:String, _attributes, _cipher| {
+                    auto_type.enabled = content_to_bool(content);
+                }),
+                DEFAULT_SEQUENCE => (|content:String, _attributes, _cipher| {
+                    auto_type.default_sequence = content_to_string_opt(content);
+                })
+            },
+            start_tag_blks {
+                ASSOCIATION => {
+                    auto_type.associations.push(self.read_auto_type_association()?);
+                }
+            },
+            empty_tags {},
+            AUTO_TYPE
+        );
+        Ok(auto_type)
+    }
+
+    fn read_auto_type_association(&mut self) -> Result<Association> {
+        let mut association = Association::default();
+        read_tags!(self,
+            start_tag_fns {
+                WINDOW =>
+                (|content:String, _attributes, _cipher| 
+                    association.window = content),
+
+                KEY_STROKE_SEQUENCE =>
+                (|content:String, _, _| 
+                    association.key_stroke_sequence = content_to_string_opt(content))
+            },
+            start_tag_blks {},
+            empty_tags {},
+            ASSOCIATION
+        );
+        Ok(association)
     }
 
     fn read_times(&mut self, times: &mut Times) -> Result<()> {
@@ -908,6 +980,30 @@ impl<W: Write> XmlWriter<W> {
         Ok(())
     }
 
+    // Writes the AutoType tag and its children
+    fn write_entry_auto_type(&mut self, auto_type: &AutoType) -> Result<()> {
+        self.writer
+            .write_event(Event::Start(BytesStart::borrowed_name(AUTO_TYPE)))?;
+        write_tags! { self,
+            ENABLED, bool_to_xml_bool(auto_type.enabled),
+            DEFAULT_SEQUENCE,  auto_type.default_sequence.as_ref().map_or("", |s| s)
+        };
+
+        // Writes Association tag and its children  
+        for association in auto_type.associations.iter() {
+            write_parent_child_tags! { 
+                self,
+                ASSOCIATION,
+                WINDOW, association.window,
+                KEY_STROKE_SEQUENCE, association.key_stroke_sequence.as_ref().map_or("", |s| s)
+            };
+        }
+
+        self.writer
+            .write_event(Event::End(BytesEnd::borrowed(AUTO_TYPE)))?;
+        Ok(())
+    }
+
     fn write_entry_data(&mut self, entry: &Entry, in_history: bool) -> Result<()> {
         self.writer
             .write_event(Event::Start(BytesStart::borrowed_name(ENTRY)))?;
@@ -957,6 +1053,8 @@ impl<W: Write> XmlWriter<W> {
         }
         // Entry's Custom Data
         self.write_custom_data(&entry.custom_data)?;
+
+        self.write_entry_auto_type(&entry.auto_type)?;
 
         // We need to exclude the History tag while writing the child Entry tag that comes under the History tag
         if !in_history {

@@ -194,6 +194,28 @@ pub mod xml_element {
     pub const VALUE: &[u8] = b"Value"; //
     pub const HISTORY: &[u8] = b"History";
 
+    // AutoKey related
+    // Entry level
+    pub const AUTO_TYPE: &[u8] = b"AutoType";
+    pub const ENABLED: &[u8] = b"Enabled";
+    // empty means use the inherited default one (from group)
+    pub const DEFAULT_SEQUENCE: &[u8] = b"DefaultSequence";  
+    // multiple association possible for an entry
+    pub const ASSOCIATION: &[u8] = b"Association";
+    pub const WINDOW: &[u8] = b"Window";
+    // KeystrokeSequence cab be empty empty. If so, use the entry's default sequence
+    pub const KEY_STROKE_SEQUENCE: &[u8] = b"KeystrokeSequence";
+
+    // <EnableAutoType>null</EnableAutoType> when 'Inherit from parent is diabled'
+    // <EnableAutoType>true</EnableAutoType> when 'enable' is selected
+
+    pub const ENABLE_AUTO_TYPE: &[u8] = b"EnableAutoType"; // Group level ? 
+    // <DefaultAutoTypeSequence/> when default parent's AutoTypeSequence is enabled
+    // <DefaultAutoTypeSequence>{USERNAME}</DefaultAutoTypeSequence> when custom AutoTypeSequence is used
+    pub const DEFAULT_AUTO_TYPE_SEQUENCE: &[u8] = b"DefaultAutoTypeSequence"; // Group level
+    
+    pub const DATA_TRANSFER_OBFUSCATION: &[u8] = b"DataTransferObfuscation";  // entry level - not used ?
+
     //pub const KEEPASS_FILE_TAGS:&[&[u8]] = &[META,ROOT];
 }
 
@@ -205,7 +227,6 @@ pub mod key_file_xml_element {
     pub const KEY_FILE_DATA: &[u8] = b"Data";
     pub const KEY_FILE_DATA_HASH: &[u8] = b"Hash";
 }
-
 
 #[allow(dead_code)]
 pub mod uuid {
@@ -227,6 +248,7 @@ pub mod uuid {
         0xFF,
     ];
 }
+
 //Types used in VariantDictionary VdType
 #[allow(dead_code)]
 pub mod vd_type {
@@ -265,6 +287,7 @@ pub mod vd_param {
         pub const DEFAULT_ROUNDS: &[u8] = &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
     }
 }
+
 // All ids from enum KdbxHeaderFieldID of KeePassLib/Serialization/KdbxFile.cs and Only KDBX 4 ids are considered
 #[allow(dead_code)]
 pub mod header_type {

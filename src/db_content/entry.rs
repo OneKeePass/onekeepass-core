@@ -141,6 +141,7 @@ pub struct Entry {
     //pub key_values: Vec<KeyValue>,
     pub binary_key_values: Vec<BinaryKeyValue>,
     pub custom_data: CustomData,
+    pub auto_type: AutoType,
     pub history: History,
     #[serde(skip)]
     pub(crate) meta_share: Arc<MetaShare>,
@@ -158,6 +159,7 @@ impl Entry {
             //key_values: vec![],
             binary_key_values: vec![],
             custom_data: CustomData::default(),
+            auto_type: AutoType::default(),
             //history has a list of previous entries and those entries listed will have its 'history' empty
             history: History::default(),
             meta_share: Arc::default(),
@@ -246,6 +248,8 @@ impl Entry {
         self.group_uuid = updated_entry.group_uuid;
         self.icon_id = updated_entry.icon_id;
         self.tags = updated_entry.tags;
+
+        self.auto_type = updated_entry.auto_type;
 
         self.entry_field = updated_entry.entry_field;
 
@@ -377,6 +381,15 @@ impl Entry {
         self.entry_field
             .find_key_value(name)
             .map(|x| x.value.clone())
+    }
+
+    // Collects all entry field names and values (not in any particular order)
+    pub fn field_values(&self) -> HashMap<String, String> {
+        self.entry_field
+            .get_key_values()
+            .into_iter()
+            .map(|k| (k.key.clone(), k.value.clone()))
+            .collect()
     }
 }
 
@@ -714,6 +727,31 @@ pub struct BinaryKeyValue {
     #[serde(with = "util::from_or_to::string")]
     pub data_hash: AttachmentHashValue,
     pub data_size: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoType {
+    pub(crate) enabled: bool,
+    // None means inherits the parent group's sequence if enabled
+    // default_sequence can be set at entry level overriding the inherited one
+    pub(crate) default_sequence: Option<String>,
+    pub(crate) associations: Vec<Association>,
+}
+
+impl Default for AutoType {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            default_sequence: None,
+            associations: vec![],
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct Association {
+    pub(crate) window: String,
+    pub(crate) key_stroke_sequence: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
