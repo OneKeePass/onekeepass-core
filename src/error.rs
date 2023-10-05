@@ -59,8 +59,12 @@ pub enum Error {
     Argon2Error(String),
     #[error("{0}")]
     DataError(&'static str),
+    
     #[error("{0}")]
     XmlParsingFailed(#[from] quick_xml::Error),
+    #[error("{0}")]
+    XmlParsingFailed023(#[from] quick_xml_023::Error),
+
     #[error("{0}")]
     XmlReadingFailed(String),
     #[error("{0}")]

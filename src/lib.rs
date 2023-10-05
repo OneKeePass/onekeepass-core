@@ -6,6 +6,7 @@ mod password_generator;
 mod searcher;
 mod util;
 mod xml_parse;
+mod xml_parse_023;
 
 pub mod error;
 
