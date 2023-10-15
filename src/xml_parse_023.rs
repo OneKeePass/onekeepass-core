@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 use quick_xml_023::events::attributes::{Attribute, Attributes};
 use quick_xml_023::events::Event;
 use quick_xml_023::events::{BytesDecl, BytesEnd, BytesStart, BytesText};

@@ -56,7 +56,9 @@ macro_rules! read_tags {
 
                         x => {
                             // Just consume/skip any other tags that are not listed above
-                            info!("No matching action found and skipping tag {:?}", x);
+                            let t = std::str::from_utf8(&x)?;
+                            let et = std::str::from_utf8($end_tag);
+                            debug!("No matching action found and skipping the tag: {} and end tag is {:?}", &t, &et);
                             skip_tag(x, &mut $self.reader)?;
                         }
                     }
@@ -356,7 +358,7 @@ impl<'a> XmlReader<'a> {
             start_tag_fns {
                 UUID => (|content:String, _,  _| icon.uuid = content_to_uuid(&content)),
                 DATA => (|content:String, _,  _| {
-                    if let Some(d) = base64::decode(&content).ok() {
+                    if let Some(d) = util::base64_decode(&content).ok() {
                         icon.data = d;
                     }
                 }),
@@ -553,13 +555,13 @@ impl<'a> XmlReader<'a> {
         let mut kv = BinaryKeyValue::default();
         read_tags!(self,
             start_tag_fns {
-                KEY =>
-                (|content:String, _,  _|
-                    kv.key = content
-                )
+                KEY =>(|content:String, _,  _| kv.key = content),
+                // This handles the tag where we have both start and end tag like <Value Ref="0"></Value>
+                VALUE => (|_, attributes:&mut Attributes,  _| kv.index_ref = attachment_ref_index(attributes))
             },
             start_tag_blks {},
             empty_tags {
+                // This handles the tag where have only empty tag with attribute like <Value Ref="0" />
                 VALUE =>
                 (|attributes:&mut Attributes| {
                     kv.index_ref = attachment_ref_index(attributes);

@@ -16,6 +16,7 @@ pub struct KdbxFile {
 }
 
 impl KdbxFile {
+
     #[inline]
     pub fn hmac_part_key(&self) -> &Vec<u8> {
         &self.secured_database_keys.hmac_part_key
@@ -121,6 +122,7 @@ impl KdbxFile {
         self.inner_header.entry_attachments.insert(data)
     }
 
+    // Provides the stored attachment bytes data for viewing or saving by user  
     pub fn get_bytes_content(&self, data_hash: &AttachmentHashValue) -> Option<Vec<u8>> {
         self.inner_header.get_bytes_content(data_hash)
     }
@@ -134,7 +136,7 @@ impl KdbxFile {
     }
 
     pub fn set_content_cipher_id(&mut self, content_cipher_id: ContentCipherId) -> Result<()> {
-        let (cid, eiv) = content_cipher_id.to_uuid_id()?;
+        let (cid, eiv) = content_cipher_id.uuid_with_iv()?;
         self.main_header.cipher_id = cid;
         self.main_header.encryption_iv = eiv;
         Ok(())
@@ -371,22 +373,26 @@ impl MainHeader {
 
 #[derive(Debug, Default, Clone)]
 pub(crate) struct InnerHeader {
-    //Id dereived from the LE bytes stored in inner_stream_id
+    // Id dereived from the LE bytes stored in inner_stream_id
     pub(crate) stream_cipher_id: u32,
     pub(crate) inner_stream_key: Vec<u8>,
+
     // All attachemnt binaries are in the same order as they are in the db
-    // They are referred by "index_ref" (from "Ref" attribute of XML db) field of "BinaryKeyValue"
-    // The attachement vec's first byte is a flag to indicate whether the data needs protection and remaining bytes are the actual
-    // attachment
-    // Attachments data are stored in AttachmentSet for easy lookup as well as for uploading new ones
+    // They are referred by "index_ref" (from "Ref" attribute of XML db) field of "BinaryKeyValue" struct
+    // The attachement vec's first byte is a flag to indicate whether the data needs protection 
+    // and remaining bytes are the actual attachment
+    // Such attachments data are stored in AttachmentSet for easy lookup as well as for uploading new ones
     pub(crate) entry_attachments: AttachmentSet,
 }
 
 impl InnerHeader {
+
+    // Called to keep the attachment bytes data for later use
     pub(crate) fn add_binary_data(&mut self, data: Vec<u8>) {
         self.entry_attachments.add(data);
     }
 
+    // Provides the stored attachment bytes data for viewing or saving by user
     fn get_bytes_content(&self, data_hash: &AttachmentHashValue) -> Option<Vec<u8>> {
         self.entry_attachments.get_bytes_content(data_hash)
     }
@@ -426,10 +432,11 @@ impl InnerHeader {
             // }
         }
 
-        //End of header - 0 size
+        // End of header - 0 size data
         writer.write(&[inner_header_type::END_OF_HEADER])?;
-        writer.write(&vec![0u8; 4])?; //[0, 0, 0, 0] => 0 byte size
-                                      //No inner header end Data
+
+        // [0, 0, 0, 0] => 0 bytes size - No inner header data for end marker
+        writer.write(&vec![0u8; 4])?; 
 
         Ok(())
     }

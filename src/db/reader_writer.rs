@@ -207,12 +207,13 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
         // block index is a 64 bit number and used in block hmac key
         let mut blk_idx = 0u64;
         loop {
-            //Extract the hmac hash is stored in the begining of a block data
+            // Extract the hmac hash that is stored in the begining of a block data
             let mut stored_blk_hmac_hash = [0; 32];
             self.reader.read_exact(&mut stored_blk_hmac_hash)?;
-            //Next 4 bytes are the size of the actual encrypted block
+            
+            // Next 4 bytes are the size of the actual encrypted block
+            // The u32 value formed from these 4 bytes gives the block size in bytes count
             let mut size_buffer = [0; 4];
-            // The 4 bytes that gives the block size in bytes number
             self.reader.read_exact(&mut size_buffer)?;
             let blk_size = u32::from_le_bytes(size_buffer);
 
@@ -220,6 +221,7 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
                 // No more blocks
                 break;
             }
+
             // Block data
             let mut data_buffer = Vec::new();
             self.reader
@@ -232,6 +234,7 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
             let blk_idx_bytes = blk_idx.to_le_bytes();
             let block_key =
                 crypto::do_sha512_hash(&[&blk_idx_bytes.to_vec(), self.kdbx_file.hmac_part_key()])?;
+            
             // Verify the stored block hmac to the calculated one
             // The data for hmac calc is blk_index + blk_size + blk_data
             // All are in little endian bytes
@@ -248,6 +251,7 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
             // Next block
             blk_idx += 1;
         }
+
         Ok(acc)
     }
 
@@ -256,15 +260,24 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
             &self.kdbx_file.main_header.cipher_id,
             &self.kdbx_file.main_header.encryption_iv,
         )?;
+        
+        let start = std::time::Instant::now();
         let mut payload = cipher.decrypt(&encrypted_data, self.kdbx_file.master_key())?;
+        debug!("Decryption of data with size {} and elapsed time is  {} seconds  ", payload.len(),start.elapsed().as_secs());
 
+        
         if self.kdbx_file.main_header.compression_flag == 1 {
-            payload = util::decompress(&payload[..])?
+            let start = std::time::Instant::now();
+            payload = util::decompress(&payload[..])?;
+            debug!("Uncompressing data with size {} and elapsed time {} seconds ", payload.len(),start.elapsed().as_secs());
         };
+
+
         Ok(payload)
     }
 
     // Splits the inner header and the actual xml content bytes
+    // Inner header data includes the binary data of any attchments
     fn split_inner_header_xml_content(&mut self, decrypted_data: &[u8]) -> Result<Vec<u8>> {
         let mut buf = Cursor::new(Vec::<u8>::new());
         buf.write(decrypted_data)?;
@@ -273,10 +286,12 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
         loop {
             // Read one byte that represents the inner header type
             buf.read_exact(&mut hd_t)?;
+            
             // Read next 4 LE bytes that represent how many bytes to read for the data
             let mut size_buf = [0u8; 4];
             buf.read_exact(&mut size_buf)?;
             let bytes_to_read = u32::from_le_bytes(size_buf);
+            
             // Next read the data based on bytes_to_read calculated
             let mut bytes_buf = Vec::new();
             if bytes_to_read != 0 {
@@ -284,6 +299,7 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
                     .take(bytes_to_read as u64)
                     .read_to_end(&mut bytes_buf)?;
             }
+
             match hd_t[0] {
                 inner_header_type::END_OF_HEADER => {
                     break;
@@ -296,9 +312,10 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
                     self.kdbx_file.inner_header.inner_stream_key = bytes_buf;
                 }
                 inner_header_type::BINARY => {
+                    // All entries attachments are stored as BINARY data
                     self.kdbx_file.inner_header.add_binary_data(bytes_buf);
                 }
-                // Should come here?
+                // Should not come here?
                 _ => {
                     return Err(Error::DataError("Unknown inner header type is found"));
                 }
@@ -314,20 +331,20 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
         // TODO:
         // Following are used for any debugging to see the XML content during development.
         // This should be removed after making some command line program
-        // super::write_xml_to_file("xml-dump/test_read.xml", &xml_bytes)?;
-       
+
         /* 
+        // Dumps the raw xml content 
         let dump_xml_file_name = temp_raw_xml_dump_file_name("test_read.xml");
         super::write_xml_to_file(&dump_xml_file_name,xml_bytes).unwrap();
         println!("Wrote the raw xml to the file {}",&dump_xml_file_name);
-        //println!("xml_bytes size {}", std::str::from_utf8(xml_bytes).expect("utf conversion failed"));
         */
+
+        //println!("xml: {}", std::str::from_utf8(xml_bytes).expect("utf conversion failed"));
 
         let cipher = ProtectedContentStreamCipher::try_from(
             self.kdbx_file.inner_header.stream_cipher_id,
             &self.kdbx_file.inner_header.inner_stream_key,
-        )
-        .unwrap();
+        )?;
         
         let mut r = xml_parse::parse(xml_bytes, Some(cipher))?;
 
@@ -388,17 +405,22 @@ impl<'a, W: Read + Write + Seek> KdbxFileWriter<'a, W> {
     }
 
     pub(crate) fn write(&mut self) -> Result<()> {
-        //IMPORATNT:
+        
+        // IMPORATNT:
         // we need to recompute the keys for encryption so that any changes
         // in main header fields (seed, iv, cipher id etc) or credential changes
-        // are taken care of. Even if there are no changes to the avove mentioned,
-        // we reset the seed and iv for every save
+        // are taken care of. Even if there are no changes to the above mentioned variables,
+        // we need to reset the seed and iv for every save 
         self.kdbx_file.compute_all_keys(true)?;
-
+        
+        // kdbx file signature
         self.write_file_signature()?;
+        
+        // Main header 
         self.kdbx_file.main_header.write_bytes(&mut self.writer)?;
         self.write_header_hash()?;
 
+        // The main content of database  
         let mut buf = self.write_compressed_encrypted_payload()?;
         self.write_hmac_data_blocks(&mut buf)?;
 
@@ -442,38 +464,51 @@ impl<'a, W: Read + Write + Seek> KdbxFileWriter<'a, W> {
                     .entry_attachments
                     .attachment_hash_to_index_ref(),
             );
-            // Need to get the cipher algorithm used to protect in memory data
+
+            // Need to get the stream cipher algorithm used to encrypt the fields with Protect = True
+            // while creating the XML content
             let cipher = ProtectedContentStreamCipher::try_from(
                 self.kdbx_file.inner_header.stream_cipher_id,
                 &self.kdbx_file.inner_header.inner_stream_key,
-            )
-            .unwrap();
+            )?;
 
+            debug!("Creating xml content start");
             let v = xml_parse::write_xml(kp, Some(cipher))?;
+            debug!("Creating xml content completed");
 
             // Need to use {} and not the debug one {:?} to avoid \" in the print
             // println!("In db writing: XML content is \n {}", std::str::from_utf8(&v).unwrap());
 
             buf.write(&v)?;
         }
-
+        
+        
+        let start = std::time::Instant::now();
         let v = buf.into_inner();
+        debug!("Compressing started for data with  size {} ", v.len());
         let mut payload = if self.kdbx_file.main_header.compression_flag == 1 {
             util::compress(&v)?
         } else {
             v
         };
+        debug!("Compressing data with size {} and the elapsed time is {} seconds  ", payload.len(), start.elapsed().as_secs());
 
+        // Payload encryption
         let cipher = ContentCipher::try_from(
             &self.kdbx_file.main_header.cipher_id,
             &self.kdbx_file.main_header.encryption_iv,
         )?;
-        // payload is not encrypted
+
+        // Incoming payload is not yet encrypted
+        let start = std::time::Instant::now();
         payload = cipher.encrypt(&payload, self.kdbx_file.master_key())?;
+        debug!("Encryption of data elapsed time {} seconds ", start.elapsed().as_secs());
+
         // Returns the encrypted payload
         Ok(payload)
     }
 
+    // Complement to read_hmac_data_blocks that is carried out while reading the database main content
     fn write_hmac_data_blocks(&mut self, payload_data: &[u8]) -> Result<()> {
         let mut payload_data_buf = Cursor::new(Vec::<u8>::new());
         payload_data_buf.write(payload_data)?;
@@ -484,14 +519,15 @@ impl<'a, W: Read + Write + Seek> KdbxFileWriter<'a, W> {
         let mut blk_size = cmp::min(PAYLOAD_BLOCK_SIZE, remaining_bytes);
         payload_data_buf.seek(SeekFrom::Start(0))?;
         loop {
-            // Read blk size data from payload_data_buf
+            // Read a Block size data from payload_data_buf
             let mut data_buffer = Vec::new();
             let data_read = Read::by_ref(&mut payload_data_buf)
                 .take(blk_size)
                 .read_to_end(&mut data_buffer)?;
 
-            // Find hmac of this block
-            // block hmac key is based on block index (LE number) which is a 64 bit number
+            // Find HMAC of this block
+            // block hmac key is based on block index (LE number) which is a 64 bit number and previously
+            // computed hmac part key
             let blk_idx_bytes = blk_idx.to_le_bytes();
             let block_key =
                 crypto::do_sha512_hash(&[&blk_idx_bytes.to_vec(), self.kdbx_file.hmac_part_key()])?;
@@ -512,7 +548,7 @@ impl<'a, W: Read + Write + Seek> KdbxFileWriter<'a, W> {
             if blk_size == 0 {
                 break;
             }
-            // Write the data_buffer of blk_size data
+            // Write the data_buffer of blk_size data (Block data)
             self.writer.write(&data_buffer)?;
 
             remaining_bytes = remaining_bytes - blk_size;

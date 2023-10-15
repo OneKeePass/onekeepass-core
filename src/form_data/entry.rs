@@ -340,6 +340,9 @@ impl EntryFormData {
         entry.times.expiry_time = entry_form_data.expiry_time;
         
         entry.auto_type = entry_form_data.auto_type.clone();
+
+        // Attachment references if any
+        entry.binary_key_values = entry_form_data.binary_key_values.clone();
         
         entry
     }

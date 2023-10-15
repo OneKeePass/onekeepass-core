@@ -322,20 +322,21 @@ impl Entry {
         }
     }
 
-    /// Called after loading the db file and xml is parsed
+    // Called after loading the db file and xml is parsed 
     pub fn set_attachment_hashes(
         &mut self,
         attachment_hash_indexed: &HashMap<i32, (AttachmentHashValue, usize)>,
     ) {
-        //First we set all hashes for an entry followed by the entries found in its history
+        // First we set all hashes for an entry followed by the entries found in its history
+        // binary_key_values is empty if the entry does not have any attachment
         for bv in &mut self.binary_key_values {
             if let Some(h) = attachment_hash_indexed.get(&bv.index_ref) {
                 bv.data_hash = h.0;
                 bv.data_size = h.1;
             }
         }
-        //We call also the histories entries.
-        //IMPORATNT: It is assumed each entry found in historty.entries should have empty history
+        // We call the history entries for this entry.
+        // IMPORATNT: It is assumed each entry found in historty.entries should have empty history
         for e in &mut self.history.entries {
             e.set_attachment_hashes(attachment_hash_indexed);
         }

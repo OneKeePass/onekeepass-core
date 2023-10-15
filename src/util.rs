@@ -15,18 +15,28 @@ use uuid::Uuid;
 use crate::constants::EMPTY_STR;
 use crate::error::Result;
 
+use base64::{Engine as _, engine::general_purpose};
+
+pub fn base64_decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>> {
+    let bytes = general_purpose::STANDARD.decode(input)?;
+    Ok(bytes)
+}
+
+pub fn base64_encode<T: AsRef<[u8]>>(input: T) -> String{
+    general_purpose::STANDARD.encode(input)
+}
+
 /// Decode a UUID from a Keepass XML file
 ///
 /// The UUID in Keepass XML files is stored base 64 encoded
 pub fn decode_uuid(b64uuid: &str) -> Option<Uuid> {
-    let decoded = base64::decode(b64uuid).ok()?;
-    //println!("dc {:?}", &decoded);
+    let decoded = base64_decode(b64uuid).ok()?;
     Uuid::from_slice(&decoded).ok()
 }
 
 /// Encode a UUID for a Keepass XML file for kdbx4
 pub fn encode_uuid(uuid: &Uuid) -> String {
-    base64::encode(uuid.as_bytes())
+    base64_encode(uuid.as_bytes())
 }
 
 fn datetime_epoch() -> NaiveDateTime {
@@ -37,7 +47,7 @@ fn datetime_epoch() -> NaiveDateTime {
 }
 
 pub(crate) fn decode_datetime_b64(b64date: &str) -> Option<NaiveDateTime> {
-    let decoded = base64::decode(b64date).ok()?;
+    let decoded = base64_decode(b64date).ok()?;
     let mut bytes = [0u8; 8];
     for i in 0..usize::min(bytes.len(), decoded.len()) {
         bytes[i] = decoded[i];
@@ -50,7 +60,8 @@ pub(crate) fn decode_datetime_b64(b64date: &str) -> Option<NaiveDateTime> {
 /// Encode a datetime for a Keepass XML file for kdbx4
 pub fn encode_datetime(date: &NaiveDateTime) -> String {
     let epoch_seconds = date.signed_duration_since(datetime_epoch()).num_seconds();
-    base64::encode(epoch_seconds.to_le_bytes())
+    //base64::encode(epoch_seconds.to_le_bytes())
+    base64_encode(epoch_seconds.to_le_bytes())
 }
 
 #[allow(dead_code)]
@@ -124,6 +135,7 @@ pub fn add_months<DateTime: Datelike>(old_dt: DateTime, months: u32) -> DateTime
     }
 }
 
+/* 
 pub fn decompress(encoded_data: &[u8]) -> Result<Vec<u8>> {
     let mut decoder = Decoder::new(encoded_data)?;
     let mut decoded_data = Vec::new();
@@ -135,7 +147,8 @@ pub fn decompress(encoded_data: &[u8]) -> Result<Vec<u8>> {
 pub fn compress(data: &[u8]) -> Result<Vec<u8>> {
     let mut encoder = Encoder::new(Vec::new())?;
     //println!("encoder header {:?}", encoder.header());
-    encoder.write(data)?;
+    //encoder.write(data)?;
+    encoder.write_all(data)?;
     encoder.flush()?;
     let encoded_data = encoder.finish().into_result()?;
 
@@ -143,6 +156,28 @@ pub fn compress(data: &[u8]) -> Result<Vec<u8>> {
     //let encoded_data = encoder.finish().into_result()?;
     Ok(encoded_data)
 }
+*/
+
+pub fn decompress(encoded_data: &[u8]) -> Result<Vec<u8>> {
+    let mut writer = Vec::new();
+    let mut decoder = flate2::write::GzDecoder::new(writer);
+     decoder.write_all(&encoded_data)?;
+     decoder.try_finish()?;
+     writer = decoder.finish()?;
+    
+    Ok(writer)
+}
+
+pub fn compress(data: &[u8]) -> Result<Vec<u8>> {
+    
+    use flate2::Compression;
+    let mut e = flate2::write::GzEncoder::new(Vec::new(), Compression::new(6));
+    e.write_all(data).unwrap();
+    let compressed_bytes = e.finish().unwrap();
+    Ok(compressed_bytes)
+}
+
+
 
 pub fn compress_with_fixed_timestamp(data: &[u8]) -> Result<Vec<u8>> {
     let header = HeaderBuilder::new().modification_time(10).finish();
@@ -350,6 +385,7 @@ mod tests {
         let u = decode_uuid(b64_str);
         assert_eq!(u.is_some(), true);
         println!("Uuid is {}", u.unwrap());
+        assert_eq!(u.unwrap().to_string(),"dda058f8-070b-4268-8f6a-cd2f8cadb39e");
     }
 
     #[test]
@@ -564,18 +600,18 @@ mod tests {
 
     #[test]
     fn verify_compress_decompress() {
-        let v1 = vec![1, 2, 3, 4];
+        let v1 = "Test message ".as_bytes();
         let c_v1 = compress(&v1).unwrap();
 
         let d_v1 = decompress(&c_v1).unwrap();
         assert_eq!(d_v1 == v1, true);
 
         // gzip adds timestamp. As a result c_v1 != c_v2
-        use std::{thread, time};
-        let ten_millis = time::Duration::from_millis(1000);
-        thread::sleep(ten_millis);
-        let c_v2 = compress(&v1).unwrap();
-        assert_ne!(c_v1 == c_v2, true);
+        // use std::{thread, time};
+        // let ten_millis = time::Duration::from_millis(1000);
+        // thread::sleep(ten_millis);
+        // let c_v2 = compress(&v1).unwrap();
+        // assert_ne!(c_v1 == c_v2, true);
     }
 
     #[test]
@@ -592,6 +628,51 @@ mod tests {
         thread::sleep(ten_millis);
         let c_v2 = compress_with_fixed_timestamp(&v1).unwrap();
         assert_eq!(c_v1 == c_v2, true);
+    }
+
+    pub fn compress1(data: &[u8]) -> Result<Vec<u8>> {
+        
+        use flate2::Compression;
+        let mut e = flate2::write::GzEncoder::new(Vec::new(), Compression::new(6));
+        e.write_all(data).unwrap();
+        let compressed_bytes = e.finish().unwrap();
+        Ok(compressed_bytes)
+    }
+
+    pub fn decompress1(data: &[u8]) -> Result<Vec<u8>> {
+        
+        // let mut e = flate2::read::GzDecoder::new(data);
+        // let mut buf = vec![];
+        // let outr_data = e.read_to_end(&mut buf).unwrap();
+        // Ok(buf)
+
+        let mut writer = Vec::new();
+        let mut decoder = flate2::write::GzDecoder::new(writer);
+        decoder.write_all(&data[..]).unwrap();
+        decoder.try_finish().unwrap();
+        writer = decoder.finish().unwrap();
+        Ok(writer)
+    }
+
+    #[test]
+    fn verify_compress_decompress_timing() {
+        let test_file = "/Users/jeyasankar/mytemp/Test1/compression_test_data_bin";
+        let mut f = fs::File::open(test_file).unwrap();
+        let mut buf:Vec<u8> = vec![];
+        f.read_to_end(&mut buf).unwrap();
+        println!("Size of buf is {}", buf.len());
+
+        
+        let start = std::time::Instant::now();
+        let c_v1 = compress1(&buf).unwrap();
+        println!("Size of compressed data  is {}", c_v1.len());
+        println!("Compression took {} seconds ", start.elapsed().as_secs());
+
+
+        let start = std::time::Instant::now();
+        let c_v2 = decompress1(&c_v1).unwrap();
+        println!("Size of decompressed data  is {}", c_v2.len());
+        println!("Dcompression took {} seconds ", start.elapsed().as_secs());
     }
 
     #[test]

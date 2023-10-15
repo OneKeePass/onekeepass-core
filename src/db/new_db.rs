@@ -50,7 +50,7 @@ impl NewDatabase {
             Some(_) | None => None,
         };
 
-        let (cid, eiv) = self.cipher_id.to_uuid_id()?;
+        let (cid, eiv) = self.cipher_id.uuid_with_iv()?;
         let mut rng = crypto::SecureRandom::new();
 
         let mh = MainHeader {

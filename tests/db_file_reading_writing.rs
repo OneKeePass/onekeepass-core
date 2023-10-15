@@ -4,15 +4,15 @@ use onekeepass_core::db_service::*;
 #[test]
 fn verify_read_db_file() {
     println!("Test is called");
+    common::init_logging();
     common::init_key_main_store();
-    let r = load_kdbx("/Users/jeyasankar/Documents/OneKeePass/Test1-Auto.kdbx", "ss", None); //
-    //let r = load_kdbx("/Users/jeyasankar/Documents/OneKeePass/KP/KP-Database-AutoSeq.kdbx", "ss", None);
+    //let r = load_kdbx("/Users/jeyasankar/Documents/OneKeePass/KP/Test1-KP254-Attachment.kdbx", "ss", None); //
+    let r = load_kdbx("/Users/jeyasankar/Documents/OneKeePass/KP/KP-Database-AutoSeq.kdbx", "ss", None);
 
     println!("load_kdbx is called r is  {}", r.is_ok());
     if r.is_err() {
         println!("load_kdbx is error is   {:?}",r);
     }
-    
 }
 
 #[test]

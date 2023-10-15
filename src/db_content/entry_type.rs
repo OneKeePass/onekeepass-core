@@ -365,7 +365,8 @@ where
     //println!("EntryType Serialization: rmp serialized data size {}",buf.len());
     let buf = util::compress_with_fixed_timestamp(&buf)?;
     //println!( "EntryType Serialization: compressed data size {}",buf.len());
-    let base64_str = base64::encode(&buf);
+    //let base64_str = base64::encode(&buf);
+    let base64_str = util::base64_encode(&buf);
     //println!("EntryType Serialization: final b64 data size {}",data.len());
     Ok(Some(base64_str))
 }
@@ -374,7 +375,8 @@ fn deserialize_from_base64_str<F>(input: &str, decoder: F) -> Result<VersionedEn
 where
     F: Fn(&Vec<u8>) -> Result<VersionedEntryType>,
 {
-    let buf = base64::decode(input)?;
+    //let buf = base64::decode(input)?;
+    let buf = util::base64_decode(input)?;
     let buf = util::decompress(&buf)?;
     Ok(decoder(&buf)?)
 }

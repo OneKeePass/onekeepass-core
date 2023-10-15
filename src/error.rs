@@ -66,6 +66,9 @@ pub enum Error {
     XmlParsingFailed023(#[from] quick_xml_023::Error),
 
     #[error("{0}")]
+    CryptoError(#[from] botan::Error),
+
+    #[error("{0}")]
     XmlReadingFailed(String),
     #[error("{0}")]
     UuidCoversionFailed(#[from] uuid::Error),

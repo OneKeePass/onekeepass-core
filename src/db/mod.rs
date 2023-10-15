@@ -1,8 +1,8 @@
+mod file_key;
 mod kdbx_file;
 mod key_secure;
 mod new_db;
 mod reader_writer;
-mod file_key;
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -16,7 +16,6 @@ use serde::{Deserialize, Serialize};
 
 use self::kdbx_file::InnerHeader;
 
-
 use self::reader_writer::{KdbxFileReader, KdbxFileWriter};
 use crate::constants::{self, EMPTY_STR};
 use crate::constants::{header_type, inner_header_type, vd_type};
@@ -29,10 +28,12 @@ use crate::util;
 use crate::xml_parse;
 use kdbx_file::MainHeader;
 
+// Reexports
+pub(crate) use self::file_key::{FileKey, KeyFileData};
 pub use kdbx_file::KdbxFile;
 pub use key_secure::{KeyStoreOperation, KeyStoreService, KeyStoreServiceType};
 pub use new_db::NewDatabase;
-pub(crate) use self::file_key::{KeyFileData,FileKey};
+pub use crypto::ContentCipherId;
 
 /// Writes the header type byte and header data of Vec<u8> type with size le bytes as prefix
 /// This macro is used for both MainHeader and InnerHeader Vec<u8> data writing
@@ -72,28 +73,33 @@ impl Default for KdfAlgorithm {
 
 #[derive(Debug, Default, Clone)]
 pub(crate) struct AttachmentSet {
-    /// All attachments bytes data accessible by its hash.
+    // All attachments bytes data accessible by its hash.
     attachments: HashMap<AttachmentHashValue, Vec<u8>>,
-    /// Read time hash look up is populated while reading the xml content and
-    /// it is used to set the hash values to BinaryKeyValue of entries' binary_key_values
+
+    // Read time hash look up is populated while reading the xml content and
+    // it is used to set the hash values to BinaryKeyValue of entries' binary_key_values
     index_ref_hash: HashMap<i32, (AttachmentHashValue, usize)>,
-    /// Write time look up and it is used to set the index refs to entries based on the
-    /// hash value found in 'BinaryKeyValue'
+
+    // Write time look up and it is used to set the index refs in entries that have attachments based on the
+    // hash value found in 'BinaryKeyValue'
     hash_index_ref: HashMap<AttachmentHashValue, i32>,
 }
 
 impl AttachmentSet {
-    /// Called to add the bytes data while reading the db content
+    // Called to add the bytes data while reading the db content
     fn add(&mut self, data: Vec<u8>) {
         let key = AttachmentSet::to_hash(&data);
         let size = data.len();
         self.attachments.insert(key, data);
-        //The index look up
+
+        // Index is the value used in Ref attribute
         let index = self.attachments.len() as i32;
+
+        // The index look up
         self.index_ref_hash.insert(index - 1, (key, size));
     }
 
-    /// Gets the bytes content of attachment for view
+    // Gets the bytes content of attachment for view or saving
     fn get_bytes_content(&self, data_hash: &AttachmentHashValue) -> Option<Vec<u8>> {
         match self.attachments.get(data_hash) {
             Some(data) => {
@@ -106,7 +112,7 @@ impl AttachmentSet {
         }
     }
 
-    /// Called when a new document is uploaded
+    // Called when a new document is uploaded
     fn insert(&mut self, mut data: Vec<u8>) -> AttachmentHashValue {
         // Nothing is done to index_ref_hash or hash_index_ref
 
@@ -127,6 +133,8 @@ impl AttachmentSet {
         hasher.finish()
     }
 
+    // Provides the the Ref to Hash (of attachment) value for all attachments and it is used
+    // to set in the BinaryKeyValue struct of the entries during reading
     pub fn attachments_index_ref_to_hash(&self) -> &HashMap<i32, (AttachmentHashValue, usize)> {
         &self.index_ref_hash
     }
@@ -138,12 +146,19 @@ impl AttachmentSet {
 
 #[derive(Clone)]
 pub(crate) struct SecuredDatabaseKeys {
+    // 32 bytes formed using sha256_hash
     password_hash: Vec<u8>,
+    // 32 bytes formed using sha256_hash
     key_file_data_hash: Option<Vec<u8>>,
+    // 32 bytes formed using sha256_hash of password and file hash 
     composite_key: Vec<u8>,
+    // 32 bytes see KDF call
     transformed_key: Vec<u8>,
+    // 64 bytes formed using sha512_hash - see compute_keys
     hmac_part_key: Vec<u8>,
+    // 64 bytes formed using sha512_hash  - see compute_keys
     hmac_key: Vec<u8>,
+    // 32 bytes formed using sha256_hash  - see compute_keys
     master_key: Vec<u8>,
     encrypted: bool,
 }
@@ -164,17 +179,16 @@ impl Default for SecuredDatabaseKeys {
 }
 
 impl SecuredDatabaseKeys {
-
     fn from_keys(password: &str, file_key: &Option<FileKey>) -> Result<Self> {
         let (p, f, c) = if let Some(fk) = file_key {
             // Final hash is sha256(sha256(password) + sha256(keyfile-content))
             let phash = crypto::do_slice_sha256_hash(password.as_bytes())?;
             let fhash = fk.content_hash();
-            
+
             let data = vec![&phash, &fhash];
-            
+
             let final_hash = crypto::do_vecs_sha256_hash(&data)?;
-            
+
             (phash, Some(fhash), final_hash)
         } else {
             // Final hash is sha256(sha256(password))
@@ -227,12 +241,16 @@ impl SecuredDatabaseKeys {
 
     fn compute_keys(&mut self, master_seed: &Vec<u8>, transformed_key: Vec<u8>) -> Result<()> {
         debug!("SecuredDatabaseKeys compute_keys is called");
+
         self.transformed_key = transformed_key;
-        let suffix = vec![1u8; 1]; // 1 byte with value 1 added as suffix
+        // 1 byte with value 1 added as suffix
+        let suffix = vec![1u8; 1];
         self.hmac_part_key =
             crypto::do_sha512_hash(&[master_seed, &self.transformed_key, &suffix])?;
 
-        let prefix = vec![255u8; 8]; //8 bytes of value 255 prefixed ; -1 in i8
+        // 8 bytes of value 255 prefixed (value 255 repeated 8 times) ; -1 in i8
+        let prefix = vec![255u8; 8];
+
         self.hmac_key = crypto::do_sha512_hash(&[&prefix, &self.hmac_part_key])?;
         self.master_key = crypto::do_sha256_hash(&[master_seed, &self.transformed_key])?;
 
@@ -333,14 +351,17 @@ impl SecuredDatabaseKeys {
         };
 
         let existing_chash = self.decrypt_composite_key(db_key)?;
-        debug!("Comparing composite key for quick unlock and the result is {}",chash == existing_chash);
+        debug!(
+            "Comparing composite key for quick unlock and the result is {}",
+            chash == existing_chash
+        );
         Ok(chash == existing_chash)
     }
 
     // Called whenever user changes the password
     pub fn set_password(&mut self, db_key: &str, password: &str) -> Result<()> {
         let phash = crypto::do_slice_sha256_hash(password.as_bytes())?;
-        
+
         // Need to recalculate composite key whenever the password or key file added/changed is changed
         let chash = if let Some(key_file_hash) = &self.key_file_data_hash {
             // First decrypt the previously encrypted key file hash
@@ -367,7 +388,7 @@ impl SecuredDatabaseKeys {
             let phash = self.decrypt_key(db_key, &self.password_hash)?;
             let data = vec![&phash, &fhash];
             let chash = crypto::do_vecs_sha256_hash(&data)?;
-            
+
             // Need to encrypt the changed hahses
             self.key_file_data_hash = Some(self.encrypt_key(db_key, &fhash)?);
             self.composite_key = self.encrypt_key(db_key, &chash)?;
@@ -409,40 +430,36 @@ impl SecureKeyInfo {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub enum ContentCipherId {
-    ChaCha20,
-    Aes256,
-    UnKnownCipher,
-}
+// #[derive(Clone, Serialize, Deserialize, Debug)]
+// pub enum ContentCipherId {
+//     ChaCha20,
+//     Aes256,
+//     UnKnownCipher,
+// }
 
-impl ContentCipherId {
-    fn to_uuid_id(&self) -> Result<(Vec<u8>, Vec<u8>)> {
-        let mut rng = crypto::SecureRandom::new();
-        match self {
-            ContentCipherId::Aes256 => {
-                Ok((constants::uuid::AES256.to_vec(), rng.get_bytes::<16>()))
-            }
-            ContentCipherId::ChaCha20 => {
-                Ok((constants::uuid::CHACHA20.to_vec(), rng.get_bytes::<12>()))
-            }
-            _ => return Err(Error::UnsupportedCipher(vec![])),
-        }
-    }
+// impl ContentCipherId {
+//     fn to_uuid_id(&self) -> Result<(Vec<u8>, Vec<u8>)> {
+//         let mut rng = crypto::SecureRandom::new();
+//         match self {
+//             ContentCipherId::Aes256 => {
+//                 Ok((constants::uuid::AES256.to_vec(), rng.get_bytes::<16>()))
+//             }
+//             ContentCipherId::ChaCha20 => {
+//                 Ok((constants::uuid::CHACHA20.to_vec(), rng.get_bytes::<12>()))
+//             }
+//             _ => return Err(Error::UnsupportedCipher(vec![])),
+//         }
+//     }
 
-    fn generate_master_seed_iv(&self) -> Result<(Vec<u8>, Vec<u8>)> {
-        let mut rng = crypto::SecureRandom::new();
-        match self {
-            ContentCipherId::Aes256 => {
-                Ok((rng.get_bytes::<32>(), rng.get_bytes::<16>()))
-            }
-            ContentCipherId::ChaCha20 => {
-                Ok((rng.get_bytes::<32>(), rng.get_bytes::<12>()))
-            }
-            _ => return Err(Error::UnsupportedCipher(vec![])),
-        }
-    } 
-}
+//     fn generate_master_seed_iv(&self) -> Result<(Vec<u8>, Vec<u8>)> {
+//         let mut rng = crypto::SecureRandom::new();
+//         match self {
+//             ContentCipherId::Aes256 => Ok((rng.get_bytes::<32>(), rng.get_bytes::<16>())),
+//             ContentCipherId::ChaCha20 => Ok((rng.get_bytes::<32>(), rng.get_bytes::<12>())),
+//             _ => return Err(Error::UnsupportedCipher(vec![])),
+//         }
+//     }
+// }
 
 pub fn open_db_file(db_file_name: &str) -> Result<BufReader<File>> {
     let file = match File::open(&db_file_name) {
@@ -709,4 +726,3 @@ pub fn import_from_xml(
 pub fn create_key_file(key_file_name: &str) -> Result<()> {
     FileKey::create_xml_key_file(key_file_name)
 }
-
