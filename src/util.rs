@@ -4,31 +4,29 @@ use std::hash::Hasher;
 use std::io::{Read, Write};
 use std::path::Path;
 
-use libflate::gzip::{Decoder, EncodeOptions, Encoder, HeaderBuilder}; //Encoder,
-
 use chrono::{
     DateTime, Datelike, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc,
-}; //DateTime,
+}; 
 use uuid::Uuid;
 
 //use crate::result::{Result};
 use crate::constants::EMPTY_STR;
 use crate::error::Result;
 
-use base64::{Engine as _, engine::general_purpose};
+use base64::{engine::general_purpose, Engine as _};
 
 pub fn base64_decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>> {
     let bytes = general_purpose::STANDARD.decode(input)?;
     Ok(bytes)
 }
 
-pub fn base64_encode<T: AsRef<[u8]>>(input: T) -> String{
+pub fn base64_encode<T: AsRef<[u8]>>(input: T) -> String {
     general_purpose::STANDARD.encode(input)
 }
 
-/// Decode a UUID from a Keepass XML file
-///
-/// The UUID in Keepass XML files is stored base 64 encoded
+// Decode a UUID from a Keepass XML file
+//
+// The UUID in Keepass XML files is stored base 64 encoded
 pub fn decode_uuid(b64uuid: &str) -> Option<Uuid> {
     let decoded = base64_decode(b64uuid).ok()?;
     Uuid::from_slice(&decoded).ok()
@@ -43,7 +41,6 @@ fn datetime_epoch() -> NaiveDateTime {
     NaiveDate::from_ymd_opt(1, 1, 1)
         .and_then(|d| d.and_hms_opt(0, 0, 0))
         .expect("Forming NaiveDateTime for epoh failed. Should never happen")
-    //NaiveDate::from_ymd(1, 1, 1).and_hms(0, 0, 0)
 }
 
 pub(crate) fn decode_datetime_b64(b64date: &str) -> Option<NaiveDateTime> {
@@ -57,10 +54,9 @@ pub(crate) fn decode_datetime_b64(b64date: &str) -> Option<NaiveDateTime> {
     datetime_epoch().checked_add_signed(timestamp)
 }
 
-/// Encode a datetime for a Keepass XML file for kdbx4
+// Encode a datetime for a Keepass XML file for kdbx4
 pub fn encode_datetime(date: &NaiveDateTime) -> String {
     let epoch_seconds = date.signed_duration_since(datetime_epoch()).num_seconds();
-    //base64::encode(epoch_seconds.to_le_bytes())
     base64_encode(epoch_seconds.to_le_bytes())
 }
 
@@ -102,8 +98,8 @@ pub fn _format_utc_naivedatetime_to_local(
     }
 }
 
-/// Add years to the given date and returns the new date if addition is successful
-/// Otherwise the old date is returned with any change
+// Add years to the given date and returns the new date if addition is successful
+// Otherwise the old date is returned with any change
 pub fn add_years<DateTime: Datelike>(old_dt: DateTime, year: i32) -> DateTime {
     let dt = old_dt.with_year(old_dt.year() + year);
     if let Some(d) = dt {
@@ -113,8 +109,8 @@ pub fn add_years<DateTime: Datelike>(old_dt: DateTime, year: i32) -> DateTime {
     }
 }
 
-/// Add months to the given date and returns the new date if addition is successful
-/// Otherwise the old date is returned with any change
+// Add months to the given date and returns the new date if addition is successful
+// Otherwise the old date is returned with any change
 #[allow(dead_code)]
 pub fn add_months<DateTime: Datelike>(old_dt: DateTime, months: u32) -> DateTime {
     let total_months = old_dt.month() + months;
@@ -135,41 +131,18 @@ pub fn add_months<DateTime: Datelike>(old_dt: DateTime, months: u32) -> DateTime
     }
 }
 
-/* 
-pub fn decompress(encoded_data: &[u8]) -> Result<Vec<u8>> {
-    let mut decoder = Decoder::new(encoded_data)?;
-    let mut decoded_data = Vec::new();
-    decoder.read_to_end(&mut decoded_data)?;
-    Ok(decoded_data)
-}
 
-/// Each compress call may add timestamp and hence size may be different
-pub fn compress(data: &[u8]) -> Result<Vec<u8>> {
-    let mut encoder = Encoder::new(Vec::new())?;
-    //println!("encoder header {:?}", encoder.header());
-    //encoder.write(data)?;
-    encoder.write_all(data)?;
-    encoder.flush()?;
-    let encoded_data = encoder.finish().into_result()?;
-
-    //std::io::copy(&mut &data[..], &mut encoder)?;
-    //let encoded_data = encoder.finish().into_result()?;
-    Ok(encoded_data)
-}
-*/
-
-pub fn decompress(encoded_data: &[u8]) -> Result<Vec<u8>> {
+pub fn decompress(compressed_data: &[u8]) -> Result<Vec<u8>> {
     let mut writer = Vec::new();
     let mut decoder = flate2::write::GzDecoder::new(writer);
-     decoder.write_all(&encoded_data)?;
-     decoder.try_finish()?;
-     writer = decoder.finish()?;
-    
+    decoder.write_all(&compressed_data)?;
+    decoder.try_finish()?;
+    writer = decoder.finish()?;
+
     Ok(writer)
 }
 
 pub fn compress(data: &[u8]) -> Result<Vec<u8>> {
-    
     use flate2::Compression;
     let mut e = flate2::write::GzEncoder::new(Vec::new(), Compression::new(6));
     e.write_all(data).unwrap();
@@ -177,19 +150,12 @@ pub fn compress(data: &[u8]) -> Result<Vec<u8>> {
     Ok(compressed_bytes)
 }
 
-
-
 pub fn compress_with_fixed_timestamp(data: &[u8]) -> Result<Vec<u8>> {
-    let header = HeaderBuilder::new().modification_time(10).finish();
-    let options = EncodeOptions::new().header(header);
-    let mut encoder = Encoder::with_options(Vec::new(), options)?;
-    encoder.write(data)?;
-    encoder.flush()?;
-    let encoded_data = encoder.finish().into_result()?;
-
-    //std::io::copy(&mut &data[..], &mut encoder)?;
-    //let encoded_data = encoder.finish().into_result()?;
-    Ok(encoded_data)
+    let mut gz = flate2::GzBuilder::new()
+        .mtime(10)
+        .write(Vec::new(), flate2::Compression::default());
+    gz.write_all(data)?;
+    Ok(gz.finish()?)
 }
 
 // Print digest result as hex string and name pair
@@ -211,9 +177,9 @@ pub fn string_to_simple_hash(name: &str) -> u64 {
 // Forms a key to use in all Key Chain/Store calls
 #[inline]
 pub fn formatted_key(db_key: &str) -> String {
-  format!("OKP-{}", string_to_simple_hash(db_key))
-    .as_str()
-    .into()
+    format!("OKP-{}", string_to_simple_hash(db_key))
+        .as_str()
+        .into()
 }
 
 #[allow(dead_code)]
@@ -294,7 +260,7 @@ pub fn to_u32(d: &[u8]) -> std::result::Result<u32, &'static str> {
     }
 }
 
-/// Removes all contents of a dir including sub dirs
+// Removes all contents of a dir including sub dirs
 pub fn remove_dir_contents<P: AsRef<Path>>(path: P) -> Result<()> {
     for entry in fs::read_dir(path)? {
         let entry = entry?;
@@ -315,14 +281,14 @@ pub fn empty_str() -> String {
     EMPTY_STR.to_string()
 }
 
-pub fn file_name(full_file_uri:&str) -> Option<String> {
+pub fn file_name(full_file_uri: &str) -> Option<String> {
     let p = Path::new(full_file_uri);
-    p.file_name().map(|s|s.to_string_lossy().to_string())
+    p.file_name().map(|s| s.to_string_lossy().to_string())
 }
 
 // From https://users.rust-lang.org/t/solved-how-to-split-string-into-multiple-sub-strings-with-given-length/10542/9
 // This takes care of any utf-8
-// For now this is sufficent 
+// For now this is sufficent
 pub fn sub_strings(string: &str, sub_len: usize) -> Vec<&str> {
     let mut subs = Vec::with_capacity(string.len() / sub_len);
     let mut iter = string.chars();
@@ -385,7 +351,10 @@ mod tests {
         let u = decode_uuid(b64_str);
         assert_eq!(u.is_some(), true);
         println!("Uuid is {}", u.unwrap());
-        assert_eq!(u.unwrap().to_string(),"dda058f8-070b-4268-8f6a-cd2f8cadb39e");
+        assert_eq!(
+            u.unwrap().to_string(),
+            "dda058f8-070b-4268-8f6a-cd2f8cadb39e"
+        );
     }
 
     #[test]
@@ -395,7 +364,7 @@ mod tests {
         assert_eq!(u.is_none(), true);
         //println!("Uuid is {}", u.unwrap());
     }
-    
+
     #[test]
     fn encode_uuid_to_b64() {
         let ur = Uuid::parse_str("dda058f8-070b-4268-8f6a-cd2f8cadb39e");
@@ -404,7 +373,7 @@ mod tests {
         assert_eq!(u == "3aBY+AcLQmiPas0vjK2zng==", true);
     }
     #[allow(dead_code)]
-    use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, TimeZone, Utc,};
+    use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, TimeZone, Utc};
 
     #[test]
     fn verify_decode_datetime_b64() {
@@ -616,7 +585,7 @@ mod tests {
 
     #[test]
     fn verify_compress_with_options() {
-        let v1 = vec![1, 2, 3, 4, 1, 100];
+        let v1 = "Test message ".as_bytes();
         let c_v1 = compress_with_fixed_timestamp(&v1).unwrap();
 
         let d_v1 = decompress(&c_v1).unwrap();
@@ -630,62 +599,34 @@ mod tests {
         assert_eq!(c_v1 == c_v2, true);
     }
 
-    pub fn compress1(data: &[u8]) -> Result<Vec<u8>> {
-        
-        use flate2::Compression;
-        let mut e = flate2::write::GzEncoder::new(Vec::new(), Compression::new(6));
-        e.write_all(data).unwrap();
-        let compressed_bytes = e.finish().unwrap();
-        Ok(compressed_bytes)
-    }
-
-    pub fn decompress1(data: &[u8]) -> Result<Vec<u8>> {
-        
-        // let mut e = flate2::read::GzDecoder::new(data);
-        // let mut buf = vec![];
-        // let outr_data = e.read_to_end(&mut buf).unwrap();
-        // Ok(buf)
-
-        let mut writer = Vec::new();
-        let mut decoder = flate2::write::GzDecoder::new(writer);
-        decoder.write_all(&data[..]).unwrap();
-        decoder.try_finish().unwrap();
-        writer = decoder.finish().unwrap();
-        Ok(writer)
-    }
-
     #[test]
     fn verify_compress_decompress_timing() {
         let test_file = "/Users/jeyasankar/mytemp/Test1/compression_test_data_bin";
         let mut f = fs::File::open(test_file).unwrap();
-        let mut buf:Vec<u8> = vec![];
+        let mut buf: Vec<u8> = vec![];
         f.read_to_end(&mut buf).unwrap();
         println!("Size of buf is {}", buf.len());
 
-        
         let start = std::time::Instant::now();
-        let c_v1 = compress1(&buf).unwrap();
+        let c_v1 = compress(&buf).unwrap();
         println!("Size of compressed data  is {}", c_v1.len());
         println!("Compression took {} seconds ", start.elapsed().as_secs());
 
-
         let start = std::time::Instant::now();
-        let c_v2 = decompress1(&c_v1).unwrap();
+        let c_v2 = decompress(&c_v1).unwrap();
         println!("Size of decompressed data  is {}", c_v2.len());
         println!("Dcompression took {} seconds ", start.elapsed().as_secs());
     }
 
     #[test]
     fn hex_str_test() {
-        let b:Vec<u8> = vec![12,3,44,7,6,22,34];
+        let b: Vec<u8> = vec![12, 3, 44, 7, 6, 22, 34];
         use hex;
-        println!("{:x?}",&b);
-        assert_eq!("0c032c07061622",hex::encode(&b));
-        assert_eq!(&b,&hex::decode("0c032c07061622").unwrap());
+        println!("{:x?}", &b);
+        assert_eq!("0c032c07061622", hex::encode(&b));
+        assert_eq!(&b, &hex::decode("0c032c07061622").unwrap());
     }
-
 }
-
 
 /*
 #[test]

@@ -8,11 +8,11 @@ pub mod kdf;
 use serde::{Serialize, Deserialize};
 use crate::{error::{Error, Result}, constants};
 
-// Reexports
-pub use stream_cipher::ProtectedContentStreamCipher;
-pub use key_cipher::*;
-pub use hash_functions::*;
-pub use random::*;
+// Re-exports
+pub use stream_cipher::botan_crypto::ProtectedContentStreamCipher;
+pub use key_cipher::botan_crypto::*;
+pub use hash_functions::botan_crypto::*;
+pub use random::botan_crypto::*;
 
 // Provides the encryption and decryption 
 #[derive(Debug)]
@@ -34,13 +34,13 @@ impl ContentCipherId {
 
     // Gets the UUID and Encryption IV of the supported algorithm  
     pub fn uuid_with_iv(&self) -> Result<(Vec<u8>, Vec<u8>)> {
-        let mut rng = SecureRandom::new();
+        let (rn16,rn12) = get_random_bytes_2::<16,12>();
         match self {
             ContentCipherId::Aes256 => {
-                Ok((constants::uuid::AES256.to_vec(), rng.get_bytes::<16>()))
+                Ok((constants::uuid::AES256.to_vec(),rn16))
             }
             ContentCipherId::ChaCha20 => {
-                Ok((constants::uuid::CHACHA20.to_vec(), rng.get_bytes::<12>()))
+                Ok((constants::uuid::CHACHA20.to_vec(), rn12))
             }
             _ => return Err(Error::UnsupportedCipher(vec![])),
         }
@@ -48,127 +48,15 @@ impl ContentCipherId {
 
     // Generates the random master seed and iv for the selected algorithm
     pub fn generate_master_seed_iv(&self) -> Result<(Vec<u8>, Vec<u8>)> {
-        let mut rng = SecureRandom::new();
+        let (rn32,rn16,rn12) = get_random_bytes_3::<32,16,12>();
         match self {
-            ContentCipherId::Aes256 => Ok((rng.get_bytes::<32>(), rng.get_bytes::<16>())),
-            ContentCipherId::ChaCha20 => Ok((rng.get_bytes::<32>(), rng.get_bytes::<12>())),
+            ContentCipherId::Aes256 => Ok((rn32, rn16)),
+            ContentCipherId::ChaCha20 => Ok((rn32,rn12)),
             _ => return Err(Error::UnsupportedCipher(vec![])),
         }
     }
 }
 
-/*
-use hmac::{Hmac, Mac, NewMac};
-
-use sha2::{Digest, Sha256, Sha512};
-
-use crate::error::{Error, Result};
-
-// Create alias for HMAC-SHA256
-type HmacSha256 = Hmac<Sha256>;
-
-pub fn verify_hmac_sha256(key: &[u8], data: &[&[u8]], test_hash: &[u8]) -> Result<bool> {
-    let mut mac = HmacSha256::new_from_slice(key).unwrap();
-    //mac.update(data);
-    for v in data {
-        mac.update(v);
-    }
-    let r = mac.verify(test_hash).map_err(|_| Error::DataError).is_ok();
-    Ok(r)
-}
-
-pub fn do_hmac_sha256(key: &[u8], data: &[&[u8]]) -> Result<Vec<u8>> {
-    let mut mac = HmacSha256::new_from_slice(key).unwrap();
-    for v in data {
-        mac.update(v);
-    }
-    let result = mac.finalize();
-    Ok(result.into_bytes().to_vec())
-}
-
-pub fn do_sha256_hash(data: &[&Vec<u8>]) -> Result<Vec<u8>> {
-    let mut hasher = Sha256::new();
-    for v in data {
-        hasher.update(v);
-    }
-    let result = hasher.finalize();
-    //32 bytes hash output
-    Ok(result.to_vec())
-}
-
-//pub fn do_sha512_hash(data:&[&[u8]] ) -> Result<Vec<u8>> {
-pub fn do_sha512_hash(data: &[&Vec<u8>]) -> Result<Vec<u8>> {
-    let mut hasher = Sha512::new();
-    for v in data {
-        hasher.update(v);
-    }
-    let result = hasher.finalize();
-    //64 bytes hash output
-    Ok(result.to_vec())
-}
-
-#[allow(dead_code)]
-pub fn calculate_hash(data: &Vec<Vec<u8>>) -> Result<Vec<u8>> {
-    let mut hasher = Sha256::new();
-    for v in data {
-        hasher.update(v);
-    }
-    let result = hasher.finalize();
-    Ok(result.to_vec())
-}
-
-// #[allow(dead_code)]
-// pub fn do_vec_sha256_hash(data: Vec<u8>) -> Result<GenericArray<u8, U32>> {
-//     let mut hasher = Sha256::new();
-//     hasher.update(data);
-//     Ok(hasher.finalize())
-// }
-
-//32 bytes hash output
-pub fn do_vecs_sha256_hash(data: &Vec<&Vec<u8>>) -> Result<Vec<u8>> {
-    let mut hasher = Sha256::new();
-    for v in data {
-        hasher.update(v);
-    }
-    let result = hasher.finalize();
-    Ok(result.to_vec())
-}
-
-pub fn do_slice_sha256_hash(data: &[u8]) -> Result<Vec<u8>> {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    Ok(hasher.finalize().to_vec())
-}
-
-
-use rand::prelude::*;
-use rand_chacha::ChaCha20Rng;
-
-#[allow(dead_code)]
-pub struct SecureRandom {
-    rng: ChaCha20Rng,
-}
-
-#[allow(dead_code)]
-impl SecureRandom {
-    pub fn new() -> Self {
-        SecureRandom {
-            rng: ChaCha20Rng::from_entropy(),
-        }
-    }
-
-    pub fn get_bytes<const N: usize>(&mut self) -> Vec<u8> {
-        let mut buf = [0u8; N];
-        self.rng.fill_bytes(&mut buf);
-        buf.to_vec()
-    }
-}
-
-pub fn get_random_bytes<const N: usize>() -> Vec<u8> {
-    SecureRandom::new().get_bytes::<N>()
-}
-
-*/
 
 #[cfg(test)]
 mod tests {

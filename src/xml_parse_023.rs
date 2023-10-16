@@ -19,6 +19,7 @@ use crate::error::{Error, Result};
 use crate::util;
 use log::{error, info};
 
+#[allow(dead_code)]
 pub struct XmlReader<B: BufRead> {
     reader: QuickXmlReader<B>,
     stream_cipher: Option<ProtectedContentStreamCipher>,
@@ -1408,6 +1409,7 @@ impl<W: Write> FileKeyXmlWriter<W> {
 // However, Log events will be captured by `cargo` and only printed if the test fails. So see all log messages
 // the test needs to fail !
 
+#[allow(dead_code)]
 #[cfg(test)]
 mod tests {
     use crate::crypto;

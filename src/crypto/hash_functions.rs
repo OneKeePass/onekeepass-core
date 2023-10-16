@@ -1,11 +1,5 @@
+pub(crate) mod botan_crypto {
 
-pub use botan_crypto::*;
-
-//pub use rust_crypto::*;
-
-
-mod botan_crypto {
-    
     use crate::error::Result;
 
     pub fn verify_hmac_sha256(key: &[u8], data: &[&[u8]], test_hash: &[u8]) -> Result<bool> {
@@ -152,39 +146,11 @@ mod rust_crypto {
         hasher.update(data);
         Ok(hasher.finalize().to_vec())
     }
-
-    // use rand::prelude::*;
-    // use rand_chacha::ChaCha20Rng;
-
-    // #[allow(dead_code)]
-    // pub struct SecureRandom {
-    //     rng: ChaCha20Rng,
-    // }
-
-    // #[allow(dead_code)]
-    // impl SecureRandom {
-    //     pub fn new() -> Self {
-    //         SecureRandom {
-    //             rng: ChaCha20Rng::from_entropy(),
-    //         }
-    //     }
-
-    //     pub fn get_bytes<const N: usize>(&mut self) -> Vec<u8> {
-    //         let mut buf = [0u8; N];
-    //         self.rng.fill_bytes(&mut buf);
-    //         buf.to_vec()
-    //     }
-    // }
-
-    // pub fn get_random_bytes<const N: usize>() -> Vec<u8> {
-    //     SecureRandom::new().get_bytes::<N>()
-    // }
 }
 
-
 #[cfg(test)]
-mod tests { 
-    
+mod tests {
+
     use super::*;
 
     #[test]
@@ -195,8 +161,8 @@ mod tests {
 
         let h1 = do_hmac_sha256(&key, &[&data1]).unwrap();
 
-        let r = verify_hmac_sha256(&key, &[&data1] , &h1).unwrap();
-        println!("r is {}",r);
+        let r = verify_hmac_sha256(&key, &[&data1], &h1).unwrap();
+        println!("r is {}", r);
         assert!(r);
     }
 
@@ -205,14 +171,12 @@ mod tests {
         let data = "input message".as_bytes().to_vec();
         let h1 = rust_crypto::do_sha256_hash(&[&data]).unwrap();
         let h2 = botan_crypto::do_sha256_hash(&[&data]).unwrap();
-        assert_eq!(h1,h2);
+        assert_eq!(h1, h2);
 
         let h1 = rust_crypto::do_sha512_hash(&[&data]).unwrap();
-        
+
         let h2 = botan_crypto::do_sha512_hash(&[&data]).unwrap();
         println!("Size is {}", h1.len());
-        assert_eq!(h1,h2);
+        assert_eq!(h1, h2);
     }
-
-
 }

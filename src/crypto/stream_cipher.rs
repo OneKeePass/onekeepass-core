@@ -1,8 +1,4 @@
-pub use botan_crypto::*;
-//pub use rust_crypto::*;
-
-
-mod botan_crypto {
+pub(crate) mod botan_crypto {
 
     use log::error;
 
@@ -138,30 +134,37 @@ mod rust_crypto {
 
 #[cfg(test)]
 mod tests {
-    use crate::{crypto::{self, stream_cipher::botan_crypto}, constants::inner_header_type::CHACHA20_STREAM};
+    use crate::{
+        constants::inner_header_type::CHACHA20_STREAM,
+        crypto::{self, stream_cipher::botan_crypto},
+    };
 
     use super::rust_crypto;
-
 
     #[test]
     fn check_stream_cipher_operation() {
         let test_msg = "Test message";
         let inner_stream_key = &crypto::get_random_bytes::<64>();
-        let mut stream_cipher = rust_crypto::ProtectedContentStreamCipher::try_from(CHACHA20_STREAM, inner_stream_key).unwrap();
+        let mut stream_cipher =
+            rust_crypto::ProtectedContentStreamCipher::try_from(CHACHA20_STREAM, inner_stream_key)
+                .unwrap();
         let base64_str1 = stream_cipher.process_content_b64_str(test_msg).unwrap();
 
         println!("base64_str1 is  {}", &base64_str1);
 
-        let mut stream_cipher = botan_crypto::ProtectedContentStreamCipher::try_from(CHACHA20_STREAM, inner_stream_key).unwrap();
+        let mut stream_cipher =
+            botan_crypto::ProtectedContentStreamCipher::try_from(CHACHA20_STREAM, inner_stream_key)
+                .unwrap();
         let base64_str2 = stream_cipher.process_content_b64_str(test_msg).unwrap();
         println!("base64_str2 is  {}", &base64_str2);
 
         assert_eq!(base64_str1, base64_str2);
 
-        let mut stream_cipher = botan_crypto::ProtectedContentStreamCipher::try_from(CHACHA20_STREAM, inner_stream_key).unwrap();
-        let processed_msg = stream_cipher.process_basic64_str(&base64_str1).unwrap(); 
+        let mut stream_cipher =
+            botan_crypto::ProtectedContentStreamCipher::try_from(CHACHA20_STREAM, inner_stream_key)
+                .unwrap();
+        let processed_msg = stream_cipher.process_basic64_str(&base64_str1).unwrap();
         println!("processed_msg is  {}", &processed_msg);
         assert_eq!(test_msg, &processed_msg);
-
     }
 }

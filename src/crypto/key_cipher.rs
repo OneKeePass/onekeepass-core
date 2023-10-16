@@ -1,7 +1,4 @@
-pub use botan_crypto::*;
-// pub use rust_crypto::*;
-
-mod botan_crypto {
+pub(crate) mod botan_crypto {
     use crate::crypto;
     use crate::error::Result;
 
@@ -17,10 +14,10 @@ mod botan_crypto {
             Self {
                 // key is 256 bits - 32 bytes
                 key: crypto::get_random_bytes::<32>(),
-                // nonce is 96 bits - 12 bytes  
+                // nonce is 96 bits - 12 bytes
                 // Note nonce 16 bytes also work though "aes_gcm.default_nonce_length()" returns 12
                 // XC uses 16 bytes iv
-                nonce: crypto::get_random_bytes::<12>(), 
+                nonce: crypto::get_random_bytes::<12>(),
             }
         }
 
