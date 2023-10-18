@@ -86,10 +86,15 @@ pub(crate) struct AttachmentSet {
 }
 
 impl AttachmentSet {
+
     // Called to add the bytes data while reading the db content
     fn add(&mut self, data: Vec<u8>) {
         let key = AttachmentSet::to_hash(&data);
-        let size = data.len();
+
+        // The first byte is a flag to indicate whether the data needs protection or not
+        // and we need to exclude it from the content
+        let size = data.len() - 1;
+
         self.attachments.insert(key, data);
 
         // Index is the value used in Ref attribute
@@ -126,7 +131,7 @@ impl AttachmentSet {
         key
     }
 
-    /// Generates a hash key based on the attachment bytes data
+    // Generates a hash key based on the attachment bytes data
     fn to_hash(data: &[u8]) -> AttachmentHashValue {
         let mut hasher = DefaultHasher::new();
         hasher.write(data);

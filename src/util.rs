@@ -1,16 +1,16 @@
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::Hasher;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 
 use chrono::{
     DateTime, Datelike, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc,
-}; 
+};
 use uuid::Uuid;
 
 //use crate::result::{Result};
-use crate::constants::EMPTY_STR;
+use crate::{constants::EMPTY_STR, error::Error};
 use crate::error::Result;
 
 use base64::{engine::general_purpose, Engine as _};
@@ -130,7 +130,6 @@ pub fn add_months<DateTime: Datelike>(old_dt: DateTime, months: u32) -> DateTime
         }
     }
 }
-
 
 pub fn decompress(compressed_data: &[u8]) -> Result<Vec<u8>> {
     let mut writer = Vec::new();
@@ -303,6 +302,14 @@ pub fn sub_strings(string: &str, sub_len: usize) -> Vec<&str> {
         pos += len;
     }
     subs
+}
+
+#[inline]
+pub fn parse_attachment_hash(data_hash_str: &str) -> Result<u64> {
+    let data_hash = data_hash_str.parse::<u64>().map_err(|e| {
+        Error::Other(format!("Data hash str to u64 conversion failed - {} ", e))
+    })?;
+    Ok(data_hash)
 }
 
 // const TAGS_SEPARATORS: [char; 2] = [';', ','];
@@ -604,7 +611,7 @@ mod tests {
         let test_file = "/Users/jeyasankar/mytemp/Test1/compression_test_data_bin";
         let mut f = fs::File::open(test_file).unwrap();
         let mut buf: Vec<u8> = vec![];
-        f.read_to_end(&mut buf).unwrap();
+        std::io::Read::read_to_end(&mut f, &mut buf).unwrap();
         println!("Size of buf is {}", buf.len());
 
         let start = std::time::Instant::now();

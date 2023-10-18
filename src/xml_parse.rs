@@ -1174,7 +1174,7 @@ impl<'a> FileKeyXmlReader<'a> {
                 }
 
                 Ok(Event::Empty(ref _e)) => {}
-                Ok(Event::End(ref e)) => {
+                Ok(Event::End(ref _e)) => {
                     // KeyFile end tag should have been consumed in read_top_level
                     //info!("PARSE:End of tag {:?}", self.reader.decode(e));
                 }

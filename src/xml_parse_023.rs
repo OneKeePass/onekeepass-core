@@ -136,6 +136,7 @@ fn skip_tag<B: BufRead>(tag: &[u8], reader: &mut QuickXmlReader<B>) -> Result<()
     Ok(())
 }
 
+#[allow(dead_code)]
 #[inline]
 fn content_to_int(content: String) -> i32 {
     if let Ok(i) = content.parse::<i32>() {
@@ -150,6 +151,7 @@ fn content_to_int(content: String) -> i32 {
     }
 }
 
+#[allow(dead_code)]
 #[inline]
 fn content_to_bool(content: String) -> bool {
     if content.to_lowercase() == "true" {
@@ -159,6 +161,7 @@ fn content_to_bool(content: String) -> bool {
     }
 }
 
+#[allow(dead_code)]
 #[inline]
 fn content_to_dt(content: String) -> chrono::NaiveDateTime {
     if let Some(d) = util::decode_datetime_b64(&content) {
@@ -172,6 +175,7 @@ fn content_to_dt(content: String) -> chrono::NaiveDateTime {
     }
 }
 
+#[allow(dead_code)]
 #[inline]
 fn content_to_uuid(content: &String) -> uuid::Uuid {
     match util::decode_uuid(content) {
@@ -180,6 +184,7 @@ fn content_to_uuid(content: &String) -> uuid::Uuid {
     }
 }
 
+#[allow(dead_code)]
 #[inline]
 fn content_to_string_opt(content: String) -> Option<String> {
     if content.trim().is_empty() {
@@ -189,6 +194,7 @@ fn content_to_string_opt(content: String) -> Option<String> {
     }
 }
 
+#[allow(dead_code)]
 #[inline]
 fn bool_to_xml_bool(flag:bool) -> String {
     if flag {
@@ -198,7 +204,7 @@ fn bool_to_xml_bool(flag:bool) -> String {
     }
 }
 
-
+#[allow(dead_code)]
 impl<B: BufRead> XmlReader<B> {
     pub fn new(data: B, cipher: Option<ProtectedContentStreamCipher>) -> XmlReader<B> {
         let mut qxmlreader = QuickXmlReader::from_reader(data);
@@ -851,12 +857,14 @@ macro_rules! write_parent_child_with_attributes {
     }
 }
 
+#[allow(dead_code)]
 pub struct XmlWriter<W: Write> {
     writer: QuickXmlWriter<W>,
     //stream_cipher: ProtectedContentStreamCipher,
     stream_cipher: Option<ProtectedContentStreamCipher>,
 }
 
+#[allow(dead_code)]
 impl<W: Write> XmlWriter<W> {
     pub fn new(writer: W, cipher: Option<ProtectedContentStreamCipher>) -> Self {
         Self {
@@ -1146,7 +1154,7 @@ pub fn write_xml_with_indent(
 }
 
 ////////////////////////  Xml based Key file ////////////////
-
+#[allow(dead_code)]
 // For now FileKeyXmlReader and FileKeyXmlWriter are using similar struct XmlReader and XmlWriter
 // but with FileKey xml specific methods supported
 pub struct FileKeyXmlReader<B: BufRead> {
@@ -1155,6 +1163,7 @@ pub struct FileKeyXmlReader<B: BufRead> {
     stream_cipher: Option<ProtectedContentStreamCipher>,
 }
 
+#[allow(dead_code)]
 impl<B: BufRead> FileKeyXmlReader<B> {
     pub fn new(data: B) -> Self {
         let mut qxmlreader = QuickXmlReader::from_reader(data);
@@ -1327,10 +1336,12 @@ impl<B: BufRead> FileKeyXmlReader<B> {
     }
 }
 
+#[allow(dead_code)]
 pub struct FileKeyXmlWriter<W: Write> {
     writer: QuickXmlWriter<W>,
 }
 
+#[allow(dead_code)]
 impl<W: Write> FileKeyXmlWriter<W> {
     pub fn new_with_indent(writer: W) -> Self {
         Self {

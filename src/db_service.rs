@@ -6,7 +6,7 @@ pub use crate::error;
 pub use crate::error::{Error, Result};
 pub use crate::form_data::*;
 pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions, PasswordScore};
-pub use crate::util::{file_name, formatted_key, string_to_simple_hash};
+pub use crate::util::{file_name, formatted_key, string_to_simple_hash,parse_attachment_hash};
 
 use crate::db::{self, write_kdbx_file, write_kdbx_file_with_backup_file, KdbxFile};
 use crate::db_content::{standard_types_ordered_by_id, AttachmentHashValue, KeepassFile};
@@ -330,7 +330,7 @@ pub fn close_all_databases() -> Result<()> {
     Ok(())
 }
 
-// Called to generate random 32 bytes key and stored in an xml file (Version 2.0) 
+// Called to generate random 32 bytes key and stored in an xml file (Version 2.0)
 pub fn generate_key_file(key_file_name: &str) -> Result<()> {
     db::create_key_file(key_file_name)
 }
@@ -570,7 +570,7 @@ pub fn save_as_kdbx(db_key: &str, database_file_name: &str) -> Result<KdbxLoaded
     let kdbx_loaded = call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
         // database_file_name is full name uri and will be used the new saved as file's db_key
         ctx.kdbx_file.set_database_file_name(database_file_name);
-        
+
         write_kdbx_file(&mut ctx.kdbx_file, true)?;
         // All changes are now saved to file
         ctx.save_pending = false;
@@ -950,7 +950,7 @@ pub fn get_entry_form_data_by_id(db_key: &str, entry_uuid: &Uuid) -> Result<Entr
 }
 
 // Collects all entry field names and its values (not in any particular order)
-pub fn entry_key_value_fields(db_key: &str, entry_uuid: &Uuid) -> Result<HashMap<String,String>> {
+pub fn entry_key_value_fields(db_key: &str, entry_uuid: &Uuid) -> Result<HashMap<String, String>> {
     main_content_action!(db_key, move |k: &KeepassFile| {
         match k.root.entry_by_id(entry_uuid) {
             Some(e) => Ok(e.field_values()),
@@ -1145,7 +1145,7 @@ pub fn upload_entry_attachment(db_key: &str, file_name: &str) -> Result<Attachme
         let data_hash = ctx.kdbx_file.upload_entry_attachment(buf);
         Ok(AttachmentUploadInfo {
             name: name.into(),
-            data_hash: data_hash,
+            data_hash,
             data_size: size,
         })
     })
@@ -1182,6 +1182,25 @@ pub fn save_attachment_as_temp_file(
             .map(|s| s.into())
     } else {
         Err(Error::Other("No valid data found".into()))
+    }
+}
+
+pub fn save_attachment_as(
+    db_key: &str,
+    full_file_name: &str,
+    data_hash: &AttachmentHashValue,
+) -> Result<()> {
+    let mut file = std::fs::File::create(full_file_name)?;
+
+    let data = call_kdbx_context_action(db_key, |ctx: &KdbxContext| {
+        Ok(ctx.kdbx_file.get_bytes_content(data_hash))
+    })?;
+
+    if let Some(v) = data {
+        file.write_all(&v)?;
+        return Ok(());
+    } else {
+        return Err(Error::Other("No valid data found".into()));
     }
 }
 
