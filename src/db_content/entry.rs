@@ -137,8 +137,8 @@ pub struct Entry {
     pub icon_id: i32,
     pub times: Times,
     pub tags: String,
+    // entry_field contains all KeyValues
     pub entry_field: EntryField,
-    //pub key_values: Vec<KeyValue>,
     pub binary_key_values: Vec<BinaryKeyValue>,
     pub custom_data: CustomData,
     pub auto_type: AutoType,
@@ -196,6 +196,8 @@ impl Entry {
 
     pub fn before_xml_writing(&mut self) {
         // Any entry customized data should copied back to custom data here so that we can persist in db
+        // For now all custom data writing is already taken care of while modifiing the entry itself
+        // See entry.update -> entry.copy_to_custom_data()
     }
 
     // Creates the EntryType for an entry from any previously serialized entry type data
@@ -342,12 +344,14 @@ impl Entry {
         }
     }
 
-    /// Called after forming inner header binary data and before writing xml as bytes
+    // Called after forming inner header binary data and before writing xml as bytes
+    // to set the correct attachment index based on the attachment hash value
+    // The arg 'hash_index_ref' is a newly prepared mappping 
     pub fn set_attachment_index_refs(
         &mut self,
         hash_index_ref: &HashMap<AttachmentHashValue, i32>,
     ) {
-        //First we set all index refs for an entry followed by the entries found in its history
+        // First we set all index refs for an entry followed by the entries found in its history
         for bv in &mut self.binary_key_values {
             if let Some(idx) = hash_index_ref.get(&bv.data_hash) {
                 bv.index_ref = *idx;
@@ -356,21 +360,21 @@ impl Entry {
                 &bv.data_hash, &bv.key, &self.uuid);
             }
         }
-        //We call also the histories entries.
-        //IMPORATNT: It is assumed each entry found in historty.entries should have empty history
+        // We call also the histories entries.
+        // IMPORATNT: It is assumed each entry found in historty.entries should have empty history
         for e in &mut self.history.entries {
             e.set_attachment_index_refs(hash_index_ref);
         }
     }
 
-    /// Gets the hash values of all attachments from this entry and the entries found in history field
+    // Gets the hash values of all attachments from this entry and the entries found in history field
     pub fn get_attachment_hashes(&self, hashes: &mut Vec<u64>) {
-        //First we collect all hashes from an entry followed by the entries found in its history
+        // First we collect all hashes from an entry followed by the entries found in its history
         //let mut hashes = vec![];
         for bv in &self.binary_key_values {
             hashes.push(bv.data_hash);
         }
-        //We call also the histories entries.
+        // We call also the histories entries.
         //IMPORATNT: It is assumed each entry found in historty.entries should have empty history
         for e in &self.history.entries {
             e.get_attachment_hashes(hashes);

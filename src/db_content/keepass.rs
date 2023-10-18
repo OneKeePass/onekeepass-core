@@ -122,7 +122,7 @@ impl KeepassFile {
     pub fn before_xml_writing(&mut self, hash_index_ref: &HashMap<AttachmentHashValue, i32>) {
         self.meta.copy_to_custom_data();
 
-        //Need to set the new index_refs of all attachments after writing the binaries
+        // Need to set the new index_refs of all attachments after writing the binaries
         self.root.set_attachment_index_refs(hash_index_ref);
 
         // Any entries related one

@@ -16,7 +16,6 @@ pub struct KdbxFile {
 }
 
 impl KdbxFile {
-
     #[inline]
     pub fn hmac_part_key(&self) -> &Vec<u8> {
         &self.secured_database_keys.hmac_part_key
@@ -32,7 +31,7 @@ impl KdbxFile {
         &self.secured_database_keys.master_key
     }
 
-    pub fn compute_all_keys(&mut self,seed_reset:bool) -> Result<()> {
+    pub fn compute_all_keys(&mut self, seed_reset: bool) -> Result<()> {
         if seed_reset {
             // Before the next save, we need to reset the master seed and encryption iv to new set of values
             let _r = self.main_header.reset_master_seed_iv()?;
@@ -122,7 +121,7 @@ impl KdbxFile {
         self.inner_header.entry_attachments.insert(data)
     }
 
-    // Provides the stored attachment bytes data for viewing or saving by user  
+    // Provides the stored attachment bytes data for viewing or saving by user
     pub fn get_bytes_content(&self, data_hash: &AttachmentHashValue) -> Option<Vec<u8>> {
         self.inner_header.get_bytes_content(data_hash)
     }
@@ -357,13 +356,13 @@ impl MainHeader {
     }
 
     // Reset the master seed and encryption iv for the next saving
-    pub(crate) fn reset_master_seed_iv(&mut self) -> Result<()>{
+    pub(crate) fn reset_master_seed_iv(&mut self) -> Result<()> {
         let cid = match self.cipher_id.as_slice() {
             constants::uuid::AES256 => ContentCipherId::Aes256,
             constants::uuid::CHACHA20 => ContentCipherId::ChaCha20,
-            _ => ContentCipherId::UnKnownCipher
+            _ => ContentCipherId::UnKnownCipher,
         };
-        let (ms,iv) = cid.generate_master_seed_iv()?;
+        let (ms, iv) = cid.generate_master_seed_iv()?;
         self.master_seed = ms;
         self.encryption_iv = iv;
         debug!("Master seed and encryption IV are reset");
@@ -379,14 +378,13 @@ pub(crate) struct InnerHeader {
 
     // All attachemnt binaries are in the same order as they are in the db
     // They are referred by "index_ref" (from "Ref" attribute of XML db) field of "BinaryKeyValue" struct
-    // The attachement vec's first byte is a flag to indicate whether the data needs protection 
+    // The attachement vec's first byte is a flag to indicate whether the data needs protection
     // and remaining bytes are the actual attachment
     // Such attachments data are stored in AttachmentSet for easy lookup as well as for uploading new ones
     pub(crate) entry_attachments: AttachmentSet,
 }
 
 impl InnerHeader {
-
     // Called to keep the attachment bytes data for later use
     pub(crate) fn add_binary_data(&mut self, data: Vec<u8>) {
         self.entry_attachments.add(data);
@@ -397,6 +395,8 @@ impl InnerHeader {
         self.entry_attachments.get_bytes_content(data_hash)
     }
 
+    // Called to write all attachment binaries identified by the hashes
+    // The arg 'attachment_hashes' is created in root.get_attachment_hashes
     pub(crate) fn write_all_bytes<W: Write>(
         &mut self,
         attachment_hashes: Vec<AttachmentHashValue>,
@@ -416,12 +416,17 @@ impl InnerHeader {
         let mut writen_index = 0;
         // Need to reset the map before writing so that we can pass the correct hash to index mapping while writing xml content
         self.entry_attachments.hash_index_ref.clear();
+
         for h in attachment_hashes {
             let hidx = self.entry_attachments.hash_index_ref.get(&h);
+
+            // None means the hash to 'index_ref' is not yet done and binary data for this hash is not yet written
             if hidx.is_none() {
                 if let Some(data) = self.entry_attachments.attachments.get(&h) {
                     write_header_with_size!(writer, inner_header_type::BINARY, &data);
                 }
+                // Recreate the 'hash_index_ref' entry 
+                // This index will be used to set in "Ref" attribute of an entry's BinaryKeyValue tag
                 self.entry_attachments
                     .hash_index_ref
                     .insert(h, writen_index);
@@ -436,7 +441,7 @@ impl InnerHeader {
         writer.write(&[inner_header_type::END_OF_HEADER])?;
 
         // [0, 0, 0, 0] => 0 bytes size - No inner header data for end marker
-        writer.write(&vec![0u8; 4])?; 
+        writer.write(&vec![0u8; 4])?;
 
         Ok(())
     }
