@@ -48,7 +48,7 @@ impl KdbxFile {
     //     self.main_header.reset_master_seed_iv()
     // }
 
-    pub fn compare_key(&self, password: &str, key_file_name: Option<&str>) -> Result<bool> {
+    pub fn compare_key(&self, password: Option<&str>, key_file_name: Option<&str>) -> Result<bool> {
         let file_key = FileKey::from(key_file_name)?;
         self.secured_database_keys
             .compare_keys(&self.database_file_name, password, &file_key)
@@ -70,8 +70,10 @@ impl KdbxFile {
         self.file_key.as_ref().map(|f| f.file_name.clone())
     }
 
-    /// Opens the named file, reads and uses its content while computing key
+    // Called to set a new key file use.
+    // Opens the named file, reads and uses its content while computing key
     pub fn set_file_key(&mut self, key_file_name: Option<&str>) -> Result<()> {
+        
         // We need not do anything if the current db does not use key file and the no file name is selected
         // for 'key_file_name'
         if self.file_key.is_none() && key_file_name.is_none() {
@@ -101,6 +103,27 @@ impl KdbxFile {
         Ok(())
     }
 
+    // Called when both password and key file are changed in settings
+    pub fn set_credentials(&mut self, db_key: &str, password: Option<&str>,key_file_name: Option<&str>) -> Result<()> {
+        
+        let file_key = FileKey::from(key_file_name)?;
+        let mut keys = SecuredDatabaseKeys::from_keys(password, &file_key)?;
+        keys.secure_keys(db_key)?;
+        self.secured_database_keys = keys;
+        
+        Ok(())
+    }
+
+    pub fn set_password(&mut self, password: Option<&str>) -> Result<()> {
+        self.secured_database_keys
+            .set_password(&self.database_file_name, password)
+    }
+
+    // Gets whether pasword or/and key file are used in master key or not
+    pub fn credentials_used_state(&self) -> (bool,bool) {
+        self.secured_database_keys.credentials_used_state()
+    }
+
     pub fn set_database_file_name(&mut self, database_file_name: &str) -> &mut Self {
         self.database_file_name = database_file_name.into();
         self
@@ -108,11 +131,6 @@ impl KdbxFile {
 
     pub fn get_database_file_name(&self) -> &str {
         &self.database_file_name
-    }
-
-    pub fn set_password(&mut self, password: &str) -> Result<()> {
-        self.secured_database_keys
-            .set_password(&self.database_file_name, password)
     }
 
     /// Called when user uploads an attachment in UI

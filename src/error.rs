@@ -47,6 +47,9 @@ pub enum Error {
     #[error("BlockHashCheckFailed")]
     BlockHashCheckFailed,
 
+    #[error("Valid password or key file name or both are required")]
+    InSufficientCredentials,
+
     /// Unknown key derivation function UUID.
     // #[error("Invalid KDF ID.Only `Argon2` and `AES` are supported")]
     // UnsupportedKdf(Vec<u8>),

@@ -58,6 +58,13 @@ pub struct DbSettings {
     pub cipher_id: ContentCipherId,
     pub password: Option<String>,
     pub key_file_name: Option<String>,
+    // Used for both reading and setting from UI side
+    pub password_used:bool,
+    pub key_file_used:bool,
+    // Set when changed from the UI side
+    pub password_changed:bool,
+    pub key_file_changed:bool,
+
     // Just the file name component of the full key file name 'key_file_name'
     // Used in mobile mainly
     pub key_file_name_part:Option<String>,

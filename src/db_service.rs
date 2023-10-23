@@ -6,7 +6,7 @@ pub use crate::error;
 pub use crate::error::{Error, Result};
 pub use crate::form_data::*;
 pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions, PasswordScore};
-pub use crate::util::{file_name, formatted_key, string_to_simple_hash,parse_attachment_hash};
+pub use crate::util::{file_name, formatted_key, parse_attachment_hash, string_to_simple_hash};
 
 use crate::db::{self, write_kdbx_file, write_kdbx_file_with_backup_file, KdbxFile};
 use crate::db_content::{standard_types_ordered_by_id, AttachmentHashValue, KeepassFile};
@@ -231,7 +231,7 @@ where
 /// Returns KdbxLoaded with db key which is required to access such loaded db content from the cache
 pub fn load_kdbx(
     db_file_name: &str,
-    password: &str,
+    password: Option<&str>,
     key_file_name: Option<&str>,
 ) -> Result<KdbxLoaded> {
     let mut db_file_reader = db::open_db_file(db_file_name)?;
@@ -261,7 +261,7 @@ macro_rules! to_keepassfile {
 pub fn read_kdbx<R: Read + Seek>(
     reader: &mut R,
     db_file_name: &str,
-    password: &str,
+    password: Option<&str>,
     key_file_name: Option<&str>,
     file_name: Option<&str>,
 ) -> Result<KdbxLoaded> {
@@ -633,7 +633,7 @@ pub fn unlock_kdbx_on_biometric_authentication(db_key: &str) -> Result<KdbxLoade
 /// Compares the entered credentials with the stored one for a quick unlock of the db
 pub fn unlock_kdbx(
     db_key: &str,
-    password: &str,
+    password: Option<&str>,
     key_file_name: Option<&str>,
 ) -> Result<KdbxLoaded> {
     kdbx_context_action!(db_key, |ctx: &KdbxContext| {
@@ -683,11 +683,17 @@ pub fn get_db_settings(db_key: &str) -> Result<DbSettings> {
         //Used only in Mobile apps
         let key_file_name_part = key_file_name.as_ref().and_then(|s| util::file_name(s));
 
+        let (password_used, key_file_used) = ctx.kdbx_file.credentials_used_state();
+
         let db_settings = DbSettings {
             kdf: ctx.kdbx_file.get_kdf_algorithm(),
             cipher_id: ctx.kdbx_file.get_content_cipher_id(),
             password: None,
             key_file_name,
+            password_used,
+            key_file_used,
+            password_changed: false,
+            key_file_changed: false,
             key_file_name_part,
             database_file_name: ctx.kdbx_file.get_database_file_name().to_string(),
             meta: (&kp.meta).into(),
@@ -705,15 +711,49 @@ pub fn set_db_settings(db_key: &str, db_settings: DbSettings) -> Result<()> {
             .as_mut()
             .ok_or("No main content")?;
         kp.meta.update((&db_settings.meta).into())?;
-        // Password changed
-        if let Some(s) = db_settings.password {
-            ctx.kdbx_file.set_password(&s)?;
+
+        // IMPORTANT 
+        // password_used,key_file_used,password_changed and key_file_changed are set from client side
+        // in a consistent way statifying the following combinations
+        // e.g 
+        // If a password is changed, then password_used = true and password_changed = true
+        // If the password use is removed, 
+        //     then password_used = false , password_changed = true ; key_file_used = true and key_file_changed = true or false
+        // 
+        // If a key file is changed, then key_file_used = true and key_file_changed = true
+        // If the key file use is removed, 
+        //      then key_file_used = false and key_file_changed = true; password_used = true , password_changed = true or false
+
+        if db_settings.password_used && db_settings.password.is_none() {
+            return Err(Error::DataError("Password can not be empty"));
         }
-        // TODO:
-        // Need to add some flag in DbSettings so that we can avoid calling 'set_file_key' if there is no change in key file use.
-        // For now some checks are done in kdbx_file.set_file_key and avoids reading and creating file content hash etc i
-        ctx.kdbx_file
-            .set_file_key(db_settings.key_file_name.as_deref())?;
+
+        if db_settings.key_file_used && db_settings.key_file_name.is_none() {
+            return Err(Error::DataError("Key file name can not be empty"));
+        }
+
+        let password = if db_settings.password_used {
+            db_settings.password.as_deref()
+        } else {
+            None
+        };
+
+        let file_key = if db_settings.key_file_used {
+            db_settings.key_file_name.as_deref()
+        } else {
+            None
+        };
+
+        if db_settings.password_changed && db_settings.key_file_changed {
+            // Both password and key file use changed
+            ctx.kdbx_file.set_credentials(db_key, password, file_key)?;
+        } else if db_settings.password_changed {
+            // Only password changed
+            ctx.kdbx_file.set_password(password)?;
+        } else if db_settings.key_file_changed {
+            // Only password key file used changed
+            ctx.kdbx_file.set_file_key(file_key)?;
+        }
 
         ctx.kdbx_file.set_kdf_algorithm(db_settings.kdf)?;
         ctx.kdbx_file.set_content_cipher_id(db_settings.cipher_id)?;

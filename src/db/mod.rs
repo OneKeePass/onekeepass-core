@@ -19,8 +19,8 @@ use self::kdbx_file::InnerHeader;
 use self::reader_writer::{KdbxFileReader, KdbxFileWriter};
 use crate::constants::{self, EMPTY_STR};
 use crate::constants::{header_type, inner_header_type, vd_type};
-use crate::crypto;
 use crate::crypto::kdf::Kdf;
+use crate::{crypto, error};
 
 use crate::db_content::*;
 use crate::error::{Error, Result};
@@ -30,10 +30,10 @@ use kdbx_file::MainHeader;
 
 // Reexports
 pub(crate) use self::file_key::{FileKey, KeyFileData};
+pub use crypto::ContentCipherId;
 pub use kdbx_file::KdbxFile;
 pub use key_secure::{KeyStoreOperation, KeyStoreService, KeyStoreServiceType};
 pub use new_db::NewDatabase;
-pub use crypto::ContentCipherId;
 
 /// Writes the header type byte and header data of Vec<u8> type with size le bytes as prefix
 /// This macro is used for both MainHeader and InnerHeader Vec<u8> data writing
@@ -86,7 +86,6 @@ pub(crate) struct AttachmentSet {
 }
 
 impl AttachmentSet {
-
     // Called to add the bytes data while reading the db content
     fn add(&mut self, data: Vec<u8>) {
         let key = AttachmentSet::to_hash(&data);
@@ -152,10 +151,10 @@ impl AttachmentSet {
 #[derive(Clone)]
 pub(crate) struct SecuredDatabaseKeys {
     // 32 bytes formed using sha256_hash
-    password_hash: Vec<u8>,
+    password_hash: Option<Vec<u8>>,
     // 32 bytes formed using sha256_hash
     key_file_data_hash: Option<Vec<u8>>,
-    // 32 bytes formed using sha256_hash of password and file hash 
+    // 32 bytes formed using sha256_hash of password_hash and key_file_data_hash
     composite_key: Vec<u8>,
     // 32 bytes see KDF call
     transformed_key: Vec<u8>,
@@ -171,7 +170,7 @@ pub(crate) struct SecuredDatabaseKeys {
 impl Default for SecuredDatabaseKeys {
     fn default() -> Self {
         Self {
-            password_hash: vec![],
+            password_hash: None,
             key_file_data_hash: None,
             composite_key: vec![],
             transformed_key: vec![],
@@ -184,23 +183,34 @@ impl Default for SecuredDatabaseKeys {
 }
 
 impl SecuredDatabaseKeys {
-    fn from_keys(password: &str, file_key: &Option<FileKey>) -> Result<Self> {
-        let (p, f, c) = if let Some(fk) = file_key {
-            // Final hash is sha256(sha256(password) + sha256(keyfile-content))
-            let phash = crypto::do_slice_sha256_hash(password.as_bytes())?;
-            let fhash = fk.content_hash();
+    fn from_keys(password: Option<&str>, file_key: &Option<FileKey>) -> Result<Self> {
+        let (p, f, c) = match (password, file_key) {
+            (Some(p), Some(f)) => {
+                // Final hash is sha256(sha256(password) + keyfile_content)
+                let phash = crypto::do_slice_sha256_hash(p.as_bytes())?;
+                let fhash = f.content_hash();
+                let data = vec![&phash, &fhash];
+                let final_hash = crypto::do_vecs_sha256_hash(&data)?;
 
-            let data = vec![&phash, &fhash];
+                (Some(phash), Some(fhash), final_hash)
+            }
+            (Some(p), None) => {
+                // Final hash is sha256(sha256(password))
+                let phash = crypto::do_slice_sha256_hash(p.as_bytes())?;
+                let final_hash = crypto::do_slice_sha256_hash(phash.as_ref())?;
 
-            let final_hash = crypto::do_vecs_sha256_hash(&data)?;
+                (Some(phash), None, final_hash)
+            }
+            (None, Some(f)) => {
+                // Final hash is sha256(keyfile_content)
+                let fhash = f.content_hash();
+                let final_hash = crypto::do_slice_sha256_hash(&fhash)?;
 
-            (phash, Some(fhash), final_hash)
-        } else {
-            // Final hash is sha256(sha256(password))
-            let phash = crypto::do_slice_sha256_hash(password.as_bytes())?;
-            let final_hash = crypto::do_slice_sha256_hash(phash.as_ref())?;
-
-            (phash, None, final_hash)
+                (None, Some(fhash), final_hash)
+            }
+            (None, None) => {
+                return Err(error::Error::InSufficientCredentials);
+            }
         };
 
         let sk = Self {
@@ -213,40 +223,38 @@ impl SecuredDatabaseKeys {
             master_key: vec![],
             encrypted: false,
         };
-        debug!("SecuredDatabaseKeys is created in from_keys");
+
         Ok(sk)
     }
 
     // IMPORTANT: Need to call this to encrypt the keys and store it in a secure store
     pub(crate) fn secure_keys(&mut self, db_key: &str) -> Result<()> {
-        debug!("SecuredDatabaseKeys In secure_keys method and going to encrypt all keys");
         let kc = crypto::KeyCipher::new();
 
-        let enc_p = kc.encrypt(&self.password_hash)?;
-        self.password_hash = enc_p.into();
+        // Encrypt all previously calculated hashes
 
-        let enc_c = kc.encrypt(&self.composite_key)?;
-        self.composite_key = enc_c.into();
+        if let Some(pw) = &self.password_hash {
+            self.password_hash = Some(kc.encrypt(&pw)?);
+        }
 
         if let Some(file_data) = &self.key_file_data_hash {
-            let enc_f = kc.encrypt(file_data)?;
-            self.key_file_data_hash = Some(enc_f);
+            self.key_file_data_hash = Some(kc.encrypt(file_data)?);
         }
+
+        self.composite_key = kc.encrypt(&self.composite_key)?;
 
         let mut data = kc.key.clone();
         data.extend_from_slice(&kc.nonce);
 
         // Need to store the encryption key for future use
         KeyStoreOperation::store_key(db_key, data)?;
-        debug!("SecuredDatabaseKeys KeyStoreOperation::store_keyis called to store encrypted key");
+
         self.encrypted = true;
 
         Ok(())
     }
 
     fn compute_keys(&mut self, master_seed: &Vec<u8>, transformed_key: Vec<u8>) -> Result<()> {
-        debug!("SecuredDatabaseKeys compute_keys is called");
-
         self.transformed_key = transformed_key;
         // 1 byte with value 1 added as suffix
         let suffix = vec![1u8; 1];
@@ -322,94 +330,130 @@ impl SecuredDatabaseKeys {
         self.decrypt_key(db_key, &self.composite_key)
     }
 
-    fn _decrypt_password_key(&self, db_key: &str) -> Result<Vec<u8>> {
-        self.decrypt_key(db_key, &self.password_hash)
-    }
-
-    fn _decrypt_key_file_data_hash(&self, db_key: &str) -> Result<Vec<u8>> {
-        if let Some(fk) = &self.key_file_data_hash {
-            self.decrypt_key(db_key, fk)
-        } else {
-            Ok(vec![])
-        }
-    }
-
     // Called for quick unlock when user uses credentials
     // Assumed that we will be able to get the encryption key
     fn compare_keys(
         &self,
         db_key: &str,
-        password: &str,
+        password: Option<&str>,
         file_key: &Option<FileKey>,
     ) -> Result<bool> {
-        let phash = crypto::do_slice_sha256_hash(password.as_bytes())?;
-        let chash = if let Some(fk) = file_key {
-            debug!("Forming the composite key with password and key file for quick unlock");
-            let fhash = fk.content_hash();
-            let data = vec![&phash, &fhash];
-            let final_hash = crypto::do_vecs_sha256_hash(&data)?;
-            final_hash
-        } else {
-            debug!("Forming the composite key with password only");
-            let final_hash = crypto::do_slice_sha256_hash(&phash)?;
-            final_hash.to_vec()
+        let chash = match (password, file_key) {
+            (Some(p), Some(f)) => {
+                let phash = crypto::do_slice_sha256_hash(p.as_bytes())?;
+                let fhash = f.content_hash();
+                let data = vec![&phash, &fhash];
+                let final_hash = crypto::do_vecs_sha256_hash(&data)?;
+                final_hash
+            }
+            (Some(p), None) => {
+                let phash = crypto::do_slice_sha256_hash(p.as_bytes())?;
+                crypto::do_slice_sha256_hash(&phash)?
+            }
+            (None, Some(f)) => {
+                let fhash = f.content_hash();
+                crypto::do_slice_sha256_hash(&fhash)?
+            }
+            (None, None) => {
+                return Err(error::Error::InSufficientCredentials);
+            }
         };
 
         let existing_chash = self.decrypt_composite_key(db_key)?;
-        debug!(
-            "Comparing composite key for quick unlock and the result is {}",
-            chash == existing_chash
-        );
+
         Ok(chash == existing_chash)
     }
 
     // Called whenever user changes the password
-    pub fn set_password(&mut self, db_key: &str, password: &str) -> Result<()> {
-        let phash = crypto::do_slice_sha256_hash(password.as_bytes())?;
+    pub(crate) fn set_password(&mut self, db_key: &str, password: Option<&str>) -> Result<()> {
+        let (pw_hash, chash) = match (password, &self.key_file_data_hash) {
+            (Some(p), Some(key_file_hash)) => {
+                // User changed the password, but retained the current key file
+                let phash = crypto::do_slice_sha256_hash(p.as_bytes())?;
+                // Need to get the previous key file hash
+                let fhash = self.decrypt_key(db_key, key_file_hash)?;
+                let data = vec![&phash, &fhash];
+                let final_hash = crypto::do_vecs_sha256_hash(&data)?;
+                (Some(phash), final_hash)
+            }
+            (Some(p), None) => {
+                // User changed the password and currently no key file is used
+                let phash = crypto::do_slice_sha256_hash(p.as_bytes())?;
+                let final_hash = crypto::do_slice_sha256_hash(&phash)?;
+                (Some(phash), final_hash)
+            }
+            (None, Some(key_file_hash)) => {
+                // User has removed the use of password and only the currently used key file is kept
+                let fhash = self.decrypt_key(db_key, key_file_hash)?;
+                let final_hash = crypto::do_slice_sha256_hash(&fhash)?;
+                (None, final_hash)
+            }
 
-        // Need to recalculate composite key whenever the password or key file added/changed is changed
-        let chash = if let Some(key_file_hash) = &self.key_file_data_hash {
-            // First decrypt the previously encrypted key file hash
-            let fhash = self.decrypt_key(db_key, key_file_hash)?;
-            let data = vec![&phash, &fhash];
-            let final_hash = crypto::do_vecs_sha256_hash(&data)?;
-            final_hash
-        } else {
-            let final_hash = crypto::do_slice_sha256_hash(&phash)?;
-            final_hash.to_vec()
+            (None, None) => {
+                return Err(error::Error::InSufficientCredentials);
+            }
         };
 
         // Set the newly encrypted hashes
-        self.password_hash = self.encrypt_key(db_key, &phash)?;
+        if let Some(h) = pw_hash {
+            self.password_hash = Some(self.encrypt_key(db_key, &h)?);
+        } else {
+            self.password_hash = None
+        }
         self.composite_key = self.encrypt_key(db_key, &chash)?;
 
         Ok(())
     }
 
     // Called whenever user changes the key file usage
-    pub fn set_file_key(&mut self, db_key: &str, file_key_opt: Option<&FileKey>) -> Result<()> {
-        if let Some(file_key) = file_key_opt {
-            let fhash = file_key.content_hash();
-            let phash = self.decrypt_key(db_key, &self.password_hash)?;
-            let data = vec![&phash, &fhash];
-            let chash = crypto::do_vecs_sha256_hash(&data)?;
+    pub(crate) fn set_file_key(
+        &mut self,
+        db_key: &str,
+        file_key_opt: Option<&FileKey>,
+    ) -> Result<()> {
+        let (file_hash_opt, chash) = match (&self.password_hash, file_key_opt) {
+            (Some(p), Some(file_key)) => {
+                // User changed the key file and retains the same password
+                let file_hash = file_key.content_hash();
+                let phash = self.decrypt_key(db_key, p)?;
+                // phash is already the sha256_hash of original password str
+                let data = vec![&phash, &file_hash];
+                let chash = crypto::do_vecs_sha256_hash(&data)?;
+                (Some(file_hash), chash)
+            }
+            (Some(p), None) => {
+                // User removed the use of key file
+                let phash = self.decrypt_key(db_key, p)?;
+                let chash = crypto::do_slice_sha256_hash(&phash)?;
+                (None, chash)
+            }
+            (None, Some(file_key)) => {
+                // User changed the key file and no password is used as before
+                let file_hash = file_key.content_hash();
+                let chash = crypto::do_slice_sha256_hash(&file_hash)?;
+                (Some(file_hash), chash)
+            }
+            (None, None) => {
+                return Err(error::Error::InSufficientCredentials);
+            }
+        };
 
-            // Need to encrypt the changed hahses
+        // Need to encrypt the changed hahses
+        if let Some(fhash) = file_hash_opt {
             self.key_file_data_hash = Some(self.encrypt_key(db_key, &fhash)?);
-            self.composite_key = self.encrypt_key(db_key, &chash)?;
         } else {
-            // Remove any previously used file key
-            self.remove_file_key(db_key)?;
+            self.key_file_data_hash = None;
         }
+        self.composite_key = self.encrypt_key(db_key, &chash)?;
+
         Ok(())
     }
 
-    // Called to remove the previously used key file based hash
-    pub fn remove_file_key(&mut self, db_key: &str) -> Result<()> {
-        let phash = self.decrypt_key(db_key, &self.password_hash)?;
-        let chash = crypto::do_slice_sha256_hash(&phash)?;
-        self.composite_key = self.encrypt_key(db_key, &chash)?;
-        Ok(())
+    pub(crate) fn credentials_used_state(&self) -> (bool, bool) {
+        (
+            self.password_hash.is_some(),
+            self.key_file_data_hash.is_some(),
+        )
     }
 }
 
@@ -483,7 +527,7 @@ pub fn open_db_file(db_file_name: &str) -> Result<BufReader<File>> {
 pub fn read_db_from_reader<R: Read + Seek>(
     reader: &mut R,
     db_file_name: &str,
-    password: &str,
+    password: Option<&str>,
     key_file_name: Option<&str>,
 ) -> Result<KdbxFile> {
     let file_key = FileKey::from(key_file_name)?;
@@ -504,13 +548,12 @@ pub fn read_db_from_reader<R: Read + Seek>(
     // Need to get the checksum to track db file content changes outside the application if any
     let mut updated_kdbx = read_db(reader, kdbx)?;
     let cs = calculate_db_file_checksum(reader)?;
-    debug!("Calculated checksum on reading the db");
+
     updated_kdbx.checksum_hash = cs;
 
     updated_kdbx
         .secured_database_keys
         .secure_keys(db_file_name)?;
-    debug!("Keys are now secured...");
 
     Ok(updated_kdbx)
 }
@@ -572,14 +615,9 @@ pub fn verify_db_file_checksum<R: Read + Seek>(
     }
 }
 
-/// Writes the KDBX content to a db file found in 'kdbx_file.db_file_name'
-/// Typically overwrite is true when this fn is called when we save a new db or when we call 'Save As'
+// Writes the KDBX content to a db file found in 'kdbx_file.db_file_name'
+// Typically overwrite is true when this fn is called when we save a new db or when we call 'Save As'
 pub fn write_kdbx_file(kdbx_file: &mut KdbxFile, overwrite: bool) -> Result<()> {
-    debug!(
-        "Going to write to the KDBX file {}",
-        kdbx_file.get_database_file_name()
-    );
-
     // Ensure that the parent dir exists
     if let Some(p) = Path::new(kdbx_file.get_database_file_name()).parent() {
         if !p.exists() {
@@ -605,10 +643,9 @@ pub fn write_kdbx_file(kdbx_file: &mut KdbxFile, overwrite: bool) -> Result<()> 
 
     // New checksum for the next time use
     kdbx_file.checksum_hash = calculate_db_file_checksum(&mut file)?;
-    debug!("New checksum is calculated");
 
     debug!(
-        "Writing to KDBX file {} completed",
+        "New checksum is calculated and writing to KDBX file {} completed",
         kdbx_file.get_database_file_name()
     );
 
@@ -628,27 +665,18 @@ pub fn write_kdbx_file_with_backup_file(
             .create(true)
             .open(b)?;
 
-        debug!("Going to save the backup file {}", b);
         write_db(&mut backup_file, kdbx_file)?;
         backup_file.sync_all()?;
-        debug!("Saving the backup file done");
-        debug!(
-            "Going to save the database file {}",
-            kdbx_file.get_database_file_name()
-        );
 
         if !overwrite {
             // Need to ensure that file is not changed outside our app
             read_and_verify_db_file(kdbx_file)?;
-            debug!("read_and_verify_db_file is done and no changes found");
         }
 
         std::fs::copy(&b, kdbx_file.get_database_file_name())?;
-        debug!("Saving the database file done");
 
         // New checksum for the next time use
         kdbx_file.checksum_hash = calculate_db_file_checksum(&mut backup_file)?;
-        debug!("New checksum is calculated");
 
         Ok(())
     } else {
@@ -705,7 +733,7 @@ pub fn export_db_main_content_as_xml(
 pub fn import_from_xml(
     xml_file_name: &str,
     db_file_name: &str,
-    password: &str,
+    password: Option<&str>,
     key_file_name: Option<&str>,
 ) -> Result<KdbxFile> {
     let file = File::open(xml_file_name)?;
@@ -718,7 +746,7 @@ pub fn import_from_xml(
 
     let mut ndb = NewDatabase::default();
     ndb.database_file_name = db_file_name.into();
-    ndb.password = password.into();
+    ndb.password = password.map(|s| s.to_string());
     ndb.key_file_name = key_file_name.map(|s| s.into());
 
     let mut kdbx_file = ndb.create()?;

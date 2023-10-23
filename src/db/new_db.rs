@@ -22,17 +22,8 @@ pub struct NewDatabase {
     pub file_name: Option<String>,
     pub(crate) kdf: KdfAlgorithm,
     pub(crate) cipher_id: ContentCipherId,
-    pub(crate) password: String,
+    pub(crate) password: Option<String>,
     pub(crate) key_file_name: Option<String>,
-}
-
-impl NewDatabase {
-    pub fn new(db_file_name: &str, password: &str) -> Self {
-        let mut n = Self::default();
-        n.password = password.into();
-        n.database_file_name = db_file_name.into();
-        n
-    }
 }
 
 impl Default for NewDatabase {
@@ -44,7 +35,7 @@ impl Default for NewDatabase {
             file_name: None,
             kdf: KdfAlgorithm::Argon2(crypto::kdf::Argon2Kdf::default()),
             cipher_id: ContentCipherId::Aes256,
-            password: "ThisIsTest".into(),
+            password: Some("ThisIsTest".into()),
             key_file_name: None,
         }
     }
@@ -90,7 +81,7 @@ impl NewDatabase {
         kc.root.root_uuid = root_g.uuid.clone();
         kc.root.all_groups.insert(root_g.uuid, root_g);
 
-        let mut secured_database_keys = SecuredDatabaseKeys::from_keys(&self.password, &file_key)?;
+        let mut secured_database_keys = SecuredDatabaseKeys::from_keys(self.password.as_deref(), &file_key)?;
         // Call to secure the keys and use in subsequent calls
         secured_database_keys.secure_keys(&self.database_file_name)?;
 
