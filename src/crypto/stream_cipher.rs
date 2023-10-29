@@ -1,3 +1,11 @@
+//#[cfg(not(target_os = "android"))]
+#[cfg(any(
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "ios",
+    all(target_os = "android", target_arch = "aarch64")
+))]
 pub(crate) mod botan_crypto {
 
     use log::error;
@@ -64,7 +72,7 @@ pub(crate) mod botan_crypto {
 }
 
 #[allow(dead_code)]
-mod rust_crypto {
+pub(crate) mod rust_crypto {
     use chacha20::cipher::{NewCipher, StreamCipher};
     use chacha20::ChaCha20;
     use log::error;
@@ -133,7 +141,7 @@ mod rust_crypto {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use crate::{
         constants::inner_header_type::CHACHA20_STREAM,
         crypto::{self, stream_cipher::botan_crypto},

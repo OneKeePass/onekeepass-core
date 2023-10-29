@@ -1,3 +1,7 @@
+mod attachment;
+
+pub use attachment::*;
+
 pub use crate::db::{
     KeyStoreOperation, KeyStoreService, KeyStoreServiceType, NewDatabase, SecureKeyInfo,
 };
@@ -9,15 +13,14 @@ pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions,
 pub use crate::util::{file_name, formatted_key, parse_attachment_hash, string_to_simple_hash};
 
 use crate::db::{self, write_kdbx_file, write_kdbx_file_with_backup_file, KdbxFile};
-use crate::db_content::{standard_types_ordered_by_id, AttachmentHashValue, KeepassFile};
+use crate::db_content::{standard_types_ordered_by_id, KeepassFile};
 use crate::password_generator;
 use crate::searcher;
 use crate::util;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::env;
-use std::fs::File;
-use std::io::{BufReader, Cursor, Read, Seek, Write};
+
+use std::io::{Cursor, Read, Seek, Write};
 use std::path::Path;
 use std::{
     collections::HashMap,
@@ -712,16 +715,16 @@ pub fn set_db_settings(db_key: &str, db_settings: DbSettings) -> Result<()> {
             .ok_or("No main content")?;
         kp.meta.update((&db_settings.meta).into())?;
 
-        // IMPORTANT 
+        // IMPORTANT
         // password_used,key_file_used,password_changed and key_file_changed are set from client side
         // in a consistent way statifying the following combinations
-        // e.g 
+        // e.g
         // If a password is changed, then password_used = true and password_changed = true
-        // If the password use is removed, 
+        // If the password use is removed,
         //     then password_used = false , password_changed = true ; key_file_used = true and key_file_changed = true or false
-        // 
+        //
         // If a key file is changed, then key_file_used = true and key_file_changed = true
-        // If the key file use is removed, 
+        // If the key file use is removed,
         //      then key_file_used = false and key_file_changed = true; password_used = true , password_changed = true or false
 
         if db_settings.password_used && db_settings.password.is_none() {
@@ -1155,100 +1158,6 @@ pub fn new_blank_group_with_parent(
     let mut group = new_blank_group(mark_as_category);
     group.parent_group_uuid = parent_group_uuid;
     Ok(group)
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct AttachmentUploadInfo {
-    pub name: String,
-    #[serde(with = "util::from_or_to::string")]
-    pub data_hash: AttachmentHashValue,
-    pub data_size: usize,
-}
-
-/// Called to upload an attachment.  
-/// On successful loading the file content, the attachment name and hash for the file data are returned
-/// The caller need to connect these info with the an entry as this uploading of the binary data is done only to the
-/// inner header structure and yet to be linked with an Entry
-pub fn upload_entry_attachment(db_key: &str, file_name: &str) -> Result<AttachmentUploadInfo> {
-    //Load the file from file system
-    let file = File::open(file_name)?;
-    let mut buf_reader = BufReader::new(file);
-    let name = Path::new(file_name)
-        .file_name()
-        .and_then(|x| x.to_str())
-        .unwrap_or("No Attachment Name");
-
-    call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
-        let mut buf = vec![];
-        buf_reader.read_to_end(&mut buf)?;
-        let size = buf.len();
-        let data_hash = ctx.kdbx_file.upload_entry_attachment(buf);
-        Ok(AttachmentUploadInfo {
-            name: name.into(),
-            data_hash,
-            data_size: size,
-        })
-    })
-}
-
-/// Saves the bytes content of an entry attachment as file to temp dir
-/// The file name is based on 'name' and valid data hash handle is required to get the bytes data
-pub fn save_attachment_as_temp_file(
-    db_key: &str,
-    name: &str,
-    data_hash: &AttachmentHashValue,
-) -> Result<String> {
-    let mut path = env::temp_dir();
-    println!("The current directory is {}", path.display());
-    // The app temp dir
-    path.push("okp_cache");
-    if !path.exists() {
-        std::fs::create_dir(path.clone())?;
-    }
-
-    // Push the file name wanted and create the file with full name
-    // TODO: Generate some random file name ?
-    path.push(name);
-    let mut file = std::fs::File::create(path.clone())?;
-
-    let data = call_kdbx_context_action(db_key, |ctx: &KdbxContext| {
-        Ok(ctx.kdbx_file.get_bytes_content(data_hash))
-    })?;
-
-    if let Some(v) = data {
-        file.write_all(&v)?;
-        path.to_str()
-            .ok_or_else(|| "Invalid temp file".into())
-            .map(|s| s.into())
-    } else {
-        Err(Error::Other("No valid data found".into()))
-    }
-}
-
-pub fn save_attachment_as(
-    db_key: &str,
-    full_file_name: &str,
-    data_hash: &AttachmentHashValue,
-) -> Result<()> {
-    let mut file = std::fs::File::create(full_file_name)?;
-
-    let data = call_kdbx_context_action(db_key, |ctx: &KdbxContext| {
-        Ok(ctx.kdbx_file.get_bytes_content(data_hash))
-    })?;
-
-    if let Some(v) = data {
-        file.write_all(&v)?;
-        return Ok(());
-    } else {
-        return Err(Error::Other("No valid data found".into()));
-    }
-}
-
-/// Removes all contents of the app's temp dir
-pub fn remove_app_temp_dir_content() -> Result<()> {
-    let mut path = env::temp_dir();
-    path.push("okp_cache");
-    util::remove_dir_contents(path)
 }
 
 pub fn analyzed_password(password_options: PasswordGenerationOptions) -> Result<AnalyzedPassword> {

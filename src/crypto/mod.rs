@@ -1,20 +1,42 @@
 mod block_cipher;
 mod hash_functions;
-mod random;
-mod key_cipher;
-mod stream_cipher;
 pub mod kdf;
+mod key_cipher;
+mod random;
+mod stream_cipher;
 
-use serde::{Serialize, Deserialize};
-use crate::{error::{Error, Result}, constants};
+use crate::{
+    constants,
+    error::{Error, Result},
+};
+use serde::{Deserialize, Serialize};
 
 // Re-exports
-pub use stream_cipher::botan_crypto::ProtectedContentStreamCipher;
-pub use key_cipher::botan_crypto::*;
-pub use hash_functions::botan_crypto::*;
-pub use random::botan_crypto::*;
+// pub use stream_cipher::botan_crypto::ProtectedContentStreamCipher;
+// pub use key_cipher::botan_crypto::*;
+// pub use hash_functions::botan_crypto::*;
+// pub use random::botan_crypto::*;
 
-// Provides the encryption and decryption 
+cfg_if::cfg_if! {
+    if #[cfg(any(target_os = "macos",
+                target_os = "windows",
+                target_os = "linux", 
+                target_os = "os", 
+                all(target_os = "android", target_arch = "aarch64")))] {
+        pub use stream_cipher::botan_crypto::ProtectedContentStreamCipher;
+        pub use key_cipher::botan_crypto::*;
+        pub use hash_functions::botan_crypto::*;
+        pub use random::botan_crypto::*;
+        
+    } else {
+        pub use stream_cipher::rust_crypto::ProtectedContentStreamCipher;
+        pub use key_cipher::rust_crypto::*;
+        pub use hash_functions::rust_crypto::*;
+        pub use random::rust_crypto::*;
+    }
+}
+
+// Provides the encryption and decryption
 #[derive(Debug)]
 pub enum ContentCipher {
     ChaCha20([u8; 12]),
@@ -31,36 +53,34 @@ pub enum ContentCipherId {
 }
 
 impl ContentCipherId {
-
-    // Gets the UUID and Encryption IV of the supported algorithm  
+    // Gets the UUID and Encryption IV of the supported algorithm
     pub fn uuid_with_iv(&self) -> Result<(Vec<u8>, Vec<u8>)> {
-        let (rn16,rn12) = get_random_bytes_2::<16,12>();
+        let (rn16, rn12) = get_random_bytes_2::<16, 12>();
         match self {
-            ContentCipherId::Aes256 => {
-                Ok((constants::uuid::AES256.to_vec(),rn16))
-            }
-            ContentCipherId::ChaCha20 => {
-                Ok((constants::uuid::CHACHA20.to_vec(), rn12))
-            }
+            ContentCipherId::Aes256 => Ok((constants::uuid::AES256.to_vec(), rn16)),
+            ContentCipherId::ChaCha20 => Ok((constants::uuid::CHACHA20.to_vec(), rn12)),
             _ => return Err(Error::UnsupportedCipher(vec![])),
         }
     }
 
     // Generates the random master seed and iv for the selected algorithm
     pub fn generate_master_seed_iv(&self) -> Result<(Vec<u8>, Vec<u8>)> {
-        let (rn32,rn16,rn12) = get_random_bytes_3::<32,16,12>();
+        let (rn32, rn16, rn12) = get_random_bytes_3::<32, 16, 12>();
         match self {
             ContentCipherId::Aes256 => Ok((rn32, rn16)),
-            ContentCipherId::ChaCha20 => Ok((rn32,rn12)),
+            ContentCipherId::ChaCha20 => Ok((rn32, rn12)),
             _ => return Err(Error::UnsupportedCipher(vec![])),
         }
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use std::{io::{BufReader, Read}, fs, time::Instant};
+    use std::{
+        fs,
+        io::{BufReader, Read},
+        time::Instant,
+    };
 
     use super::*;
 
@@ -96,7 +116,7 @@ mod tests {
         let encrypted = cipher.encrypt(text.as_bytes(), &key).unwrap();
         let decrypted = cipher.decrypt(&encrypted, &key).unwrap();
 
-        assert_eq!(text.as_bytes(),decrypted);
+        assert_eq!(text.as_bytes(), decrypted);
     }
 
     fn read_file_data() -> Vec<u8> {
@@ -104,10 +124,13 @@ mod tests {
         let path = "/Users/jeyasankar/Downloads/Android/android-studio-2021.2.1.16-mac_arm.dmg";
         let input = fs::File::open(path).unwrap();
         let mut reader = BufReader::new(input);
-        
-        let mut data:Vec<u8> = vec![];
+
+        let mut data: Vec<u8> = vec![];
         reader.read_to_end(&mut data).unwrap();
-        println!("File data reading is done and returning all data bytes ; size {}",data.len());
+        println!(
+            "File data reading is done and returning all data bytes ; size {}",
+            data.len()
+        );
         data
     }
 
@@ -116,38 +139,46 @@ mod tests {
         let (uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
         let cipher = ContentCipher::try_from(&uuid, &enc_iv).unwrap();
 
-        let data:Vec<u8> = read_file_data();
+        let data: Vec<u8> = read_file_data();
         let key = get_random_bytes::<32>();
 
         let timing = Instant::now();
         let encrypted = cipher.encrypt(&data, &key).unwrap();
-        println!("Encryption elapsed time {} seconds",timing.elapsed().as_secs());
+        println!(
+            "Encryption elapsed time {} seconds",
+            timing.elapsed().as_secs()
+        );
 
         let timing = Instant::now();
         let decrypted = cipher.decrypt(&encrypted, &key).unwrap();
-        println!("Decryption elapsed time {} seconds",timing.elapsed().as_secs());
-        
-        assert_eq!(data,decrypted);
+        println!(
+            "Decryption elapsed time {} seconds",
+            timing.elapsed().as_secs()
+        );
+
+        assert_eq!(data, decrypted);
     }
 
     #[test]
     fn verify_aes256_encrypt_decrypt_botan() {
         let (uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
         let key = get_random_bytes::<32>();
-        
+
         let text = "Hello World!";
 
-        let mut cipher = botan::Cipher::new("AES-256/CBC/PKCS7", botan::CipherDirection::Encrypt).unwrap();
+        let mut cipher =
+            botan::Cipher::new("AES-256/CBC/PKCS7", botan::CipherDirection::Encrypt).unwrap();
         cipher.set_key(&key).unwrap();
         //cipher.start(&enc_iv).unwrap();
 
         let encrypted = cipher.process(&enc_iv, text.as_bytes()).unwrap();
 
-        let mut cipher = botan::Cipher::new("AES-256/CBC/PKCS7", botan::CipherDirection::Decrypt).unwrap();
+        let mut cipher =
+            botan::Cipher::new("AES-256/CBC/PKCS7", botan::CipherDirection::Decrypt).unwrap();
         cipher.set_key(&key).unwrap();
         let decrypted = cipher.process(&enc_iv, &encrypted).unwrap();
 
-        assert_eq!(text.as_bytes(),decrypted);
+        assert_eq!(text.as_bytes(), decrypted);
 
         // let cipher = ContentCipher::try_from(&uuid, &enc_iv).unwrap();
         // let decrypted = cipher.decrypt(&encrypted, &key).unwrap();
@@ -158,26 +189,33 @@ mod tests {
     fn verify_aes256_file_data_encrypt_decrypt_botan() {
         let (uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
         let key = get_random_bytes::<32>();
-        
-        let data:Vec<u8> = read_file_data();
 
-        let mut cipher = botan::Cipher::new("AES-256/CBC/PKCS7", botan::CipherDirection::Encrypt).unwrap();
+        let data: Vec<u8> = read_file_data();
+
+        let mut cipher =
+            botan::Cipher::new("AES-256/CBC/PKCS7", botan::CipherDirection::Encrypt).unwrap();
         cipher.set_key(&key).unwrap();
-        
+
         let timing = Instant::now();
         let encrypted = cipher.process(&enc_iv, &data).unwrap();
-        println!("Encryption elapsed time {} seconds",timing.elapsed().as_secs());
+        println!(
+            "Encryption elapsed time {} seconds",
+            timing.elapsed().as_secs()
+        );
 
-        let mut cipher = botan::Cipher::new("AES-256/CBC/PKCS7", botan::CipherDirection::Decrypt).unwrap();
+        let mut cipher =
+            botan::Cipher::new("AES-256/CBC/PKCS7", botan::CipherDirection::Decrypt).unwrap();
         cipher.set_key(&key).unwrap();
 
         let timing = Instant::now();
         let decrypted = cipher.process(&enc_iv, &encrypted).unwrap();
-        println!("Decryption elapsed time {} seconds",timing.elapsed().as_secs());
+        println!(
+            "Decryption elapsed time {} seconds",
+            timing.elapsed().as_secs()
+        );
 
-        assert_eq!(data,decrypted);
+        assert_eq!(data, decrypted);
 
-        
         // let cipher = ContentCipher::try_from(&uuid, &enc_iv).unwrap();
         // let timing = Instant::now();
         // let decrypted = cipher.decrypt(&encrypted, &key).unwrap();
@@ -185,24 +223,23 @@ mod tests {
         // assert_eq!(data,decrypted);
     }
 
-
     #[test]
     fn verify_chacha20_encrypt_decrypt_botan() {
         let (uuid, enc_iv) = ContentCipherId::ChaCha20.uuid_with_iv().unwrap();
         let key = get_random_bytes::<32>();
-        
+
         let text = "Hello World!";
 
         let mut cipher = botan::Cipher::new("ChaCha20", botan::CipherDirection::Encrypt).unwrap();
         cipher.set_key(&key).unwrap();
-        
+
         let encrypted = cipher.process(&enc_iv, text.as_bytes()).unwrap();
 
         let mut cipher = botan::Cipher::new("ChaCha20", botan::CipherDirection::Decrypt).unwrap();
         cipher.set_key(&key).unwrap();
         let decrypted = cipher.process(&enc_iv, &encrypted).unwrap();
 
-        assert_eq!(text.as_bytes(),decrypted);
+        assert_eq!(text.as_bytes(), decrypted);
 
         // let cipher = ContentCipher::try_from(&uuid, &enc_iv).unwrap();
         // let decrypted = cipher.decrypt(&encrypted, &key).unwrap();
@@ -265,8 +302,8 @@ mod tests {
 
     #[test]
     fn verify_hash256_3() {
-        use std::time::Instant;
         use std::fs;
+        use std::time::Instant;
         // hex d4e06bcc6f614cd4b261fc6034529edb205b31b0e56824490a91350c3640806a
         let path = "/Users/jeyasankar/Downloads/Android/android-studio-2021.2.1.16-mac_arm.dmg";
         let input = fs::File::open(path).unwrap();
@@ -308,7 +345,7 @@ mod tests {
 
     // Need to add to Cargo.toml to test this
     // alkali = { version = "0.3.0", features = ["aes","hazmat"] }
-    /* 
+    /*
     #[test]
     fn verify_hash256_4() {
         use std::time::{Duration, Instant};
@@ -361,5 +398,4 @@ mod tests {
         // );
     }
     */
-
 }
