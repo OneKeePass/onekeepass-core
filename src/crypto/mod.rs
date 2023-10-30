@@ -1,9 +1,4 @@
-mod block_cipher;
-mod hash_functions;
 pub mod kdf;
-mod key_cipher;
-mod random;
-mod stream_cipher;
 
 use crate::{
     constants,
@@ -11,28 +6,31 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-// Re-exports
-// pub use stream_cipher::botan_crypto::ProtectedContentStreamCipher;
-// pub use key_cipher::botan_crypto::*;
-// pub use hash_functions::botan_crypto::*;
-// pub use random::botan_crypto::*;
-
 cfg_if::cfg_if! {
     if #[cfg(any(target_os = "macos",
                 target_os = "windows",
-                target_os = "linux", 
-                target_os = "os", 
+                target_os = "linux",
+                target_os = "os",
                 all(target_os = "android", target_arch = "aarch64")))] {
-        pub use stream_cipher::botan_crypto::ProtectedContentStreamCipher;
-        pub use key_cipher::botan_crypto::*;
-        pub use hash_functions::botan_crypto::*;
-        pub use random::botan_crypto::*;
-        
+
+        #[path = "botan_impl/mod.rs"]
+        mod crypto_impl;
+        pub use crypto_impl::*;
+
+        // #[path = "rust_crypto_impl/mod.rs"]
+        // mod crypto_impl;
+        // pub use crypto_impl::*;
+
+
     } else {
-        pub use stream_cipher::rust_crypto::ProtectedContentStreamCipher;
-        pub use key_cipher::rust_crypto::*;
-        pub use hash_functions::rust_crypto::*;
-        pub use random::rust_crypto::*;
+
+        // #[path = "botan_impl/mod.rs"]
+        // mod crypto_impl;
+        // pub use crypto_impl::*;
+
+        #[path = "rust_crypto_impl/mod.rs"]
+        mod crypto_impl;
+        pub use crypto_impl::*;
     }
 }
 
@@ -84,6 +82,17 @@ mod tests {
 
     use super::*;
 
+    // To see logging output during unit testing
+    pub fn init_logging() {
+        let _ = env_logger::builder()
+            // Include all events in tests
+            .filter_level(log::LevelFilter::max())
+            // Ensure events are captured by `cargo test`
+            .is_test(true)
+            // Ignore errors initializing the logger if tests race to configure it
+            .try_init();
+    }
+
     #[test]
     fn veriy_aes_gcm() {
         let kc = KeyCipher::new();
@@ -107,6 +116,7 @@ mod tests {
 
     #[test]
     fn verify_aes256_encrypt_decrypt() {
+        init_logging();
         let (uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
         let cipher = ContentCipher::try_from(&uuid, &enc_iv).unwrap();
 
