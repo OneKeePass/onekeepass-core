@@ -68,6 +68,7 @@ pub enum Error {
     #[error("{0}")]
     XmlParsingFailed023(#[from] quick_xml_023::Error),
 
+    
     #[cfg(any(
         target_os = "macos",
         target_os = "windows",

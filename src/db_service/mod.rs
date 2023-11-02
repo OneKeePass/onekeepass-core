@@ -727,21 +727,43 @@ pub fn set_db_settings(db_key: &str, db_settings: DbSettings) -> Result<()> {
         // If the key file use is removed,
         //      then key_file_used = false and key_file_changed = true; password_used = true , password_changed = true or false
 
-        if db_settings.password_used && db_settings.password.is_none() {
+        debug!("password_used: {}, password_changed: {}, password is nil?:  {},key_file_used: {}, key_file_changed: {}, key_file_name:  {:?}",
+        &db_settings.password_used,&db_settings.password_changed,db_settings.password.is_none(),
+        &db_settings.key_file_used, &db_settings.key_file_changed, &db_settings.key_file_name
+        );
+
+        // Both password and key file can not be none at the same time
+        if db_settings.password.is_none() && db_settings.key_file_name.is_none() {
+            return Err(error::Error::InSufficientCredentials);
+        }
+
+        if db_settings.password_used
+            && db_settings.password_changed
+            && db_settings.password.is_none()
+        {
             return Err(Error::DataError("Password can not be empty"));
         }
 
-        if db_settings.key_file_used && db_settings.key_file_name.is_none() {
+        if db_settings.key_file_used
+            && db_settings.key_file_changed
+            && db_settings.key_file_name.is_none()
+        {
             return Err(Error::DataError("Key file name can not be empty"));
         }
 
         let password = if db_settings.password_used {
+            if db_settings.password.is_none() {
+                return Err(Error::DataError("Password can not be empty when password flag is set"));
+            }
             db_settings.password.as_deref()
         } else {
             None
         };
 
         let file_key = if db_settings.key_file_used {
+            if db_settings.key_file_name.is_none() {
+                return Err(Error::DataError("Key file name can not be empty when key file used flag is set"));
+            }
             db_settings.key_file_name.as_deref()
         } else {
             None

@@ -1,3 +1,4 @@
+use log::debug;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -80,6 +81,8 @@ impl NewDatabase {
         root_g.name = kc.meta.database_name.clone();
         kc.root.root_uuid = root_g.uuid.clone();
         kc.root.all_groups.insert(root_g.uuid, root_g);
+        
+        debug!("New database create: password nil? {}, file name {:?}",self.password.is_none(),&self.key_file_name);
 
         let mut secured_database_keys = SecuredDatabaseKeys::from_keys(self.password.as_deref(), &file_key)?;
         // Call to secure the keys and use in subsequent calls

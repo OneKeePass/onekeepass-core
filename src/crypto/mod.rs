@@ -6,33 +6,25 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
+ 
 cfg_if::cfg_if! {
     if #[cfg(any(target_os = "macos",
                 target_os = "windows",
                 target_os = "linux",
-                target_os = "os",
+                target_os = "ios",
                 all(target_os = "android", target_arch = "aarch64")))] {
 
         #[path = "botan_impl/mod.rs"]
         mod crypto_impl;
         pub use crypto_impl::*;
 
-        // #[path = "rust_crypto_impl/mod.rs"]
-        // mod crypto_impl;
-        // pub use crypto_impl::*;
-
-
     } else {
-
-        // #[path = "botan_impl/mod.rs"]
-        // mod crypto_impl;
-        // pub use crypto_impl::*;
-
         #[path = "rust_crypto_impl/mod.rs"]
         mod crypto_impl;
         pub use crypto_impl::*;
     }
 }
+
 
 // Provides the encryption and decryption
 #[derive(Debug)]

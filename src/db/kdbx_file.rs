@@ -73,6 +73,7 @@ impl KdbxFile {
     // Called to set a new key file use.
     // Opens the named file, reads and uses its content while computing key
     pub fn set_file_key(&mut self, key_file_name: Option<&str>) -> Result<()> {
+        debug!("set_file_key is called with key_file_name: {:?}",&key_file_name);
         
         // We need not do anything if the current db does not use key file and the no file name is selected
         // for 'key_file_name'
@@ -105,9 +106,10 @@ impl KdbxFile {
 
     // Called when both password and key file are changed in settings
     pub fn set_credentials(&mut self, db_key: &str, password: Option<&str>,key_file_name: Option<&str>) -> Result<()> {
-        
-        let file_key = FileKey::from(key_file_name)?;
-        let mut keys = SecuredDatabaseKeys::from_keys(password, &file_key)?;
+        debug!("set_credentials is called with password nil?: {}, key_file_name: {:?}",password.is_none(),&key_file_name);
+
+        self.file_key  = FileKey::from(key_file_name)?;
+        let mut keys = SecuredDatabaseKeys::from_keys(password, &self.file_key)?;
         keys.secure_keys(db_key)?;
         self.secured_database_keys = keys;
         
@@ -115,6 +117,7 @@ impl KdbxFile {
     }
 
     pub fn set_password(&mut self, password: Option<&str>) -> Result<()> {
+        debug!("set_password called with password nil?: {}",password.is_none());
         self.secured_database_keys
             .set_password(&self.database_file_name, password)
     }
