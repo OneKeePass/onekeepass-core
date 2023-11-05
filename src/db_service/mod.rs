@@ -288,7 +288,7 @@ pub fn read_kdbx<R: Read + Seek>(
     // Each database has a unique uri (File Path) and accordingly only one db with that name can be opened at a time
     // The 'db_file_name' is the full uri and used as a unique db_key throughout all db specific calls
     store.insert(db_file_name.into(), kdbx_context);
-    info!("Reading KDBX file {} is completed", db_file_name);
+    debug!("Reading KDBX file {} is completed", db_file_name);
     Ok(kdbx_loaded)
 }
 

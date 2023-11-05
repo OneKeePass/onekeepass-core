@@ -5,7 +5,7 @@ use crate::db_content::{CustomData, CustomIcons, MemoryProtection};
 use crate::error::Result;
 use crate::util;
 use chrono::NaiveDateTime;
-use log::info;
+use log::debug;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -141,12 +141,12 @@ impl Meta {
 
     fn copy_entry_types_from_custom_data(&mut self) {
         if let Some(data) = self.custom_data.get_item_value(OKP_ENTRY_TYPE_MAP_DATA) {
-            info!("Found custom entry types");
+            debug!("Found custom entry types");
             let etypes: HashMap<Uuid, EntryType> =
                 VersionedEntryType::decode_entry_types_by_id(data);
             let mut s = self.meta_share.custom_entry_types_by_id.lock().unwrap();
             s.extend(etypes.iter().map(|(k, v)| (k.clone(), v.clone())));
-            info!("Found custom entry types loaded and size is {}", s.len());
+            debug!("Found custom entry types loaded and size is {}", s.len());
         }
     }
 
@@ -156,7 +156,7 @@ impl Meta {
             if let Some(data) = VersionedEntryType::encode_entry_types_by_id(&s) {
                 self.custom_data
                     .insert_item(Item::from_kv(OKP_ENTRY_TYPE_MAP_DATA, &data));
-                info!("Custom entrypes saved to custom data");
+                debug!("Custom entrypes saved to custom data");
             }
         }
     }

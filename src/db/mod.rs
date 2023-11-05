@@ -568,6 +568,9 @@ pub fn reload<R: Read + Seek>(reader: &mut R, kdbx_file: &KdbxFile) -> Result<Kd
 
 fn read_db<R: Read + Seek>(buff: &mut R, kdbx_file: KdbxFile) -> Result<KdbxFile> {
     let mut db_reader = KdbxFileReader::new(buff, kdbx_file);
+
+    crypto::print_crypto_lib_info();
+
     db_reader.read()?;
     Ok(db_reader.kdbx_file)
 }

@@ -287,12 +287,12 @@ impl Entry {
             .get_entry_type_by_id(&self.entry_field.entry_type.uuid)
         {
             if self.entry_field.entry_type.changed(et) {
-                log::info!("The incoming Custom entry type (meta data) is changed and updating the entry type data in custom data item");
+                log::debug!("The incoming Custom entry type (meta data) is changed and updating the entry type data in custom data item");
                 insert_action();
             } else {
                 // It is a custom entry type, but no new field added and just the custom entry type uuid is inserted in the custom data
                 let b64_uuid = &util::encode_uuid(&self.entry_field.entry_type.uuid);
-                log::info!("As there is no change to custom entry type info, only type's uuid as b64 str {} is saved", &b64_uuid);
+                log::debug!("As there is no change to custom entry type info, only type's uuid as b64 str {} is saved", &b64_uuid);
                 self.custom_data
                     .insert_item(Item::from_kv(OKP_ENTRY_TYPE, &b64_uuid));
             }
@@ -303,14 +303,14 @@ impl Entry {
                 &self.entry_field.entry_type.uuid,
             ))
         {
-            log::info!("The incoming Standard entry type is changed and updating the entry type data in custom data item");
+            log::debug!("The incoming Standard entry type is changed and updating the entry type data in custom data item");
             insert_action();
         } else {
             // entries entry type info (meta data) is not changed and the standard entry type uuid is stored
             // But if it is the default one (Login type), then it is not saved to save space in xml
 
             if EntryType::default_type().uuid != self.entry_field.entry_type.uuid {
-                log::info!(
+                log::debug!(
                     "The entry uses a standard entry type which is not Login and the uuid b64 {} is saved",
                     &util::encode_uuid(&self.entry_field.entry_type.uuid)
                 );
@@ -319,7 +319,7 @@ impl Entry {
                     &util::encode_uuid(&self.entry_field.entry_type.uuid),
                 ));
             } else {
-                log::info!("The entry is default one and its uuid is not saved");
+                log::debug!("The entry is default one and its uuid is not saved");
             }
         }
     }
