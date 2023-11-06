@@ -719,13 +719,16 @@ pub fn set_db_settings(db_key: &str, db_settings: DbSettings) -> Result<()> {
         // password_used,key_file_used,password_changed and key_file_changed are set from client side
         // in a consistent way statifying the following combinations
         // e.g
-        // If a password is changed, then password_used = true and password_changed = true
+        // If a password is changed, then password_used = true, password_changed = true and password = Some value
         // If the password use is removed,
-        //     then password_used = false , password_changed = true ; key_file_used = true and key_file_changed = true or false
+        //     then password_used = false , password_changed = true, password = None  ;
+        //          key_file_used = true , key_file_changed = true or false ,  key_file_name = Some value
         //
-        // If a key file is changed, then key_file_used = true and key_file_changed = true
+        // If a key file is changed, 
+        //      then key_file_used = true ,key_file_changed = true, key_file_name = Some value
+        //      password_used = true or false, password_changed = false    
         // If the key file use is removed,
-        //      then key_file_used = false and key_file_changed = true; password_used = true , password_changed = true or false
+        //      then key_file_used = false, key_file_changed = true,key_file_name = None; password_used = true , password_changed = true or false
 
         debug!("password_used: {}, password_changed: {}, password is nil?:  {},key_file_used: {}, key_file_changed: {}, key_file_name:  {:?}",
         &db_settings.password_used,&db_settings.password_changed,db_settings.password.is_none(),
@@ -733,34 +736,50 @@ pub fn set_db_settings(db_key: &str, db_settings: DbSettings) -> Result<()> {
         );
 
         // Both password and key file can not be none at the same time
-        if db_settings.password.is_none() && db_settings.key_file_name.is_none() {
+        // Note the existing db_settings.password = None when password_changed = false as 
+        // the password field in DbSetttings is None (db_settings.password = None) in 'get_db_settings' call
+        // Because of this db_settings.password will have Some value only when password_used = true and password_changed = true
+
+        // If we do not use password, then key file should be used; 
+        // db_settings.password_used is false when password use is removed in Settings UI  
+        if !db_settings.password_used && db_settings.key_file_name.is_none() {
             return Err(error::Error::InSufficientCredentials);
         }
 
+        // Password is used and expected some value when it is changed or added 
         if db_settings.password_used
             && db_settings.password_changed
             && db_settings.password.is_none()
         {
             return Err(Error::DataError("Password can not be empty"));
+        } 
+
+        if !db_settings.password_used && db_settings.password.is_some() {
+            return Err(Error::DataError("Password is not used, but found some value"));
         }
 
+        // When key_file_used is true, 
+        // then key file name should have some value - either the existing one or new one
         if db_settings.key_file_used
-            && db_settings.key_file_changed
             && db_settings.key_file_name.is_none()
         {
             return Err(Error::DataError("Key file name can not be empty"));
         }
 
-        let password = if db_settings.password_used {
+        // password is considered only when it is changed
+        let password = if db_settings.password_used && db_settings.password_changed {
+            // May be this check redundant ? 
             if db_settings.password.is_none() {
-                return Err(Error::DataError("Password can not be empty when password flag is set"));
+                return Err(Error::DataError("Password can not be empty when password file used flag is set"));
             }
             db_settings.password.as_deref()
         } else {
             None
         };
 
+        
         let file_key = if db_settings.key_file_used {
+            // May be this check redundant ? 
             if db_settings.key_file_name.is_none() {
                 return Err(Error::DataError("Key file name can not be empty when key file used flag is set"));
             }
