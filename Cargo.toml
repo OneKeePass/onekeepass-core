@@ -8,7 +8,6 @@ edition = "2021"
 argon2-sys = "0.1.0"
 
 # RustCrypto https://github.com/RustCrypto
-#[target.'cfg(all(target_os = "android", target_arch = "armv7"))'.dependencies]
 sha2 = "0.9.5"
 hmac = "0.11.0"
 aes = "0.7.4"
@@ -38,12 +37,12 @@ regex = "1.7.1"
 lazy_static = "1.4.0"
 
 quick-xml = "0.30.0"
-## quick_xml_030 = { package = "quick-xml", version = "0.30.0" }
+
+## To be removed in the next release
 quick_xml_023 = { package = "quick-xml", version = "0.23.0" }
 
 serde = { version = "1.0.137", features = [ "derive" ]}
 serde_json = "1.0.81"
-#serde_json = { version = "1.0", features = [ "raw_value" ] }
 
 rmp-serde = "1.1.0" 
 
@@ -56,11 +55,9 @@ botan = {version = "0.10.7", features = ["vendored"] }
 #botan = {version = "0.10.7", features = ["botan3"] } 
 botan = {version = "0.10.7", features = ["vendored"] }
 
-#[target.'cfg(target_os = "android")'.dependencies]
 [target.'cfg(all(target_os = "android", target_arch = "aarch64"))'.dependencies]
 botan = {version = "0.10.7", features = ["vendored"] }
 
-#passwords = "3.1.9"
 [dependencies.passwords]
 version = "*"
 features = ["common-password"]
