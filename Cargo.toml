@@ -53,7 +53,8 @@ cfg-if = "1.0"
 botan = {version = "0.10.7", features = ["vendored"] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
-botan = {version = "0.10.7", features = ["botan3"] } 
+#botan = {version = "0.10.7", features = ["botan3"] } 
+botan = {version = "0.10.7", features = ["vendored"] }
 
 #[target.'cfg(target_os = "android")'.dependencies]
 [target.'cfg(all(target_os = "android", target_arch = "aarch64"))'.dependencies]
