@@ -1,6 +1,6 @@
 [package]
 name = "onekeepass-core"
-version = "0.8.0"
+version = "0.9.0"
 authors = ["jeyasankar"]
 edition = "2021"
 
@@ -14,20 +14,19 @@ aes = "0.7.4"
 block-modes = "0.8.1" 
 chacha20 = "0.7.1"
 cipher = "0.3.0"
-
 aes-gcm = "0.10.2"
-
 rand = "0.8.5"
 rand_chacha = "0.3.1"
 
 secstr = "0.5.1"
 
-base64 = "0.21.2"
+base64 = "0.21.4"
 uuid = { version = "0.8.2", features = ["serde", "v4"] }
 chrono =  {version = "0.4.23", features = ["serde"]}
 chrono-tz = "0.8.1"
-libflate = "1.1.0"
-quick-xml = "0.23.0"
+
+flate2 = {version = "1.0", features = ["zlib"]} 
+
 slice_as_array = "1.1.0"
 log = "0.4.17"
 hex-literal = "0.3.1"
@@ -37,13 +36,28 @@ thiserror = "1.0.31"
 regex = "1.7.1"
 lazy_static = "1.4.0"
 
+quick-xml = "0.30.0"
+
+## To be removed in the next release
+quick_xml_023 = { package = "quick-xml", version = "0.23.0" }
+
 serde = { version = "1.0.137", features = [ "derive" ]}
 serde_json = "1.0.81"
-#serde_json = { version = "1.0", features = [ "raw_value" ] }
 
 rmp-serde = "1.1.0" 
 
-#passwords = "3.1.9"
+cfg-if = "1.0"
+
+[target."cfg(any(target_os = \"linux\", target_os = \"macos\", target_os = \"windows\"))".dependencies]
+botan = {version = "0.10.7", features = ["vendored"] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+#botan = {version = "0.10.7", features = ["botan3"] } 
+botan = {version = "0.10.7", features = ["vendored"] }
+
+[target.'cfg(all(target_os = "android", target_arch = "aarch64"))'.dependencies]
+botan = {version = "0.10.7", features = ["vendored"] }
+
 [dependencies.passwords]
 version = "*"
 features = ["common-password"]
@@ -52,7 +66,7 @@ features = ["common-password"]
 env_logger = "0.8.4"
 mockall = "0.10.2"
 rstest = "0.11.0"
-botan = {version = "0.10.3", features = ["vendored"] } 
-alkali = { version = "0.3.0", features = ["aes","hazmat"] }
+
+#alkali = { version = "0.3.0", features = ["aes","hazmat"] }
 
 

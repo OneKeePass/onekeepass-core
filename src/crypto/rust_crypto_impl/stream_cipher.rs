@@ -1,3 +1,4 @@
+
 use chacha20::cipher::{NewCipher, StreamCipher};
 use chacha20::ChaCha20;
 use log::error;
@@ -5,6 +6,7 @@ use log::error;
 use crate::error::{Error, Result};
 
 use crate::constants::inner_header_type::CHACHA20_STREAM;
+use crate::util;
 
 #[derive(Debug)]
 pub struct ProtectedContentStreamCipher {
@@ -36,7 +38,9 @@ impl ProtectedContentStreamCipher {
     pub fn process_basic64_str(&mut self, b64_str: &str) -> Result<String> {
         //let decoded = base64::decode(b64_str).ok()?; //TODO: handle  DecodeError
         if !b64_str.is_empty() {
-            let decoded = base64::decode(b64_str).unwrap();
+            //let decoded = base64::decode(b64_str).unwrap();
+
+            let decoded = util::base64_decode(b64_str)?;
 
             let e = self.process(&decoded)?;
 
@@ -56,7 +60,7 @@ impl ProtectedContentStreamCipher {
     /// The content string data is encrypted and the base 64 of the encrypted bytes data is returned
     pub fn process_content_b64_str(&mut self, content: &str) -> Result<String> {
         let b = self.process(content.as_bytes())?;
-        let s = base64::encode(&b);
+        let s = util::base64_encode(&b);
         Ok(s)
     }
 }

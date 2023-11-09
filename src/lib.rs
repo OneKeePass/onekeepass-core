@@ -6,6 +6,7 @@ mod password_generator;
 mod searcher;
 mod util;
 mod xml_parse;
+mod xml_parse_023;
 
 pub mod error;
 
@@ -40,30 +41,6 @@ mod tests {
         assert_eq!(crate::constants::SIG1, 0x9AA2_D903);
     }
 
-    #[test]
-    #[ignore]
-    fn test2() {
-        use crate::crypto::calculate_hash;
-
-        let mut v: Vec<u8> = Vec::new();
-        for i in &[3, 4] {
-            v.push(*i as u8);
-        }
-        let r = calculate_hash(&vec![v]).unwrap();
-
-        println!("r is {:?}", r);
-
-        use std::mem;
-        let ir = unsafe {
-            let a: [u8; 32] = [
-                119, 178, 202, 206, 16, 219, 78, 34, 91, 12, 54, 53, 141, 51, 90, 216, 150, 149,
-                219, 40, 117, 167, 63, 172, 101, 181, 14, 12, 145, 177, 251, 147,
-            ];
-            mem::transmute::<[u8; 32], [i8; 32]>(a)
-        };
-        println!("ir is {:?}", ir);
-        assert_eq!(crate::constants::SIG1, 0x9AA2_D903);
-    }
     #[test]
     #[ignore]
     fn test3() {

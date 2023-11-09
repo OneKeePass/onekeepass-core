@@ -1,176 +1,89 @@
-mod block_cipher;
 pub mod kdf;
-mod stream_cipher;
 
-pub use self::block_cipher::ContentCipher;
-pub use self::stream_cipher::ProtectedContentStreamCipher;
-
-use hmac::{Hmac, Mac, NewMac};
-use sha2::digest::generic_array::GenericArray;
-use sha2::{Digest, Sha256, Sha512};
-
-use crate::error::{Error, Result};
-
-// Create alias for HMAC-SHA256
-type HmacSha256 = Hmac<Sha256>;
-
-pub fn verify_hmac_sha256(key: &[u8], data: &[&[u8]], test_hash: &[u8]) -> Result<bool> {
-    let mut mac = HmacSha256::new_from_slice(key).unwrap();
-    //mac.update(data);
-    for v in data {
-        mac.update(v);
-    }
-    let r = mac.verify(test_hash).map_err(|_| Error::DataError).is_ok();
-    Ok(r)
-}
-
-pub fn do_hmac_sha256(key: &[u8], data: &[&[u8]]) -> Result<Vec<u8>> {
-    let mut mac = HmacSha256::new_from_slice(key).unwrap();
-    for v in data {
-        mac.update(v);
-    }
-    let result = mac.finalize();
-    Ok(result.into_bytes().to_vec())
-}
-
-pub fn do_sha256_hash(data: &[&Vec<u8>]) -> Result<Vec<u8>> {
-    let mut hasher = Sha256::new();
-    for v in data {
-        hasher.update(v);
-    }
-    let result = hasher.finalize();
-    //32 bytes hash output
-    Ok(result.to_vec())
-}
-
-//pub fn do_sha512_hash(data:&[&[u8]] ) -> Result<Vec<u8>> {
-pub fn do_sha512_hash(data: &[&Vec<u8>]) -> Result<Vec<u8>> {
-    let mut hasher = Sha512::new();
-    for v in data {
-        hasher.update(v);
-    }
-    let result = hasher.finalize();
-    //64 bytes hash output
-    Ok(result.to_vec())
-}
-
-#[allow(dead_code)]
-pub fn calculate_hash(data: &Vec<Vec<u8>>) -> Result<Vec<u8>> {
-    let mut hasher = Sha256::new();
-    for v in data {
-        hasher.update(v);
-    }
-    let result = hasher.finalize();
-    Ok(result.to_vec())
-}
-
-// #[allow(dead_code)]
-// pub fn do_vec_sha256_hash(data: Vec<u8>) -> Result<GenericArray<u8, U32>> {
-//     let mut hasher = Sha256::new();
-//     hasher.update(data);
-//     Ok(hasher.finalize())
-// }
-
-//32 bytes hash output
-pub fn do_vecs_sha256_hash(data: &Vec<&Vec<u8>>) -> Result<Vec<u8>> {
-    let mut hasher = Sha256::new();
-    for v in data {
-        hasher.update(v);
-    }
-    let result = hasher.finalize();
-    Ok(result.to_vec())
-}
-
-pub fn do_slice_sha256_hash(data: &[u8]) -> Result<Vec<u8>> {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    Ok(hasher.finalize().to_vec())
-}
-
-use aes_gcm::{
-    aead::{Aead, AeadCore, KeyInit, OsRng},
-    Aes256Gcm, Key,
+use crate::{
+    constants,
+    error::{Error, Result},
 };
+use serde::{Deserialize, Serialize};
 
-pub(crate) struct KeyCipher {
-    // key is 256 bits - 32 bytes
-    pub(crate) key: Vec<u8>,
-    // nonce is 96 bits - 12 bytes
-    pub(crate) nonce: Vec<u8>,
-}
+ 
+cfg_if::cfg_if! {
+    if #[cfg(any(target_os = "macos",
+                target_os = "windows",
+                target_os = "linux",
+                target_os = "ios",
+                all(target_os = "android", target_arch = "aarch64")))] {
 
-impl KeyCipher {
-    pub fn new() -> Self {
-        Self {
-            key: Aes256Gcm::generate_key(OsRng).to_vec(),
-            nonce: Aes256Gcm::generate_nonce(&mut OsRng).to_vec(),
-        }
-    }
+        #[path = "botan_impl/mod.rs"]
+        mod crypto_impl;
+        pub use crypto_impl::*;
 
-    pub fn from(key: &[u8], nonce: &[u8]) -> Self {
-        Self {
-            key: key.to_vec(),
-            nonce: nonce.to_vec(),
-        }
-    }
-
-    #[inline]
-    pub fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
-        self.encrypt_decrypt(data, true)
-    }
-
-    #[inline]
-    pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
-        self.encrypt_decrypt(data, false)
-    }
-
-    fn encrypt_decrypt(&self, data: &[u8], encrypt: bool) -> Result<Vec<u8>> {
-        let key = Key::<Aes256Gcm>::from_slice(&self.key);
-        let cipher = Aes256Gcm::new(&key);
-        let final_data = if encrypt {
-            cipher.encrypt(&GenericArray::from_slice(&self.nonce), data)
-        } else {
-            cipher.decrypt(&GenericArray::from_slice(&self.nonce), data)
-        };
-        match final_data {
-            Ok(v) => Ok(v),
-            Err(e) => Err(Error::Other(format!("AES GCM failed {}", e))),
-        }
+    } else {
+        #[path = "rust_crypto_impl/mod.rs"]
+        mod crypto_impl;
+        pub use crypto_impl::*;
     }
 }
 
-use rand::prelude::*;
-use rand_chacha::ChaCha20Rng;
 
-#[allow(dead_code)]
-pub struct SecureRandom {
-    rng: ChaCha20Rng,
+// Provides the encryption and decryption
+#[derive(Debug)]
+pub enum ContentCipher {
+    ChaCha20([u8; 12]),
+    Aes256([u8; 16]),
 }
 
-#[allow(dead_code)]
-impl SecureRandom {
-    pub fn new() -> Self {
-        SecureRandom {
-            rng: ChaCha20Rng::from_entropy(),
+// Moved from db module
+// TODO: Combine ContentCipher and ContentCipherId ?
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum ContentCipherId {
+    ChaCha20,
+    Aes256,
+    UnKnownCipher,
+}
+
+impl ContentCipherId {
+    // Gets the UUID and Encryption IV of the supported algorithm
+    pub fn uuid_with_iv(&self) -> Result<(Vec<u8>, Vec<u8>)> {
+        let (rn16, rn12) = get_random_bytes_2::<16, 12>();
+        match self {
+            ContentCipherId::Aes256 => Ok((constants::uuid::AES256.to_vec(), rn16)),
+            ContentCipherId::ChaCha20 => Ok((constants::uuid::CHACHA20.to_vec(), rn12)),
+            _ => return Err(Error::UnsupportedCipher(vec![])),
         }
     }
 
-    pub fn get_bytes<const N: usize>(&mut self) -> Vec<u8> {
-        let mut buf = [0u8; N];
-        self.rng.fill_bytes(&mut buf);
-        buf.to_vec()
+    // Generates the random master seed and iv for the selected algorithm
+    pub fn generate_master_seed_iv(&self) -> Result<(Vec<u8>, Vec<u8>)> {
+        let (rn32, rn16, rn12) = get_random_bytes_3::<32, 16, 12>();
+        match self {
+            ContentCipherId::Aes256 => Ok((rn32, rn16)),
+            ContentCipherId::ChaCha20 => Ok((rn32, rn12)),
+            _ => return Err(Error::UnsupportedCipher(vec![])),
+        }
     }
-}
-
-pub fn get_random_bytes<const N: usize>() -> Vec<u8> {
-    SecureRandom::new().get_bytes::<N>()
 }
 
 #[cfg(test)]
 mod tests {
-    use std::io::{BufReader, Read};
+    use std::{
+        fs,
+        io::{BufReader, Read},
+        time::Instant,
+    };
 
     use super::*;
+
+    // To see logging output during unit testing
+    pub fn init_logging() {
+        let _ = env_logger::builder()
+            // Include all events in tests
+            .filter_level(log::LevelFilter::max())
+            // Ensure events are captured by `cargo test`
+            .is_test(true)
+            // Ignore errors initializing the logger if tests race to configure it
+            .try_init();
+    }
 
     #[test]
     fn veriy_aes_gcm() {
@@ -194,9 +107,151 @@ mod tests {
     }
 
     #[test]
+    fn verify_aes256_encrypt_decrypt() {
+        init_logging();
+        let (uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
+        let cipher = ContentCipher::try_from(&uuid, &enc_iv).unwrap();
+
+        let text = "Hello World!";
+        let key = get_random_bytes::<32>();
+
+        let encrypted = cipher.encrypt(text.as_bytes(), &key).unwrap();
+        let decrypted = cipher.decrypt(&encrypted, &key).unwrap();
+
+        assert_eq!(text.as_bytes(), decrypted);
+    }
+
+    fn read_file_data() -> Vec<u8> {
+        // File size is 1.06 GB
+        let path = "/Users/jeyasankar/Downloads/Android/android-studio-2021.2.1.16-mac_arm.dmg";
+        let input = fs::File::open(path).unwrap();
+        let mut reader = BufReader::new(input);
+
+        let mut data: Vec<u8> = vec![];
+        reader.read_to_end(&mut data).unwrap();
+        println!(
+            "File data reading is done and returning all data bytes ; size {}",
+            data.len()
+        );
+        data
+    }
+
+    #[test]
+    fn verify_aes256_file_data_encrypt_decrypt() {
+        let (uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
+        let cipher = ContentCipher::try_from(&uuid, &enc_iv).unwrap();
+
+        let data: Vec<u8> = read_file_data();
+        let key = get_random_bytes::<32>();
+
+        let timing = Instant::now();
+        let encrypted = cipher.encrypt(&data, &key).unwrap();
+        println!(
+            "Encryption elapsed time {} seconds",
+            timing.elapsed().as_secs()
+        );
+
+        let timing = Instant::now();
+        let decrypted = cipher.decrypt(&encrypted, &key).unwrap();
+        println!(
+            "Decryption elapsed time {} seconds",
+            timing.elapsed().as_secs()
+        );
+
+        assert_eq!(data, decrypted);
+    }
+
+    #[test]
+    fn verify_aes256_encrypt_decrypt_botan() {
+        let (uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
+        let key = get_random_bytes::<32>();
+
+        let text = "Hello World!";
+
+        let mut cipher =
+            botan::Cipher::new("AES-256/CBC/PKCS7", botan::CipherDirection::Encrypt).unwrap();
+        cipher.set_key(&key).unwrap();
+        //cipher.start(&enc_iv).unwrap();
+
+        let encrypted = cipher.process(&enc_iv, text.as_bytes()).unwrap();
+
+        let mut cipher =
+            botan::Cipher::new("AES-256/CBC/PKCS7", botan::CipherDirection::Decrypt).unwrap();
+        cipher.set_key(&key).unwrap();
+        let decrypted = cipher.process(&enc_iv, &encrypted).unwrap();
+
+        assert_eq!(text.as_bytes(), decrypted);
+
+        // let cipher = ContentCipher::try_from(&uuid, &enc_iv).unwrap();
+        // let decrypted = cipher.decrypt(&encrypted, &key).unwrap();
+        // assert_eq!(text.as_bytes(),decrypted);
+    }
+
+    #[test]
+    fn verify_aes256_file_data_encrypt_decrypt_botan() {
+        let (uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
+        let key = get_random_bytes::<32>();
+
+        let data: Vec<u8> = read_file_data();
+
+        let mut cipher =
+            botan::Cipher::new("AES-256/CBC/PKCS7", botan::CipherDirection::Encrypt).unwrap();
+        cipher.set_key(&key).unwrap();
+
+        let timing = Instant::now();
+        let encrypted = cipher.process(&enc_iv, &data).unwrap();
+        println!(
+            "Encryption elapsed time {} seconds",
+            timing.elapsed().as_secs()
+        );
+
+        let mut cipher =
+            botan::Cipher::new("AES-256/CBC/PKCS7", botan::CipherDirection::Decrypt).unwrap();
+        cipher.set_key(&key).unwrap();
+
+        let timing = Instant::now();
+        let decrypted = cipher.process(&enc_iv, &encrypted).unwrap();
+        println!(
+            "Decryption elapsed time {} seconds",
+            timing.elapsed().as_secs()
+        );
+
+        assert_eq!(data, decrypted);
+
+        // let cipher = ContentCipher::try_from(&uuid, &enc_iv).unwrap();
+        // let timing = Instant::now();
+        // let decrypted = cipher.decrypt(&encrypted, &key).unwrap();
+        // println!("Decryption elapsed time {} seconds",timing.elapsed().as_secs());
+        // assert_eq!(data,decrypted);
+    }
+
+    #[test]
+    fn verify_chacha20_encrypt_decrypt_botan() {
+        let (uuid, enc_iv) = ContentCipherId::ChaCha20.uuid_with_iv().unwrap();
+        let key = get_random_bytes::<32>();
+
+        let text = "Hello World!";
+
+        let mut cipher = botan::Cipher::new("ChaCha20", botan::CipherDirection::Encrypt).unwrap();
+        cipher.set_key(&key).unwrap();
+
+        let encrypted = cipher.process(&enc_iv, text.as_bytes()).unwrap();
+
+        let mut cipher = botan::Cipher::new("ChaCha20", botan::CipherDirection::Decrypt).unwrap();
+        cipher.set_key(&key).unwrap();
+        let decrypted = cipher.process(&enc_iv, &encrypted).unwrap();
+
+        assert_eq!(text.as_bytes(), decrypted);
+
+        // let cipher = ContentCipher::try_from(&uuid, &enc_iv).unwrap();
+        // let decrypted = cipher.decrypt(&encrypted, &key).unwrap();
+        // assert_eq!(text.as_bytes(),decrypted);
+    }
+
+    #[test]
     fn verify_hash256_1() {
         use sha2::{Digest, Sha256};
-        use std::time::{Duration, Instant};
+        use std::time::Instant;
         use std::{fs, io};
         let path = "/Users/jeyasankar/Downloads/Android/android-studio-2021.2.1.16-mac_arm.dmg";
         let mut file = fs::File::open(&path).unwrap();
@@ -249,8 +304,8 @@ mod tests {
 
     #[test]
     fn verify_hash256_3() {
-        use std::time::{Duration, Instant};
-        use std::{fs, io};
+        use std::fs;
+        use std::time::Instant;
         // hex d4e06bcc6f614cd4b261fc6034529edb205b31b0e56824490a91350c3640806a
         let path = "/Users/jeyasankar/Downloads/Android/android-studio-2021.2.1.16-mac_arm.dmg";
         let input = fs::File::open(path).unwrap();
@@ -290,6 +345,9 @@ mod tests {
         )
     }
 
+    // Need to add to Cargo.toml to test this
+    // alkali = { version = "0.3.0", features = ["aes","hazmat"] }
+    /*
     #[test]
     fn verify_hash256_4() {
         use std::time::{Duration, Instant};
@@ -298,8 +356,6 @@ mod tests {
         let path = "/Users/jeyasankar/Downloads/Android/android-studio-2021.2.1.16-mac_arm.dmg";
         let input = fs::File::open(path).unwrap();
         let mut reader = BufReader::new(input);
-
-        
 
         let start = Instant::now();
 
@@ -343,4 +399,5 @@ mod tests {
         //     ])
         // );
     }
+    */
 }

@@ -1,3 +1,7 @@
+mod attachment;
+
+pub use attachment::*;
+
 pub use crate::db::{
     KeyStoreOperation, KeyStoreService, KeyStoreServiceType, NewDatabase, SecureKeyInfo,
 };
@@ -6,18 +10,17 @@ pub use crate::error;
 pub use crate::error::{Error, Result};
 pub use crate::form_data::*;
 pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions, PasswordScore};
-pub use crate::util::{file_name, formatted_key, string_to_simple_hash};
+pub use crate::util::{file_name, formatted_key, parse_attachment_hash, string_to_simple_hash};
 
 use crate::db::{self, write_kdbx_file, write_kdbx_file_with_backup_file, KdbxFile};
-use crate::db_content::{standard_types_ordered_by_id, AttachmentHashValue, KeepassFile};
+use crate::db_content::{standard_types_ordered_by_id, KeepassFile};
 use crate::password_generator;
 use crate::searcher;
 use crate::util;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::env;
-use std::fs::File;
-use std::io::{BufReader, Cursor, Read, Seek, Write};
+
+use std::io::{Cursor, Read, Seek, Write};
 use std::path::Path;
 use std::{
     collections::HashMap,
@@ -231,7 +234,7 @@ where
 /// Returns KdbxLoaded with db key which is required to access such loaded db content from the cache
 pub fn load_kdbx(
     db_file_name: &str,
-    password: &str,
+    password: Option<&str>,
     key_file_name: Option<&str>,
 ) -> Result<KdbxLoaded> {
     let mut db_file_reader = db::open_db_file(db_file_name)?;
@@ -261,7 +264,7 @@ macro_rules! to_keepassfile {
 pub fn read_kdbx<R: Read + Seek>(
     reader: &mut R,
     db_file_name: &str,
-    password: &str,
+    password: Option<&str>,
     key_file_name: Option<&str>,
     file_name: Option<&str>,
 ) -> Result<KdbxLoaded> {
@@ -285,7 +288,7 @@ pub fn read_kdbx<R: Read + Seek>(
     // Each database has a unique uri (File Path) and accordingly only one db with that name can be opened at a time
     // The 'db_file_name' is the full uri and used as a unique db_key throughout all db specific calls
     store.insert(db_file_name.into(), kdbx_context);
-    info!("Reading KDBX file {} is completed", db_file_name);
+    debug!("Reading KDBX file {} is completed", db_file_name);
     Ok(kdbx_loaded)
 }
 
@@ -330,7 +333,7 @@ pub fn close_all_databases() -> Result<()> {
     Ok(())
 }
 
-// Called to generate random 32 bytes key and stored in an xml file (Version 2.0) 
+// Called to generate random 32 bytes key and stored in an xml file (Version 2.0)
 pub fn generate_key_file(key_file_name: &str) -> Result<()> {
     db::create_key_file(key_file_name)
 }
@@ -570,7 +573,7 @@ pub fn save_as_kdbx(db_key: &str, database_file_name: &str) -> Result<KdbxLoaded
     let kdbx_loaded = call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
         // database_file_name is full name uri and will be used the new saved as file's db_key
         ctx.kdbx_file.set_database_file_name(database_file_name);
-        
+
         write_kdbx_file(&mut ctx.kdbx_file, true)?;
         // All changes are now saved to file
         ctx.save_pending = false;
@@ -633,7 +636,7 @@ pub fn unlock_kdbx_on_biometric_authentication(db_key: &str) -> Result<KdbxLoade
 /// Compares the entered credentials with the stored one for a quick unlock of the db
 pub fn unlock_kdbx(
     db_key: &str,
-    password: &str,
+    password: Option<&str>,
     key_file_name: Option<&str>,
 ) -> Result<KdbxLoaded> {
     kdbx_context_action!(db_key, |ctx: &KdbxContext| {
@@ -683,11 +686,17 @@ pub fn get_db_settings(db_key: &str) -> Result<DbSettings> {
         //Used only in Mobile apps
         let key_file_name_part = key_file_name.as_ref().and_then(|s| util::file_name(s));
 
+        let (password_used, key_file_used) = ctx.kdbx_file.credentials_used_state();
+
         let db_settings = DbSettings {
             kdf: ctx.kdbx_file.get_kdf_algorithm(),
             cipher_id: ctx.kdbx_file.get_content_cipher_id(),
             password: None,
             key_file_name,
+            password_used,
+            key_file_used,
+            password_changed: false,
+            key_file_changed: false,
             key_file_name_part,
             database_file_name: ctx.kdbx_file.get_database_file_name().to_string(),
             meta: (&kp.meta).into(),
@@ -705,15 +714,90 @@ pub fn set_db_settings(db_key: &str, db_settings: DbSettings) -> Result<()> {
             .as_mut()
             .ok_or("No main content")?;
         kp.meta.update((&db_settings.meta).into())?;
-        // Password changed
-        if let Some(s) = db_settings.password {
-            ctx.kdbx_file.set_password(&s)?;
+
+        // IMPORTANT
+        // password_used,key_file_used,password_changed and key_file_changed are set from client side
+        // in a consistent way statifying the following combinations
+        // e.g
+        // If a password is changed, then password_used = true, password_changed = true and password = Some value
+        // If the password use is removed,
+        //     then password_used = false , password_changed = true, password = None  ;
+        //          key_file_used = true , key_file_changed = true or false ,  key_file_name = Some value
+        //
+        // If a key file is changed, 
+        //      then key_file_used = true ,key_file_changed = true, key_file_name = Some value
+        //      password_used = true or false, password_changed = false    
+        // If the key file use is removed,
+        //      then key_file_used = false, key_file_changed = true,key_file_name = None; password_used = true , password_changed = true or false
+
+        debug!("password_used: {}, password_changed: {}, password is nil?:  {},key_file_used: {}, key_file_changed: {}, key_file_name:  {:?}",
+        &db_settings.password_used,&db_settings.password_changed,db_settings.password.is_none(),
+        &db_settings.key_file_used, &db_settings.key_file_changed, &db_settings.key_file_name
+        );
+
+        // Both password and key file can not be none at the same time
+        // Note the existing db_settings.password = None when password_changed = false as 
+        // the password field in DbSetttings is None (db_settings.password = None) in 'get_db_settings' call
+        // Because of this db_settings.password will have Some value only when password_used = true and password_changed = true
+
+        // If we do not use password, then key file should be used; 
+        // db_settings.password_used is false when password use is removed in Settings UI  
+        if !db_settings.password_used && db_settings.key_file_name.is_none() {
+            return Err(error::Error::InSufficientCredentials);
         }
-        // TODO:
-        // Need to add some flag in DbSettings so that we can avoid calling 'set_file_key' if there is no change in key file use.
-        // For now some checks are done in kdbx_file.set_file_key and avoids reading and creating file content hash etc i
-        ctx.kdbx_file
-            .set_file_key(db_settings.key_file_name.as_deref())?;
+
+        // Password is used and expected some value when it is changed or added 
+        if db_settings.password_used
+            && db_settings.password_changed
+            && db_settings.password.is_none()
+        {
+            return Err(Error::DataError("Password can not be empty"));
+        } 
+
+        if !db_settings.password_used && db_settings.password.is_some() {
+            return Err(Error::DataError("Password is not used, but found some value"));
+        }
+
+        // When key_file_used is true, 
+        // then key file name should have some value - either the existing one or new one
+        if db_settings.key_file_used
+            && db_settings.key_file_name.is_none()
+        {
+            return Err(Error::DataError("Key file name can not be empty"));
+        }
+
+        // password is considered only when it is changed
+        let password = if db_settings.password_used && db_settings.password_changed {
+            // May be this check redundant ? 
+            if db_settings.password.is_none() {
+                return Err(Error::DataError("Password can not be empty when password file used flag is set"));
+            }
+            db_settings.password.as_deref()
+        } else {
+            None
+        };
+
+        
+        let file_key = if db_settings.key_file_used {
+            // May be this check redundant ? 
+            if db_settings.key_file_name.is_none() {
+                return Err(Error::DataError("Key file name can not be empty when key file used flag is set"));
+            }
+            db_settings.key_file_name.as_deref()
+        } else {
+            None
+        };
+
+        if db_settings.password_changed && db_settings.key_file_changed {
+            // Both password and key file use changed
+            ctx.kdbx_file.set_credentials(db_key, password, file_key)?;
+        } else if db_settings.password_changed {
+            // Only password changed
+            ctx.kdbx_file.set_password(password)?;
+        } else if db_settings.key_file_changed {
+            // Only password key file used changed
+            ctx.kdbx_file.set_file_key(file_key)?;
+        }
 
         ctx.kdbx_file.set_kdf_algorithm(db_settings.kdf)?;
         ctx.kdbx_file.set_content_cipher_id(db_settings.cipher_id)?;
@@ -950,7 +1034,7 @@ pub fn get_entry_form_data_by_id(db_key: &str, entry_uuid: &Uuid) -> Result<Entr
 }
 
 // Collects all entry field names and its values (not in any particular order)
-pub fn entry_key_value_fields(db_key: &str, entry_uuid: &Uuid) -> Result<HashMap<String,String>> {
+pub fn entry_key_value_fields(db_key: &str, entry_uuid: &Uuid) -> Result<HashMap<String, String>> {
     main_content_action!(db_key, move |k: &KeepassFile| {
         match k.root.entry_by_id(entry_uuid) {
             Some(e) => Ok(e.field_values()),
@@ -1115,81 +1199,6 @@ pub fn new_blank_group_with_parent(
     let mut group = new_blank_group(mark_as_category);
     group.parent_group_uuid = parent_group_uuid;
     Ok(group)
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct AttachmentUploadInfo {
-    pub name: String,
-    #[serde(with = "util::from_or_to::string")]
-    pub data_hash: AttachmentHashValue,
-    pub data_size: usize,
-}
-
-/// Called to upload an attachment.  
-/// On successful loading the file content, the attachment name and hash for the file data are returned
-/// The caller need to connect these info with the an entry as this uploading of the binary data is done only to the
-/// inner header structure and yet to be linked with an Entry
-pub fn upload_entry_attachment(db_key: &str, file_name: &str) -> Result<AttachmentUploadInfo> {
-    //Load the file from file system
-    let file = File::open(file_name)?;
-    let mut buf_reader = BufReader::new(file);
-    let name = Path::new(file_name)
-        .file_name()
-        .and_then(|x| x.to_str())
-        .unwrap_or("No Attachment Name");
-
-    call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
-        let mut buf = vec![];
-        buf_reader.read_to_end(&mut buf)?;
-        let size = buf.len();
-        let data_hash = ctx.kdbx_file.upload_entry_attachment(buf);
-        Ok(AttachmentUploadInfo {
-            name: name.into(),
-            data_hash: data_hash,
-            data_size: size,
-        })
-    })
-}
-
-/// Saves the bytes content of an entry attachment as file to temp dir
-/// The file name is based on 'name' and valid data hash handle is required to get the bytes data
-pub fn save_attachment_as_temp_file(
-    db_key: &str,
-    name: &str,
-    data_hash: &AttachmentHashValue,
-) -> Result<String> {
-    let mut path = env::temp_dir();
-    println!("The current directory is {}", path.display());
-    // The app temp dir
-    path.push("okp_cache");
-    if !path.exists() {
-        std::fs::create_dir(path.clone())?;
-    }
-
-    // Push the file name wanted and create the file with full name
-    // TODO: Generate some random file name ?
-    path.push(name);
-    let mut file = std::fs::File::create(path.clone())?;
-
-    let data = call_kdbx_context_action(db_key, |ctx: &KdbxContext| {
-        Ok(ctx.kdbx_file.get_bytes_content(data_hash))
-    })?;
-
-    if let Some(v) = data {
-        file.write_all(&v)?;
-        path.to_str()
-            .ok_or_else(|| "Invalid temp file".into())
-            .map(|s| s.into())
-    } else {
-        Err(Error::Other("No valid data found".into()))
-    }
-}
-
-/// Removes all contents of the app's temp dir
-pub fn remove_app_temp_dir_content() -> Result<()> {
-    let mut path = env::temp_dir();
-    path.push("okp_cache");
-    util::remove_dir_contents(path)
 }
 
 pub fn analyzed_password(password_options: PasswordGenerationOptions) -> Result<AnalyzedPassword> {

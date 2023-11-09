@@ -1,8 +1,17 @@
+use log::debug;
 use serde::{Deserialize, Serialize};
 
+use super::{
+    kdbx_file::{InnerHeader, MainHeader},
+    ContentCipherId, FileKey, KdbxFile, KdfAlgorithm, SecuredDatabaseKeys,
+};
+use crate::crypto::get_random_bytes_2;
 use crate::error::Result;
-use crate::{crypto, constants::inner_header_type, db_content::{KeepassFile, Group}};
-use super::{KdfAlgorithm, ContentCipherId, KdbxFile, FileKey, kdbx_file::{MainHeader, InnerHeader}, SecuredDatabaseKeys};
+use crate::{
+    constants::inner_header_type,
+    crypto,
+    db_content::{Group, KeepassFile},
+};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NewDatabase {
@@ -14,17 +23,8 @@ pub struct NewDatabase {
     pub file_name: Option<String>,
     pub(crate) kdf: KdfAlgorithm,
     pub(crate) cipher_id: ContentCipherId,
-    pub(crate) password: String,
+    pub(crate) password: Option<String>,
     pub(crate) key_file_name: Option<String>,
-}
-
-impl NewDatabase {
-    pub fn new(db_file_name: &str, password: &str) -> Self {
-        let mut n = Self::default();
-        n.password = password.into();
-        n.database_file_name = db_file_name.into();
-        n
-    }
 }
 
 impl Default for NewDatabase {
@@ -33,10 +33,10 @@ impl Default for NewDatabase {
             database_name: "NewDatabase".into(),
             database_description: Some("New Database".into()),
             database_file_name: "NO_NAME".into(),
-            file_name:None,
+            file_name: None,
             kdf: KdfAlgorithm::Argon2(crypto::kdf::Argon2Kdf::default()),
             cipher_id: ContentCipherId::Aes256,
-            password: "ThisIsTest".into(),
+            password: Some("ThisIsTest".into()),
             key_file_name: None,
         }
     }
@@ -50,12 +50,13 @@ impl NewDatabase {
             Some(_) | None => None,
         };
 
-        let (cid, eiv) = self.cipher_id.to_uuid_id()?;
-        let mut rng = crypto::SecureRandom::new();
+        let (cid, eiv) = self.cipher_id.uuid_with_iv()?;
+
+        let (rn64, rn32) = get_random_bytes_2::<64, 32>();
 
         let mh = MainHeader {
             cipher_id: cid,
-            master_seed: rng.get_bytes::<32>(),
+            master_seed: rn32,
             compression_flag: 1, // 0 => no compression
             encryption_iv: eiv,  //rng.get_bytes::<16>() for AES,rng.get_bytes::<12>() for CHACHA20
             public_custom_data: vec![],
@@ -66,7 +67,7 @@ impl NewDatabase {
 
         let mut ih = InnerHeader::default();
         ih.stream_cipher_id = inner_header_type::CHACHA20_STREAM;
-        ih.inner_stream_key = rng.get_bytes::<64>();
+        ih.inner_stream_key = rn64;
         let mut kc = KeepassFile::new();
         kc.meta.generator = "OneKeePass".into();
         kc.meta.database_name = self.database_name.clone();
@@ -80,9 +81,10 @@ impl NewDatabase {
         root_g.name = kc.meta.database_name.clone();
         kc.root.root_uuid = root_g.uuid.clone();
         kc.root.all_groups.insert(root_g.uuid, root_g);
+        
+        debug!("New database create: password nil? {}, file name {:?}",self.password.is_none(),&self.key_file_name);
 
-
-        let mut secured_database_keys = SecuredDatabaseKeys::from_keys(&self.password, &file_key)?;
+        let mut secured_database_keys = SecuredDatabaseKeys::from_keys(self.password.as_deref(), &file_key)?;
         // Call to secure the keys and use in subsequent calls
         secured_database_keys.secure_keys(&self.database_file_name)?;
 

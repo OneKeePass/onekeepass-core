@@ -1,9 +1,9 @@
-use quick_xml::events::attributes::{Attribute, Attributes};
-use quick_xml::events::Event;
-use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText};
-use quick_xml::name::QName;
-use quick_xml::Reader as QuickXmlReader;
-use quick_xml::Writer as QuickXmlWriter;
+#[allow(dead_code)]
+use quick_xml_023::events::attributes::{Attribute, Attributes};
+use quick_xml_023::events::Event;
+use quick_xml_023::events::{BytesDecl, BytesEnd, BytesStart, BytesText};
+use quick_xml_023::Reader as QuickXmlReader;
+use quick_xml_023::Writer as QuickXmlWriter;
 
 use std::collections::HashMap;
 use std::io::Cursor;
@@ -17,14 +17,13 @@ use crate::db::KeyFileData;
 use crate::db_content::*;
 use crate::error::{Error, Result};
 use crate::util;
-use log::{debug, error, info};
+use log::{error, info};
 
-pub struct XmlReader<'a> {
-    reader: QuickXmlReader<&'a [u8]>,
+#[allow(dead_code)]
+pub struct XmlReader<B: BufRead> {
+    reader: QuickXmlReader<B>,
     stream_cipher: Option<ProtectedContentStreamCipher>,
 }
-
-// Macro called for reading specific set of inner tags
 
 macro_rules! read_tags {
     ($self:ident, start_tag_fns {$($start_tag:tt => $start_tag_action:tt),* },
@@ -34,20 +33,21 @@ macro_rules! read_tags {
         let mut buf:Vec<u8> = vec![];
         loop {
 
-            match $self.reader.read_event_into(&mut buf) {
+            match $self.reader.read_event(&mut buf) {
                 Ok(Event::Start(ref e)) => {
-                    match e.name().as_ref() {
+                    match e.name() {
                         $($start_tag => {
-                            let content = $self.reader.read_text(QName($start_tag))?;
-                            $start_tag_action(content.to_string(),&mut e.attributes(),&mut $self.stream_cipher);
+                            //let a = e.attributes().clone();
+                            let mut buffer:Vec<u8> = vec![];
+                            let content = $self.reader.read_text($start_tag, &mut buffer)?;
+                            $start_tag_action(content,&mut e.attributes(),&mut $self.stream_cipher);
                         }
                         )*
 
                         $($parent_tag  => {
                             // parent_tag_action is a block intead of a closure so that we can use "self" methods
                             // But if we need to access the attributes of this $parent_tag we need to pass a variable name as
-                            // "tt" in "$attributes" and then can be set with value of e.attributes() and
-                            // can be used inside parent_tag_action block
+                            // "tt" in "$attributes" and then can be set with value of e.attributes() and can be used inside parent_tag_action block
                             // start_tag_blks {$($attributes:tt,$parent_tag:tt => $parent_tag_action:tt),*},
                             // let mut $attributes = e.attributes();
                             // let mut $attributes = e.attributes().by_ref().filter_map(|a| a.ok()).collect::<Vec<_>>();
@@ -56,15 +56,12 @@ macro_rules! read_tags {
 
                         x => {
                             // Just consume/skip any other tags that are not listed above
-                            let t = std::str::from_utf8(&x)?;
-                            let et = std::str::from_utf8($end_tag);
-                            debug!("No matching action found and skipping the tag: {} and end tag is {:?}", &t, &et);
                             skip_tag(x, &mut $self.reader)?;
                         }
                     }
                 }
                 Ok(Event::Empty(ref e)) => {
-                    match e.name().as_ref() {
+                    match e.name() {
                         $($empty_tag => {
                             $empty_tag_action(&mut e.attributes())
                         }
@@ -72,17 +69,53 @@ macro_rules! read_tags {
                         _ => ()
                     }
                 }
-
-                Ok(Event::End(ref e)) if e.name().as_ref() == $end_tag => {
+                // $(Ok(Event::Start(ref e)) if e.name() == $attr_tag => {
+                //     let mut buf:Vec<u8> = vec![];
+                //     let content = $self.reader.read_text(VALUE, &mut buf)?;
+                //     //let cipher = self.stream_cipher;
+                //     $attr_fn(e.attributes(),content,&mut $self.stream_cipher)
+                // })?
+                // Ok(Event::Start(ref e)) => {
+                //     match e.name() {
+                //         $($start_tag => $start_tag_action)+
+                //         x => {
+                //             //Just consume/skip any other tags that are not listed above
+                //             skip_tag(x, &mut $self.reader)?;
+                //         }
+                //     }
+                // }
+                Ok(Event::End(ref e)) if e.name() == $end_tag => {
                     break;
                 }
-                Ok(Event::End(ref e)) if e.name().as_ref() != $end_tag => {
+                Ok(Event::End(ref e)) if e.name() != $end_tag => {
                     let ep = std::str::from_utf8($end_tag);
-                    return Err(Error::XmlReadingFailed(format!("Found unexpected end tag {:?} when only expected end tag is {:?}",e,ep)));
+                    return Err(Error::XmlReadingFailed(format!(
+                                     "Found unexpected end tag {:?} when only expected end tag is {:?}",e,ep)));
                 }
+                // Ok(Event::End(ref e)) => match e.name() {
+                //     $end_tag => break,
+                //     //The following may not happen as Err(e) will happen in case of
+                //     //any other end tag is seen other than $end_tag
+                //     x => {
+                //         return Err(Error::XmlReadingFailed(format!(
+                //             "Found unexpected end tag {:?} when only expected end tag is {:?}",x,$error_prefix)));
+                //     }
+                // },
+                // $(Ok(Event::Empty(ref e)) if e.name() == $attr_tag => {
+                //     $attr_fn(e.attributes(), String::new(), &mut $self.stream_cipher)
+                // } )?
+
+                // Ok(Event::Empty(ref e)) => {
+                //     match e.name() {
+
+                //         $($empty_tag => $empty_tag_action)*
+                //         _ => ()
+                //     }
+                // }
                 Ok(Event::Eof) => {
                     let ep = std::str::from_utf8($end_tag);
-                    return Err(Error::XmlReadingFailed(format!("Reached end before seeing the end tag {:?}", ep)));
+                    return Err(Error::XmlReadingFailed(format!(
+                        "Reached end before seeing the end tag {:?}", ep)));
                 }
                 Ok(ref x) => {
                     //TODO: Log any other events for debugging
@@ -99,10 +132,11 @@ macro_rules! read_tags {
 
 fn skip_tag<B: BufRead>(tag: &[u8], reader: &mut QuickXmlReader<B>) -> Result<()> {
     let mut buf = vec![];
-    reader.read_to_end_into(QName(tag), &mut buf)?;
+    reader.read_to_end(tag, &mut buf)?;
     Ok(())
 }
 
+#[allow(dead_code)]
 #[inline]
 fn content_to_int(content: String) -> i32 {
     if let Ok(i) = content.parse::<i32>() {
@@ -117,6 +151,7 @@ fn content_to_int(content: String) -> i32 {
     }
 }
 
+#[allow(dead_code)]
 #[inline]
 fn content_to_bool(content: String) -> bool {
     if content.to_lowercase() == "true" {
@@ -126,6 +161,7 @@ fn content_to_bool(content: String) -> bool {
     }
 }
 
+#[allow(dead_code)]
 #[inline]
 fn content_to_dt(content: String) -> chrono::NaiveDateTime {
     if let Some(d) = util::decode_datetime_b64(&content) {
@@ -139,6 +175,7 @@ fn content_to_dt(content: String) -> chrono::NaiveDateTime {
     }
 }
 
+#[allow(dead_code)]
 #[inline]
 fn content_to_uuid(content: &String) -> uuid::Uuid {
     match util::decode_uuid(content) {
@@ -147,6 +184,7 @@ fn content_to_uuid(content: &String) -> uuid::Uuid {
     }
 }
 
+#[allow(dead_code)]
 #[inline]
 fn content_to_string_opt(content: String) -> Option<String> {
     if content.trim().is_empty() {
@@ -156,8 +194,9 @@ fn content_to_string_opt(content: String) -> Option<String> {
     }
 }
 
+#[allow(dead_code)]
 #[inline]
-fn bool_to_xml_bool(flag: bool) -> String {
+fn bool_to_xml_bool(flag:bool) -> String {
     if flag {
         "True".into()
     } else {
@@ -165,8 +204,9 @@ fn bool_to_xml_bool(flag: bool) -> String {
     }
 }
 
-impl<'a> XmlReader<'a> {
-    pub fn new(data: &[u8], cipher: Option<ProtectedContentStreamCipher>) -> XmlReader {
+#[allow(dead_code)]
+impl<B: BufRead> XmlReader<B> {
+    pub fn new(data: B, cipher: Option<ProtectedContentStreamCipher>) -> XmlReader<B> {
         let mut qxmlreader = QuickXmlReader::from_reader(data);
         qxmlreader.trim_text(true);
         XmlReader {
@@ -181,7 +221,7 @@ impl<'a> XmlReader<'a> {
         let mut buf: Vec<u8> = vec![];
         let mut xml_decl_available = false;
         loop {
-            match self.reader.read_event_into(&mut buf) {
+            match self.reader.read_event(&mut buf) {
                 Ok(Event::Decl(ref _e)) => {
                     xml_decl_available = true;
                 }
@@ -194,7 +234,7 @@ impl<'a> XmlReader<'a> {
                             "Xml content does not have XML decl"
                         )));
                     }
-                    match e.name().as_ref() {
+                    match e.name() {
                         KEEPASS_FILE => {
                             let r = self.read_top_level()?;
                             kp.meta = r.0;
@@ -213,7 +253,7 @@ impl<'a> XmlReader<'a> {
                 Ok(Event::Empty(ref _e)) => {}
                 Ok(Event::End(ref e)) => {
                     // KeePassFile end tag should have been consumed in read_top_level
-                    info!("PARSE:End of tag {:?}", e.name());
+                    info!("PARSE:End of tag {:?}", self.reader.decode(e));
                 }
 
                 Ok(Event::CData(ref _e)) => {}
@@ -226,7 +266,6 @@ impl<'a> XmlReader<'a> {
                 }
 
                 Err(e) => {
-                    debug!("XML content reading error {:?}", e);
                     return Err(Error::from(e));
                 }
             }
@@ -358,7 +397,7 @@ impl<'a> XmlReader<'a> {
             start_tag_fns {
                 UUID => (|content:String, _,  _| icon.uuid = content_to_uuid(&content)),
                 DATA => (|content:String, _,  _| {
-                    if let Some(d) = util::base64_decode(&content).ok() {
+                    if let Some(d) = base64::decode(&content).ok() {
                         icon.data = d;
                     }
                 }),
@@ -555,13 +594,13 @@ impl<'a> XmlReader<'a> {
         let mut kv = BinaryKeyValue::default();
         read_tags!(self,
             start_tag_fns {
-                KEY =>(|content:String, _,  _| kv.key = content),
-                // This handles the tag where we have both start and end tag like <Value Ref="0"></Value>
-                VALUE => (|_, attributes:&mut Attributes,  _| kv.index_ref = attachment_ref_index(attributes))
+                KEY =>
+                (|content:String, _,  _|
+                    kv.key = content
+                )
             },
             start_tag_blks {},
             empty_tags {
-                // This handles the tag where have only empty tag with attribute like <Value Ref="0" />
                 VALUE =>
                 (|attributes:&mut Attributes| {
                     kv.index_ref = attachment_ref_index(attributes);
@@ -636,11 +675,11 @@ impl<'a> XmlReader<'a> {
         read_tags!(self,
             start_tag_fns {
                 WINDOW =>
-                (|content:String, _attributes, _cipher|
+                (|content:String, _attributes, _cipher| 
                     association.window = content),
 
                 KEY_STROKE_SEQUENCE =>
-                (|content:String, _, _|
+                (|content:String, _, _| 
                     association.key_stroke_sequence = content_to_string_opt(content))
             },
             start_tag_blks {},
@@ -680,6 +719,15 @@ impl<'a> XmlReader<'a> {
 
         Ok(())
     }
+
+    // Not able to use this fn inside the tag reading loop
+    // because of the error:  cannot borrow `*self` as mutable more than once at a time
+    // TODO: How do we use this fn in such cases ?  Will 'AsRef' or 'AsMut' , 'Box' etc will work?
+    fn _skip_tag(&mut self, tag: &[u8]) -> Result<()> {
+        let mut v = vec![];
+        self.reader.read_to_end(tag, &mut v)?;
+        Ok(())
+    }
 }
 
 fn is_value_protected(attributes: &mut Attributes) -> bool {
@@ -693,7 +741,7 @@ fn is_value_protected(attributes: &mut Attributes) -> bool {
     if !v.is_empty() {
         match v.pop() {
             Some(Attribute {
-                key: QName(b"Protected"),
+                key: b"Protected",
                 value: x,
             }) => {
                 //debug!("!!!!!! in fn attributes of Value are {:?}",v);
@@ -727,7 +775,7 @@ fn attachment_ref_index(attributes: &mut Attributes) -> i32 {
     if !v.is_empty() {
         match v.pop() {
             Some(Attribute {
-                key: QName(b"Ref"),
+                key: b"Ref",
                 value: x,
             }) => {
                 //debug!("!!!!!! in fn attributes of Value are {:?}",v);
@@ -767,13 +815,12 @@ macro_rules! write_tags {
         // $txt should be evaluated once and reuse. Otherwise it will be evaluated
         // each time it is used
         $( let val = &$txt; // $txt evaluates to a String
-            let name_of_tag  = std::str::from_utf8($tag_name)?;
             if val.is_empty() {
-                $self.writer.write_event(Event::Empty(BytesStart::new(name_of_tag)))?;
+                $self.writer.write_event(Event::Empty(BytesStart::borrowed_name($tag_name)))?;
             } else {
-                $self.writer.write_event(Event::Start(BytesStart::new(name_of_tag)))?;
-                $self.writer.write_event(Event::Text(BytesText::new(val)))?;
-                $self.writer.write_event(Event::End(BytesEnd::new(name_of_tag)))?;
+                $self.writer.write_event(Event::Start(BytesStart::borrowed_name($tag_name)))?;
+                $self.writer.write_event(Event::Text(BytesText::from_plain_str(val)))?;
+                $self.writer.write_event(Event::End(BytesEnd::borrowed($tag_name)))?;
             }
         )*
     };
@@ -781,44 +828,43 @@ macro_rules! write_tags {
 
 macro_rules! write_parent_child_tags {
     ($self:ident, $parent_tag:expr, $($tag_name:expr, $txt:expr),*) => {
-        let name_of_paren_tag  = std::str::from_utf8($parent_tag)?;
-        $self.writer.write_event(Event::Start(BytesStart::new(name_of_paren_tag)))?;
+        $self.writer.write_event(Event::Start(BytesStart::borrowed_name($parent_tag)))?;
         write_tags!($self, $($tag_name, $txt),*);
-        $self.writer.write_event(Event::End(BytesEnd::new(name_of_paren_tag)))?;
+        $self.writer.write_event(Event::End(BytesEnd::borrowed($parent_tag)))?;
     }
 }
 
 macro_rules! write_tags_with_attributes {
     ($self:ident, $($tag_name:expr, $attrs:expr,$txt:expr),*) => {
         $(
-            let name_of_tag  = std::str::from_utf8($tag_name)?;
-            let mut my_element = BytesStart::new(name_of_tag);
+            let mut my_element = BytesStart::borrowed_name($tag_name);
             for a in $attrs.iter() {
                 my_element.push_attribute(*a);
             }
             let s:&str = $txt.as_ref();
             $self.writer.write_event(Event::Start(my_element))?;
-            $self.writer.write_event(Event::Text(BytesText::new(s)))?; //&$txt
-            $self.writer.write_event(Event::End(BytesEnd::new(name_of_tag)))?;
+            $self.writer.write_event(Event::Text(BytesText::from_plain_str(s)))?; //&$txt
+            $self.writer.write_event(Event::End(BytesEnd::borrowed($tag_name)))?;
         )*
     };
 }
 
 macro_rules! write_parent_child_with_attributes {
     ($self:ident, $parent_tag:expr, $($tag_name:expr, $attrs:expr,$txt:expr),*) => {
-        let name_of_paren_tag  = std::str::from_utf8($parent_tag)?;
-        $self.writer.write_event(Event::Start(BytesStart::new(name_of_paren_tag)))?;
+        $self.writer.write_event(Event::Start(BytesStart::borrowed_name($parent_tag)))?;
         write_tags_with_attributes!($self, $($tag_name, $attrs,$txt),*);
-        $self.writer.write_event(Event::End(BytesEnd::new(name_of_paren_tag)))?;
+        $self.writer.write_event(Event::End(BytesEnd::borrowed($parent_tag)))?;
     }
 }
 
+#[allow(dead_code)]
 pub struct XmlWriter<W: Write> {
     writer: QuickXmlWriter<W>,
     //stream_cipher: ProtectedContentStreamCipher,
     stream_cipher: Option<ProtectedContentStreamCipher>,
 }
 
+#[allow(dead_code)]
 impl<W: Write> XmlWriter<W> {
     pub fn new(writer: W, cipher: Option<ProtectedContentStreamCipher>) -> Self {
         Self {
@@ -835,9 +881,8 @@ impl<W: Write> XmlWriter<W> {
     }
 
     fn write_meta(&mut self, keepass_file: &KeepassFile) -> Result<()> {
-        let meta_tag = std::str::from_utf8(META)?;
         self.writer
-            .write_event(Event::Start(BytesStart::new(meta_tag)))?;
+            .write_event(Event::Start(BytesStart::borrowed_name(META)))?;
 
         write_tags! { self,
             GENERATOR,GENERATOR_NAME, //keepass_file.meta.generator,
@@ -854,7 +899,7 @@ impl<W: Write> XmlWriter<W> {
         self.write_custom_data(&keepass_file.meta.custom_data)?;
 
         self.writer
-            .write_event(Event::End(BytesEnd::new(meta_tag)))?;
+            .write_event(Event::End(BytesEnd::borrowed(META)))?;
 
         Ok(())
     }
@@ -875,9 +920,8 @@ impl<W: Write> XmlWriter<W> {
     }
 
     fn write_custom_data(&mut self, custom_data: &CustomData) -> Result<()> {
-        let custom_data_tag = std::str::from_utf8(CUSTOM_DATA)?;
         self.writer
-            .write_event(Event::Start(BytesStart::new(custom_data_tag)))?;
+            .write_event(Event::Start(BytesStart::borrowed_name(CUSTOM_DATA)))?;
 
         for item in custom_data.get_items().iter() {
             // Need to evaluate 'last_modification_time' before passing it to the macro.
@@ -899,7 +943,7 @@ impl<W: Write> XmlWriter<W> {
         }
 
         self.writer
-            .write_event(Event::End(BytesEnd::new(custom_data_tag)))?;
+            .write_event(Event::End(BytesEnd::borrowed(CUSTOM_DATA)))?;
 
         Ok(())
     }
@@ -910,10 +954,9 @@ impl<W: Write> XmlWriter<W> {
         all_groups: &HashMap<uuid::Uuid, Group>,
         all_entries: &HashMap<uuid::Uuid, Entry>,
     ) -> Result<()> {
-        let group_tag = std::str::from_utf8(GROUP)?;
         if let Some(group) = all_groups.get(group_uuid) {
             self.writer
-                .write_event(Event::Start(BytesStart::new(group_tag)))?;
+                .write_event(Event::Start(BytesStart::borrowed_name(GROUP)))?;
             write_tags! { self,
                 NAME, group.name,
                 UUID,util::encode_uuid(&group.uuid), //group.uuid.to_string(),
@@ -937,7 +980,7 @@ impl<W: Write> XmlWriter<W> {
             }
 
             self.writer
-                .write_event(Event::End(BytesEnd::new(group_tag)))?;
+                .write_event(Event::End(BytesEnd::borrowed(GROUP)))?;
         } else {
             return Err(Error::DataError(
                 "Writing group failed as no value found in the lookup map",
@@ -949,17 +992,16 @@ impl<W: Write> XmlWriter<W> {
 
     // Writes the AutoType tag and its children
     fn write_entry_auto_type(&mut self, auto_type: &AutoType) -> Result<()> {
-        let tag_element = std::str::from_utf8(AUTO_TYPE)?;
         self.writer
-            .write_event(Event::Start(BytesStart::new(tag_element)))?;
+            .write_event(Event::Start(BytesStart::borrowed_name(AUTO_TYPE)))?;
         write_tags! { self,
             ENABLED, bool_to_xml_bool(auto_type.enabled),
             DEFAULT_SEQUENCE,  auto_type.default_sequence.as_ref().map_or("", |s| s)
         };
 
-        // Writes Association tag and its children
+        // Writes Association tag and its children  
         for association in auto_type.associations.iter() {
-            write_parent_child_tags! {
+            write_parent_child_tags! { 
                 self,
                 ASSOCIATION,
                 WINDOW, association.window,
@@ -968,14 +1010,13 @@ impl<W: Write> XmlWriter<W> {
         }
 
         self.writer
-            .write_event(Event::End(BytesEnd::new(tag_element)))?;
+            .write_event(Event::End(BytesEnd::borrowed(AUTO_TYPE)))?;
         Ok(())
     }
 
     fn write_entry_data(&mut self, entry: &Entry, in_history: bool) -> Result<()> {
-        let tag_element = std::str::from_utf8(ENTRY)?;
         self.writer
-            .write_event(Event::Start(BytesStart::new(tag_element)))?;
+            .write_event(Event::Start(BytesStart::borrowed_name(ENTRY)))?;
         write_tags! { self,
             UUID, util::encode_uuid(&entry.uuid), //entry.uuid.to_string(),
             ICON_ID,entry.icon_id.to_string(),
@@ -1027,18 +1068,17 @@ impl<W: Write> XmlWriter<W> {
 
         // We need to exclude the History tag while writing the child Entry tag that comes under the History tag
         if !in_history {
-            let history_tag_element = std::str::from_utf8(HISTORY)?;
             self.writer
-                .write_event(Event::Start(BytesStart::new(history_tag_element)))?;
+                .write_event(Event::Start(BytesStart::borrowed_name(HISTORY)))?;
             for e in entry.history.entries.iter() {
                 self.write_entry_data(e, true)?;
             }
             self.writer
-                .write_event(Event::End(BytesEnd::new(history_tag_element)))?;
+                .write_event(Event::End(BytesEnd::borrowed(HISTORY)))?;
         }
 
         self.writer
-            .write_event(Event::End(BytesEnd::new(tag_element)))?;
+            .write_event(Event::End(BytesEnd::borrowed(ENTRY)))?;
         Ok(())
     }
 
@@ -1058,35 +1098,31 @@ impl<W: Write> XmlWriter<W> {
     }
 
     fn write_root(&mut self, kp: &KeepassFile) -> Result<()> {
-        let tag_element = std::str::from_utf8(ROOT)?;
         self.writer
-            .write_event(Event::Start(BytesStart::new(tag_element)))?;
+            .write_event(Event::Start(BytesStart::borrowed_name(ROOT)))?;
         self.write_group(
             &kp.root.root_uuid,
             &kp.root.all_groups,
             &kp.root.all_entries,
         )?;
         self.writer
-            .write_event(Event::End(BytesEnd::new(tag_element)))?;
+            .write_event(Event::End(BytesEnd::borrowed(ROOT)))?;
         Ok(())
     }
 
     pub fn write(&mut self, kp: &KeepassFile) -> Result<()> {
         //<?xml version="1.0" encoding="utf-8" standalone="yes"?>
         self.writer.write_event(Event::Decl(BytesDecl::new(
-            "1.0",
-            Some("utf-8"),
-            Some("yes"),
+            b"1.0",
+            Some(b"utf-8"),
+            Some(b"yes"),
         )))?;
-
-        let tag_element = std::str::from_utf8(KEEPASS_FILE)?;
-
         self.writer
-            .write_event(Event::Start(BytesStart::new(tag_element)))?;
+            .write_event(Event::Start(BytesStart::borrowed_name(KEEPASS_FILE)))?;
         self.write_meta(kp)?;
         self.write_root(kp)?;
         self.writer
-            .write_event(Event::End(BytesEnd::new(tag_element)))?;
+            .write_event(Event::End(BytesEnd::borrowed(KEEPASS_FILE)))?;
         Ok(())
     }
 }
@@ -1118,17 +1154,18 @@ pub fn write_xml_with_indent(
 }
 
 ////////////////////////  Xml based Key file ////////////////
-
+#[allow(dead_code)]
 // For now FileKeyXmlReader and FileKeyXmlWriter are using similar struct XmlReader and XmlWriter
 // but with FileKey xml specific methods supported
-pub struct FileKeyXmlReader<'a> {
-    reader: QuickXmlReader<&'a [u8]>,
+pub struct FileKeyXmlReader<B: BufRead> {
+    reader: QuickXmlReader<B>,
     // We need this dummy member just to reuse the macros that are used for reading and writing databse xml content
     stream_cipher: Option<ProtectedContentStreamCipher>,
 }
 
-impl<'a> FileKeyXmlReader<'a> {
-    pub fn new(data: &'a [u8]) -> Self {
+#[allow(dead_code)]
+impl<B: BufRead> FileKeyXmlReader<B> {
+    pub fn new(data: B) -> Self {
         let mut qxmlreader = QuickXmlReader::from_reader(data);
         qxmlreader.trim_text(true);
         FileKeyXmlReader {
@@ -1142,7 +1179,7 @@ impl<'a> FileKeyXmlReader<'a> {
         let mut xml_decl_available = false;
         let mut key_file_data = KeyFileData::default();
         loop {
-            match self.reader.read_event_into(&mut buf) {
+            match self.reader.read_event(&mut buf) {
                 Ok(Event::Decl(ref _e)) => {
                     xml_decl_available = true;
                     // return Err(Error::NotXmlKeyFile);
@@ -1158,7 +1195,7 @@ impl<'a> FileKeyXmlReader<'a> {
                         //     "Xml content does not have XML decl"
                         // )));
                     }
-                    match e.name().as_ref() {
+                    match e.name() {
                         KEY_FILE => {
                             let _r = self.read_top_level(&mut key_file_data)?;
                         }
@@ -1174,9 +1211,9 @@ impl<'a> FileKeyXmlReader<'a> {
                 }
 
                 Ok(Event::Empty(ref _e)) => {}
-                Ok(Event::End(ref _e)) => {
+                Ok(Event::End(ref e)) => {
                     // KeyFile end tag should have been consumed in read_top_level
-                    //info!("PARSE:End of tag {:?}", self.reader.decode(e));
+                    info!("PARSE:End of tag {:?}", self.reader.decode(e));
                 }
 
                 Ok(Event::CData(ref _e)) => {}
@@ -1276,7 +1313,7 @@ impl<'a> FileKeyXmlReader<'a> {
         if !v.is_empty() {
             match v.pop() {
                 Some(Attribute {
-                    key: QName(KEY_FILE_DATA_HASH),
+                    key: KEY_FILE_DATA_HASH,
                     value: x,
                 }) => {
                     //debug!("!!!!!! in fn attributes of Value are {:?}",v);
@@ -1299,10 +1336,12 @@ impl<'a> FileKeyXmlReader<'a> {
     }
 }
 
+#[allow(dead_code)]
 pub struct FileKeyXmlWriter<W: Write> {
     writer: QuickXmlWriter<W>,
 }
 
+#[allow(dead_code)]
 impl<W: Write> FileKeyXmlWriter<W> {
     pub fn new_with_indent(writer: W) -> Self {
         Self {
@@ -1311,15 +1350,14 @@ impl<W: Write> FileKeyXmlWriter<W> {
     }
 
     fn write_meta(&mut self, _key_file_data: &KeyFileData) -> Result<()> {
-        let tag_element = std::str::from_utf8(KEY_FILE_META)?;
         self.writer
-            .write_event(Event::Start(BytesStart::new(tag_element)))?;
+            .write_event(Event::Start(BytesStart::borrowed_name(KEY_FILE_META)))?;
 
         write_tags! { self,
             KEY_FILE_VERSION, "2.0"
         };
         self.writer
-            .write_event(Event::End(BytesEnd::new(tag_element)))?;
+            .write_event(Event::End(BytesEnd::borrowed(KEY_FILE_META)))?;
 
         Ok(())
     }
@@ -1360,18 +1398,16 @@ impl<W: Write> FileKeyXmlWriter<W> {
 
     pub fn write(&mut self, key_file_data: &KeyFileData) -> Result<()> {
         self.writer
-            .write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), None)))?;
-
-        let tag_element = std::str::from_utf8(KEY_FILE)?;
+            .write_event(Event::Decl(BytesDecl::new(b"1.0", Some(b"UTF-8"), None)))?;
 
         self.writer
-            .write_event(Event::Start(BytesStart::new(tag_element)))?;
+            .write_event(Event::Start(BytesStart::borrowed_name(KEY_FILE)))?;
 
         self.write_meta(key_file_data)?;
         self.write_key_data(key_file_data)?;
 
         self.writer
-            .write_event(Event::End(BytesEnd::new(tag_element)))?;
+            .write_event(Event::End(BytesEnd::borrowed(KEY_FILE)))?;
 
         Ok(())
     }
@@ -1384,15 +1420,16 @@ impl<W: Write> FileKeyXmlWriter<W> {
 // However, Log events will be captured by `cargo` and only printed if the test fails. So see all log messages
 // the test needs to fail !
 
+#[allow(dead_code)]
 #[cfg(test)]
 mod tests {
-    
+    use crate::crypto;
+
     use super::*;
     use std::env;
     use std::fs;
     use std::path::PathBuf;
 
-    // To see logging output during testing in VS Code
     fn init() {
         let _ = env_logger::builder()
             // Include all events in tests
@@ -1413,6 +1450,57 @@ mod tests {
     }
 
     #[test]
+    fn read_sample_xml() {
+        init();
+        log::info!("This record will be captured by `cargo test`");
+        //let file_name = test_file("PasswordsXC1-Tags.xml"); //PasswordsXC1-Tags.xml
+        
+        //let file_name = "/path/to/test_file.xml".to_string();
+        let file_name = "/Users/jeyasankar/mytemp/Keepass-sample/RustDevSamples/xml/PasswordsXC1-Tags.xml";
+
+        // This is the inner stream key used to decrypt the Protected data. This should have been the key
+        // used to encrypt the protected data in this test xml file
+        let key = vec![
+            42u8, 60, 253, 132, 99, 97, 132, 162, 253, 31, 45, 229, 230, 138, 239, 197, 67, 148,
+            33, 95, 61, 173, 215, 65, 108, 76, 108, 45, 127, 145, 70, 170, 3, 169, 234, 244, 250,
+            160, 189, 73, 146, 131, 226, 102, 250, 198, 17, 140, 102, 145, 185, 162, 71, 181, 212,
+            222, 210, 61, 150, 150, 242, 57, 151, 126,
+        ];
+
+        let cipher = ProtectedContentStreamCipher::try_from(3, &key).unwrap();
+        //Read the test xml file
+        let d = fs::read(file_name).unwrap();
+        let mut reader = XmlReader::new(&d[..], Some(cipher));
+        let r = reader.parse();
+        if let Err(e) = &r {
+            println!("Error is {:?}", e);
+        }
+        assert_eq!(r.is_ok(), true);
+        println!(" Kp is {:?}", r.unwrap());
+    }
+
+    #[test]
+    fn read_fail_sample_xml1() {
+        init();
+        log::info!("This record will be captured by `cargo test`");
+        // <!-- No end tag -->
+        let xml = r#"
+        <?xml version="1.0" encoding="utf-8" standalone="yes"?>
+        <KeePassFile>
+        <Meta> 
+        </KeePassFile>
+        "#;
+        
+        let mut reader = XmlReader::new(xml.as_bytes(), None);
+        let r = reader.parse();
+        if let Err(e) = &r {
+            println!("Error is {:?}", e);
+        }
+        assert_eq!(r.is_ok(), true);
+        println!(" Kp is {:?}", r.unwrap());
+    }
+
+    #[test]
     fn read_sample_text_xml() {
         init();
         log::info!("This record will be captured by `cargo test`");
@@ -1422,7 +1510,6 @@ mod tests {
             <Meta> 
                 <Generator>OneKeePass</Generator> 
             </Meta>
-            <UnhandledTag> </UnhandledTag> 
             <Root> 
                 <Group>
                     <UUID>3aBY+AcLQmiPas0vjK2zng==</UUID>
@@ -1511,35 +1598,10 @@ mod tests {
     }
 
     #[test]
-    fn read_sample_xml_fail1() {
-        init();
-        log::info!("End tag is missing");
-        // <!-- No end tag -->
-        let xml = r#"
-        <?xml version="1.0" encoding="utf-8" standalone="yes"?>
-        <KeePassFile>
-            <Meta> 
-        </KeePassFile>
-        "#;
-        
-        let mut reader = XmlReader::new(xml.as_bytes(), None);
-        let r = reader.parse();
-        if let Err(e) = &r {
-            println!("Error is {:?}", e);
-        }
-        assert_eq!(r.is_err(), true);
-    }
-
-    #[test]
-    fn read_sample_xml() {
-        init();
-        log::info!("This record will be captured by `cargo test`");
-        let file_name = test_file("PasswordsXC1-Tags.xml"); //PasswordsXC1-Tags.xml
-                                                            //let file_name = "/path/to/test_file.xml".to_string();
-        let file_name =
-            "/Users/jeyasankar/mytemp/Keepass-sample/RustDevSamples/xml/PasswordsXC1-Tags.xml";
-        // This is the inner stream key used to decrypt the Protected data. This should have been the key
-        // used to encrypt the protected data in this test xml file
+    fn read_write_sample_xml() {
+        //let file_name = test_file("PasswordsXC1-Tags.xml");
+        let file_name = "/Users/jeyasankar/mytemp/Keepass-sample/RustDevSamples/xml/PasswordsXC1-Tags.xml";
+        //This is the inner stream key used to decrypt the Protected data
         let key = vec![
             42u8, 60, 253, 132, 99, 97, 132, 162, 253, 31, 45, 229, 230, 138, 239, 197, 67, 148,
             33, 95, 61, 173, 215, 65, 108, 76, 108, 45, 127, 145, 70, 170, 3, 169, 234, 244, 250,
@@ -1556,34 +1618,6 @@ mod tests {
             println!("Error is {:?}", e);
         }
         assert_eq!(r.is_ok(), true);
-        println!(" Kp is {:?}", r.unwrap());
-    }
-
-    #[test]
-    fn read_write_sample_xml() {
-
-        let file_name = test_file("PasswordsXC1-Tags.xml"); //TODO Need to add this test xml to repo
-        // Using local sample KeePass xml content
-        let file_name = "/Users/jeyasankar/mytemp/Keepass-sample/RustDevSamples/xml/PasswordsXC1-Tags.xml";
-        
-        //This is the inner stream key used to decrypt the Protected data of sunch as password in this particular xml content
-        // This key will not work with other xml content!
-        let key = vec![
-            42u8, 60, 253, 132, 99, 97, 132, 162, 253, 31, 45, 229, 230, 138, 239, 197, 67, 148,
-            33, 95, 61, 173, 215, 65, 108, 76, 108, 45, 127, 145, 70, 170, 3, 169, 234, 244, 250,
-            160, 189, 73, 146, 131, 226, 102, 250, 198, 17, 140, 102, 145, 185, 162, 71, 181, 212,
-            222, 210, 61, 150, 150, 242, 57, 151, 126,
-        ];
-
-        let cipher = ProtectedContentStreamCipher::try_from(3, &key).unwrap();
-        //Read the test xml file
-        let d = fs::read(file_name).unwrap();
-        let mut reader = super::XmlReader::new(&d[..], Some(cipher));
-        let r = reader.parse();
-        if let Err(e) = &r {
-            println!("Error is {:?}", e);
-        }
-        assert_eq!(r.is_ok(), true);
 
         let cipher = ProtectedContentStreamCipher::try_from(3, &key).unwrap();
         let kp = r.unwrap();
@@ -1593,15 +1627,10 @@ mod tests {
             println!("Error is {:?}", e);
         }
         assert_eq!(write_result.is_ok(), true);
-        
-        // Use the following to print the xml content output to the console for visual inspection
 
-        // let xml_content = write_result.unwrap();
-        // // Need to use {} and not the debug one {:?} to avoid \" in the printed output
-        // println!(
-        //     "XML content is \n {}",
-        //     std::str::from_utf8(&xml_content).unwrap()
-        // ); 
+        let xml_content = write_result.unwrap();
+        println!("XML content is \n {}", std::str::from_utf8(&xml_content).unwrap()); //Need to use {} and not the debug one {:?} to avoid \" in the printed output
+    
     }
 
     /// Key xml file related reading and writing tests
@@ -1640,7 +1669,7 @@ mod tests {
 
         assert!(r.is_ok());
         let r1 = r.unwrap();
-        println!(" r1 is {:?}", r1);
+        println!(" r1 is {:?}",r1);
         assert!(r1.verify_checksum().is_ok());
     }
 
@@ -1697,5 +1726,4 @@ mod tests {
 
         assert!(r1.verify_checksum().is_ok());
     }
-    
 }

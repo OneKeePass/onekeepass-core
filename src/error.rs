@@ -47,6 +47,9 @@ pub enum Error {
     #[error("BlockHashCheckFailed")]
     BlockHashCheckFailed,
 
+    #[error("Valid password or key file name or both are required")]
+    InSufficientCredentials,
+
     /// Unknown key derivation function UUID.
     // #[error("Invalid KDF ID.Only `Argon2` and `AES` are supported")]
     // UnsupportedKdf(Vec<u8>),
@@ -59,8 +62,23 @@ pub enum Error {
     Argon2Error(String),
     #[error("{0}")]
     DataError(&'static str),
+
     #[error("{0}")]
     XmlParsingFailed(#[from] quick_xml::Error),
+    #[error("{0}")]
+    XmlParsingFailed023(#[from] quick_xml_023::Error),
+
+    
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "linux",
+        target_os = "ios",
+        all(target_os = "android", target_arch = "aarch64")
+    ))]
+    #[error("{0}")]
+    CryptoError(#[from] botan::Error),
+
     #[error("{0}")]
     XmlReadingFailed(String),
     #[error("{0}")]
@@ -87,7 +105,7 @@ pub enum Error {
     JsonConversionError(#[from] serde_json::Error),
 
     #[error("HexDecodeError:{0}")]
-    HexDecodeError(#[from]hex::FromHexError),
+    HexDecodeError(#[from] hex::FromHexError),
 
     #[error("Key file is not an xml file")]
     NotXmlKeyFile,

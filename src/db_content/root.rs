@@ -58,7 +58,7 @@ impl GroupVisitor for InOrderIds {
     }
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct Root {
     pub(crate) root_uuid: Uuid,
     pub(crate) recycle_bin_uuid: Uuid,
@@ -257,7 +257,7 @@ impl Root {
         }
     }
 
-    /// Gets all groups. The flag exclude_spl_groups determines whether to include or exclude 
+    /// Gets all groups. The flag exclude_spl_groups determines whether to include or exclude
     /// the special groups such as Recyscle Bin in the list or not
     pub fn get_all_groups<'a>(&'a self, exclude_spl_groups: bool) -> Vec<&'a Group> {
         self.all_groups
@@ -529,7 +529,7 @@ impl Root {
     }
 
     // Should this be moved to parent 'KeepassFile' ?
-    /// Called to set the hashes of all attachments while reading the db file
+    // Sets the hash value of attachments to entries during the reading of the db file
     pub fn set_attachment_hashes(
         &mut self,
         attachment_hash_indexed: &HashMap<i32, (AttachmentHashValue, usize)>,
@@ -538,6 +538,8 @@ impl Root {
             "After reading - attachment_hash_indexed passed is {:?}",
             attachment_hash_indexed
         );
+
+        // Delegate the set_attachment_hashes call to each entry found
         for id in self.get_all_inorder_entry_uuids() {
             if let Some(e) = self.all_entries.get_mut(&id) {
                 e.set_attachment_hashes(attachment_hash_indexed);
@@ -546,7 +548,7 @@ impl Root {
     }
 
     // Should this be moved to parent 'KeepassFile' ?
-    /// Called to set the new index_refs of all attachments found in entries before writing db file
+    // Called to set the new index_refs of all attachments found in entries before writing to the db file
     pub fn set_attachment_index_refs(
         &mut self,
         hash_index_ref: &HashMap<AttachmentHashValue, i32>,
@@ -562,6 +564,8 @@ impl Root {
         }
     }
 
+    // Collects the attachment hash values from all entries in an order
+    // This is called before writing db file  
     pub fn get_attachment_hashes(&self) -> Vec<AttachmentHashValue> {
         let mut hashes = vec![];
         for id in self.get_all_inorder_entry_uuids() {

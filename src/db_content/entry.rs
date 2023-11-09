@@ -137,8 +137,8 @@ pub struct Entry {
     pub icon_id: i32,
     pub times: Times,
     pub tags: String,
+    // entry_field contains all KeyValues
     pub entry_field: EntryField,
-    //pub key_values: Vec<KeyValue>,
     pub binary_key_values: Vec<BinaryKeyValue>,
     pub custom_data: CustomData,
     pub auto_type: AutoType,
@@ -196,6 +196,8 @@ impl Entry {
 
     pub fn before_xml_writing(&mut self) {
         // Any entry customized data should copied back to custom data here so that we can persist in db
+        // For now all custom data writing is already taken care of while modifiing the entry itself
+        // See entry.update -> entry.copy_to_custom_data()
     }
 
     // Creates the EntryType for an entry from any previously serialized entry type data
@@ -285,12 +287,12 @@ impl Entry {
             .get_entry_type_by_id(&self.entry_field.entry_type.uuid)
         {
             if self.entry_field.entry_type.changed(et) {
-                log::info!("The incoming Custom entry type (meta data) is changed and updating the entry type data in custom data item");
+                log::debug!("The incoming Custom entry type (meta data) is changed and updating the entry type data in custom data item");
                 insert_action();
             } else {
                 // It is a custom entry type, but no new field added and just the custom entry type uuid is inserted in the custom data
                 let b64_uuid = &util::encode_uuid(&self.entry_field.entry_type.uuid);
-                log::info!("As there is no change to custom entry type info, only type's uuid as b64 str {} is saved", &b64_uuid);
+                log::debug!("As there is no change to custom entry type info, only type's uuid as b64 str {} is saved", &b64_uuid);
                 self.custom_data
                     .insert_item(Item::from_kv(OKP_ENTRY_TYPE, &b64_uuid));
             }
@@ -301,14 +303,14 @@ impl Entry {
                 &self.entry_field.entry_type.uuid,
             ))
         {
-            log::info!("The incoming Standard entry type is changed and updating the entry type data in custom data item");
+            log::debug!("The incoming Standard entry type is changed and updating the entry type data in custom data item");
             insert_action();
         } else {
             // entries entry type info (meta data) is not changed and the standard entry type uuid is stored
             // But if it is the default one (Login type), then it is not saved to save space in xml
 
             if EntryType::default_type().uuid != self.entry_field.entry_type.uuid {
-                log::info!(
+                log::debug!(
                     "The entry uses a standard entry type which is not Login and the uuid b64 {} is saved",
                     &util::encode_uuid(&self.entry_field.entry_type.uuid)
                 );
@@ -317,36 +319,39 @@ impl Entry {
                     &util::encode_uuid(&self.entry_field.entry_type.uuid),
                 ));
             } else {
-                log::info!("The entry is default one and its uuid is not saved");
+                log::debug!("The entry is default one and its uuid is not saved");
             }
         }
     }
 
-    /// Called after loading the db file and xml is parsed
+    // Called after loading the db file and xml is parsed 
     pub fn set_attachment_hashes(
         &mut self,
         attachment_hash_indexed: &HashMap<i32, (AttachmentHashValue, usize)>,
     ) {
-        //First we set all hashes for an entry followed by the entries found in its history
+        // First we set all hashes for an entry followed by the entries found in its history
+        // binary_key_values is empty if the entry does not have any attachment
         for bv in &mut self.binary_key_values {
             if let Some(h) = attachment_hash_indexed.get(&bv.index_ref) {
                 bv.data_hash = h.0;
                 bv.data_size = h.1;
             }
         }
-        //We call also the histories entries.
-        //IMPORATNT: It is assumed each entry found in historty.entries should have empty history
+        // We call the history entries for this entry.
+        // IMPORATNT: It is assumed each entry found in historty.entries should have empty history
         for e in &mut self.history.entries {
             e.set_attachment_hashes(attachment_hash_indexed);
         }
     }
 
-    /// Called after forming inner header binary data and before writing xml as bytes
+    // Called after forming inner header binary data and before writing xml as bytes
+    // to set the correct attachment index based on the attachment hash value
+    // The arg 'hash_index_ref' is a newly prepared mappping 
     pub fn set_attachment_index_refs(
         &mut self,
         hash_index_ref: &HashMap<AttachmentHashValue, i32>,
     ) {
-        //First we set all index refs for an entry followed by the entries found in its history
+        // First we set all index refs for an entry followed by the entries found in its history
         for bv in &mut self.binary_key_values {
             if let Some(idx) = hash_index_ref.get(&bv.data_hash) {
                 bv.index_ref = *idx;
@@ -355,21 +360,21 @@ impl Entry {
                 &bv.data_hash, &bv.key, &self.uuid);
             }
         }
-        //We call also the histories entries.
-        //IMPORATNT: It is assumed each entry found in historty.entries should have empty history
+        // We call also the histories entries.
+        // IMPORATNT: It is assumed each entry found in historty.entries should have empty history
         for e in &mut self.history.entries {
             e.set_attachment_index_refs(hash_index_ref);
         }
     }
 
-    /// Gets the hash values of all attachments from this entry and the entries found in history field
+    // Gets the hash values of all attachments from this entry and the entries found in history field
     pub fn get_attachment_hashes(&self, hashes: &mut Vec<u64>) {
-        //First we collect all hashes from an entry followed by the entries found in its history
+        // First we collect all hashes from an entry followed by the entries found in its history
         //let mut hashes = vec![];
         for bv in &self.binary_key_values {
             hashes.push(bv.data_hash);
         }
-        //We call also the histories entries.
+        // We call also the histories entries.
         //IMPORATNT: It is assumed each entry found in historty.entries should have empty history
         for e in &self.history.entries {
             e.get_attachment_hashes(hashes);

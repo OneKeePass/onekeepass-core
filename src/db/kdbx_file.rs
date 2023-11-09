@@ -31,7 +31,7 @@ impl KdbxFile {
         &self.secured_database_keys.master_key
     }
 
-    pub fn compute_all_keys(&mut self,seed_reset:bool) -> Result<()> {
+    pub fn compute_all_keys(&mut self, seed_reset: bool) -> Result<()> {
         if seed_reset {
             // Before the next save, we need to reset the master seed and encryption iv to new set of values
             let _r = self.main_header.reset_master_seed_iv()?;
@@ -48,7 +48,7 @@ impl KdbxFile {
     //     self.main_header.reset_master_seed_iv()
     // }
 
-    pub fn compare_key(&self, password: &str, key_file_name: Option<&str>) -> Result<bool> {
+    pub fn compare_key(&self, password: Option<&str>, key_file_name: Option<&str>) -> Result<bool> {
         let file_key = FileKey::from(key_file_name)?;
         self.secured_database_keys
             .compare_keys(&self.database_file_name, password, &file_key)
@@ -70,8 +70,11 @@ impl KdbxFile {
         self.file_key.as_ref().map(|f| f.file_name.clone())
     }
 
-    /// Opens the named file, reads and uses its content while computing key
+    // Called to set a new key file use.
+    // Opens the named file, reads and uses its content while computing key
     pub fn set_file_key(&mut self, key_file_name: Option<&str>) -> Result<()> {
+        debug!("set_file_key is called with key_file_name: {:?}",&key_file_name);
+        
         // We need not do anything if the current db does not use key file and the no file name is selected
         // for 'key_file_name'
         if self.file_key.is_none() && key_file_name.is_none() {
@@ -101,6 +104,29 @@ impl KdbxFile {
         Ok(())
     }
 
+    // Called when both password and key file are changed in settings
+    pub fn set_credentials(&mut self, db_key: &str, password: Option<&str>,key_file_name: Option<&str>) -> Result<()> {
+        debug!("set_credentials is called with password nil?: {}, key_file_name: {:?}",password.is_none(),&key_file_name);
+
+        self.file_key  = FileKey::from(key_file_name)?;
+        let mut keys = SecuredDatabaseKeys::from_keys(password, &self.file_key)?;
+        keys.secure_keys(db_key)?;
+        self.secured_database_keys = keys;
+        
+        Ok(())
+    }
+
+    pub fn set_password(&mut self, password: Option<&str>) -> Result<()> {
+        debug!("set_password called with password nil?: {}",password.is_none());
+        self.secured_database_keys
+            .set_password(&self.database_file_name, password)
+    }
+
+    // Gets whether pasword or/and key file are used in master key or not
+    pub fn credentials_used_state(&self) -> (bool,bool) {
+        self.secured_database_keys.credentials_used_state()
+    }
+
     pub fn set_database_file_name(&mut self, database_file_name: &str) -> &mut Self {
         self.database_file_name = database_file_name.into();
         self
@@ -110,17 +136,13 @@ impl KdbxFile {
         &self.database_file_name
     }
 
-    pub fn set_password(&mut self, password: &str) -> Result<()> {
-        self.secured_database_keys
-            .set_password(&self.database_file_name, password)
-    }
-
     /// Called when user uploads an attachment in UI
     /// Returns the attachment content's hash for later reference
     pub fn upload_entry_attachment(&mut self, data: Vec<u8>) -> AttachmentHashValue {
         self.inner_header.entry_attachments.insert(data)
     }
 
+    // Provides the stored attachment bytes data for viewing or saving by user
     pub fn get_bytes_content(&self, data_hash: &AttachmentHashValue) -> Option<Vec<u8>> {
         self.inner_header.get_bytes_content(data_hash)
     }
@@ -134,7 +156,7 @@ impl KdbxFile {
     }
 
     pub fn set_content_cipher_id(&mut self, content_cipher_id: ContentCipherId) -> Result<()> {
-        let (cid, eiv) = content_cipher_id.to_uuid_id()?;
+        let (cid, eiv) = content_cipher_id.uuid_with_iv()?;
         self.main_header.cipher_id = cid;
         self.main_header.encryption_iv = eiv;
         Ok(())
@@ -355,13 +377,13 @@ impl MainHeader {
     }
 
     // Reset the master seed and encryption iv for the next saving
-    pub(crate) fn reset_master_seed_iv(&mut self) -> Result<()>{
+    pub(crate) fn reset_master_seed_iv(&mut self) -> Result<()> {
         let cid = match self.cipher_id.as_slice() {
             constants::uuid::AES256 => ContentCipherId::Aes256,
             constants::uuid::CHACHA20 => ContentCipherId::ChaCha20,
-            _ => ContentCipherId::UnKnownCipher
+            _ => ContentCipherId::UnKnownCipher,
         };
-        let (ms,iv) = cid.generate_master_seed_iv()?;
+        let (ms, iv) = cid.generate_master_seed_iv()?;
         self.master_seed = ms;
         self.encryption_iv = iv;
         debug!("Master seed and encryption IV are reset");
@@ -371,26 +393,31 @@ impl MainHeader {
 
 #[derive(Debug, Default, Clone)]
 pub(crate) struct InnerHeader {
-    //Id dereived from the LE bytes stored in inner_stream_id
+    // Id dereived from the LE bytes stored in inner_stream_id
     pub(crate) stream_cipher_id: u32,
     pub(crate) inner_stream_key: Vec<u8>,
+
     // All attachemnt binaries are in the same order as they are in the db
-    // They are referred by "index_ref" (from "Ref" attribute of XML db) field of "BinaryKeyValue"
-    // The attachement vec's first byte is a flag to indicate whether the data needs protection and remaining bytes are the actual
-    // attachment
-    // Attachments data are stored in AttachmentSet for easy lookup as well as for uploading new ones
+    // They are referred by "index_ref" (from "Ref" attribute of XML db) field of "BinaryKeyValue" struct
+    // The attachement vec's first byte is a flag to indicate whether the data needs protection
+    // and remaining bytes are the actual attachment
+    // Such attachments data are stored in AttachmentSet for easy lookup as well as for uploading new ones
     pub(crate) entry_attachments: AttachmentSet,
 }
 
 impl InnerHeader {
+    // Called to keep the attachment bytes data for later use
     pub(crate) fn add_binary_data(&mut self, data: Vec<u8>) {
         self.entry_attachments.add(data);
     }
 
+    // Provides the stored attachment bytes data for viewing or saving by user
     fn get_bytes_content(&self, data_hash: &AttachmentHashValue) -> Option<Vec<u8>> {
         self.entry_attachments.get_bytes_content(data_hash)
     }
 
+    // Called to write all attachment binaries identified by the hashes
+    // The arg 'attachment_hashes' is created in root.get_attachment_hashes
     pub(crate) fn write_all_bytes<W: Write>(
         &mut self,
         attachment_hashes: Vec<AttachmentHashValue>,
@@ -410,12 +437,17 @@ impl InnerHeader {
         let mut writen_index = 0;
         // Need to reset the map before writing so that we can pass the correct hash to index mapping while writing xml content
         self.entry_attachments.hash_index_ref.clear();
+
         for h in attachment_hashes {
             let hidx = self.entry_attachments.hash_index_ref.get(&h);
+
+            // None means the hash to 'index_ref' is not yet done and binary data for this hash is not yet written
             if hidx.is_none() {
                 if let Some(data) = self.entry_attachments.attachments.get(&h) {
                     write_header_with_size!(writer, inner_header_type::BINARY, &data);
                 }
+                // Recreate the 'hash_index_ref' entry 
+                // This index will be used to set in "Ref" attribute of an entry's BinaryKeyValue tag
                 self.entry_attachments
                     .hash_index_ref
                     .insert(h, writen_index);
@@ -426,10 +458,11 @@ impl InnerHeader {
             // }
         }
 
-        //End of header - 0 size
+        // End of header - 0 size data
         writer.write(&[inner_header_type::END_OF_HEADER])?;
-        writer.write(&vec![0u8; 4])?; //[0, 0, 0, 0] => 0 byte size
-                                      //No inner header end Data
+
+        // [0, 0, 0, 0] => 0 bytes size - No inner header data for end marker
+        writer.write(&vec![0u8; 4])?;
 
         Ok(())
     }

@@ -25,10 +25,10 @@ pub struct Argon2Kdf {
 
 impl Default for Argon2Kdf {
     fn default() -> Self {
-        let mut rng = super::SecureRandom::new(); //super module is crypto
+        // super module is crypto
         Self {
             memory: 67_108_864, // = 64 MB,
-            salt: rng.get_bytes::<32>(),
+            salt: super::get_random_bytes::<32>(),
             iterations: 10,
             parallelism: 2,
             //hard code use of the default for now
@@ -83,7 +83,7 @@ impl Kdf for Argon2Kdf {
     }
 }
 
-//TODO:: Need to redo this ??
+// TODO:: Need to redo this ??
 fn check_return_code(
     return_code: argon2_sys::Argon2_ErrorCodes,
 ) -> std::result::Result<(), String> {
