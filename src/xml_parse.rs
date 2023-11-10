@@ -69,7 +69,12 @@ macro_rules! read_tags {
                             $empty_tag_action(&mut e.attributes())
                         }
                         )*
-                        _ => ()
+                        x => {
+                            if let Ok(et) = std::str::from_utf8(x) {
+                                debug!("The attribute handling action is not used for the Empty tag: {}",et);
+                            }
+                            ()
+                        }
                     }
                 }
 
@@ -561,7 +566,7 @@ impl<'a> XmlReader<'a> {
             },
             start_tag_blks {},
             empty_tags {
-                // This handles the tag where have only empty tag with attribute like <Value Ref="0" />
+                // This handles the tag where we have only an empty tag with attributes like <Value Ref="0" />
                 VALUE =>
                 (|attributes:&mut Attributes| {
                     kv.index_ref = attachment_ref_index(attributes);
@@ -584,6 +589,7 @@ impl<'a> XmlReader<'a> {
                 VALUE =>
                 (|content:String, attributes:&mut Attributes, cipher:&mut Option<ProtectedContentStreamCipher>| {
                         kv.protected = is_value_protected(attributes);
+                        //debug!("Key Value content is key:{}, value:{},protected:{}",&kv.key,&content,&kv.protected);
                         if kv.protected {
                             if let Some(ref mut cip) = cipher {
                                 if let Ok(v) = cip.process_basic64_str(&content) {
@@ -600,10 +606,18 @@ impl<'a> XmlReader<'a> {
                 )
             },
             start_tag_blks {},
-            empty_tags {},
+            // empty_tags {},
+            empty_tags {
+                // This handles the tag where we have only an empty tag with attributes like <Value Protected="True"/>
+                VALUE =>
+                (|attributes:&mut Attributes| {
+                    kv.protected = is_value_protected(attributes);
+                    }
+                )
+            },
             STRING
         );
-
+        //debug!("Key value after reading is {:?}",&kv);
         Ok(kv)
     }
 
@@ -973,6 +987,9 @@ impl<W: Write> XmlWriter<W> {
     }
 
     fn write_entry_data(&mut self, entry: &Entry, in_history: bool) -> Result<()> {
+        //let temp_title = entry.entry_field.find_key_value("Title");
+        //debug!("Start of writing the entry with Title {:?}", temp_title);
+
         let tag_element = std::str::from_utf8(ENTRY)?;
         self.writer
             .write_event(Event::Start(BytesStart::new(tag_element)))?;
@@ -988,6 +1005,8 @@ impl<W: Write> XmlWriter<W> {
         // The String tag has childeren with attributes
         let empty_attr: Vec<(&str, &str)> = vec![];
         for s in entry.entry_field.get_key_values().iter() {
+            //debug!("Writing kvs {:?}",s);
+
             let mut vp = vec![];
             // TODO: Need to find a better way to get the encrypted data
             // We need to create a temp var _e outside the 'if protected' block so that encrypted data can be used later.
@@ -998,9 +1017,14 @@ impl<W: Write> XmlWriter<W> {
             let mut content = &s.value;
             if s.protected {
                 vp.push(("Protected", "True"));
-                if let Some(ref mut cipher) = &mut self.stream_cipher {
-                    _e = cipher.process_content_b64_str(&s.value)?;
-                    content = &_e;
+                //IMPORTANT:
+                // We should use stream cipher to encrypt only if content is not empty
+                // Otherwise cipher call will return an error
+                if !s.value.is_empty() {
+                    if let Some(ref mut cipher) = &mut self.stream_cipher {
+                        _e = cipher.process_content_b64_str(&s.value)?;
+                        content = &_e;
+                    }
                 }
             }
 
@@ -1039,6 +1063,8 @@ impl<W: Write> XmlWriter<W> {
 
         self.writer
             .write_event(Event::End(BytesEnd::new(tag_element)))?;
+
+        //debug!("End of writing the entry with Title {:?}", temp_title);
         Ok(())
     }
 
@@ -1095,7 +1121,7 @@ pub fn write_xml(
     kp: &KeepassFile,
     cipher: Option<ProtectedContentStreamCipher>,
 ) -> Result<Vec<u8>> {
-    log::trace!("Going to write the xml string ...");
+    log::debug!("Going to write the xml string ...");
     let mut xml_writer = XmlWriter::new(Cursor::new(Vec::new()), cipher);
     xml_writer.write(kp)?;
     // First into_inner() returns the inner writer Cursor and second into_inner() gives the underlying 'Vec'
@@ -1386,7 +1412,7 @@ impl<W: Write> FileKeyXmlWriter<W> {
 
 #[cfg(test)]
 mod tests {
-    
+
     use super::*;
     use std::env;
     use std::fs;
@@ -1500,7 +1526,7 @@ mod tests {
             </Root>
         </KeePassFile>
         "#;
-        
+
         let mut reader = XmlReader::new(xml.as_bytes(), None);
         let r = reader.parse();
         if let Err(e) = &r {
@@ -1521,7 +1547,7 @@ mod tests {
             <Meta> 
         </KeePassFile>
         "#;
-        
+
         let mut reader = XmlReader::new(xml.as_bytes(), None);
         let r = reader.parse();
         if let Err(e) = &r {
@@ -1561,11 +1587,11 @@ mod tests {
 
     #[test]
     fn read_write_sample_xml() {
-
         let file_name = test_file("PasswordsXC1-Tags.xml"); //TODO Need to add this test xml to repo
-        // Using local sample KeePass xml content
-        let file_name = "/Users/jeyasankar/mytemp/Keepass-sample/RustDevSamples/xml/PasswordsXC1-Tags.xml";
-        
+                                                            // Using local sample KeePass xml content
+        let file_name =
+            "/Users/jeyasankar/mytemp/Keepass-sample/RustDevSamples/xml/PasswordsXC1-Tags.xml";
+
         //This is the inner stream key used to decrypt the Protected data of sunch as password in this particular xml content
         // This key will not work with other xml content!
         let key = vec![
@@ -1593,7 +1619,7 @@ mod tests {
             println!("Error is {:?}", e);
         }
         assert_eq!(write_result.is_ok(), true);
-        
+
         // Use the following to print the xml content output to the console for visual inspection
 
         // let xml_content = write_result.unwrap();
@@ -1601,7 +1627,7 @@ mod tests {
         // println!(
         //     "XML content is \n {}",
         //     std::str::from_utf8(&xml_content).unwrap()
-        // ); 
+        // );
     }
 
     /// Key xml file related reading and writing tests
@@ -1697,5 +1723,4 @@ mod tests {
 
         assert!(r1.verify_checksum().is_ok());
     }
-    
 }
