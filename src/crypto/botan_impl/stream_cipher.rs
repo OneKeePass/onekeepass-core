@@ -1,4 +1,3 @@
-
 use log::error;
 
 use crate::error::{Error, Result};
@@ -54,7 +53,11 @@ impl ProtectedContentStreamCipher {
     }
 
     // The content string data is encrypted and the base 64 of the encrypted bytes data is returned
+    // This fn should be called with non empty string;Otherwise 'process' will return an error
     pub fn process_content_b64_str(&mut self, content: &str) -> Result<String> {
+        if content.is_empty() {
+            return Err(Error::DataError("Protected data content cannot be an empty string"));
+        }
         let b = self.process(content.as_bytes())?;
         let s = botan::base64_encode(&b)?;
         Ok(s)
