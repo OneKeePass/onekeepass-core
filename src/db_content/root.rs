@@ -13,7 +13,7 @@ pub trait GroupVisitor {
 
 use std::collections::HashSet;
 
-use super::Meta;
+use super::{Meta, split_tags};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AllTags {
@@ -494,15 +494,15 @@ impl Root {
     }
 
     pub fn insert_entry(&mut self, mut entry: Entry) -> Result<()> {
-        //Need to return error if 'insert_entry' is called multiple times with the same entry_id
+        // Need to return error if 'insert_entry' is called multiple times with the same entry_id
         if self.all_entries.contains_key(&entry.uuid) {
             return Err(Error::DataError(
                 "Insert entry is called for an existing entry",
             ));
         }
 
-        //TODO: Entry's group_uuid should be its parent group uuid. Should we add 'assert' for that?
-        //Need to add this entry to its parent's list
+        // TODO: Entry's group_uuid should be its parent group uuid. Should we add 'assert' for that?
+        // Need to add this entry to its parent's list
         if let Some(g) = self.all_groups.get_mut(&entry.group_uuid) {
             g.entry_uuids.push(entry.uuid);
         } else {
@@ -519,8 +519,8 @@ impl Root {
     pub fn update_entry(&mut self, entry: Entry) -> Result<()> {
         verify_uuid!(self, entry.uuid, all_entries);
 
-        //Need to find the existing entry that has the same uuid as the incoming one
-        //to create the history
+        // Need to find the existing entry that has the same uuid as the incoming one
+        // to create the history
         if let Some(e) = self.all_entries.get_mut(&entry.uuid) {
             e.update(entry);
         }
@@ -684,38 +684,3 @@ impl Root {
         }
     }
 }
-
-const TAGS_SEPARATORS: [char; 2] = [';', ','];
-/// Splits tags string into vector of tags
-
-pub fn split_tags(tags: &str) -> Vec<String> {
-    let splits = tags.split(&TAGS_SEPARATORS[..]);
-    splits
-        .filter(|w| !w.is_empty())
-        .map(|w| w.trim().into())
-        .collect::<Vec<String>>()
-}
-
-pub fn join_tags(tag_vec: &Vec<String>) -> String {
-    tag_vec.join(";")
-}
-
-// use std::convert::From;
-
-// impl From<Vec<String>> for String {
-//     fn from(tag_vec: Vec<String>) -> Self {
-//         tag_vec.join(";")
-//     }
-// }
-
-// Deprecate ?
-// pub fn entry_with_field_meta(&mut self, entry_uuid: &Uuid) -> Option<Entry> {
-//     match self.all_entries.get_mut(entry_uuid) {
-//         Some(e) => {
-//             let mut entry = e.clone();
-//             entry.entry_field.entry_type = e.entry_type_from_custom_data();
-//             Some(entry)
-//         }
-//         None => None,
-//     }
-// }
