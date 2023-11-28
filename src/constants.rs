@@ -55,6 +55,12 @@ pub mod custom_data_key {
     pub const OKP_ENTRY_TYPE_DATA_INDEX: &str = "OKP_K7";
 }
 
+pub mod general_category_names {
+    pub const ALL_ENTRIES: &str = "AllEntries";
+    pub const FAVORITES: &str = "Favorites";
+    pub const DELETED: &str = "Deleted";
+}
+
 #[allow(dead_code)]
 pub mod entry_type_name {
     pub const LOGIN: &str = "Login";

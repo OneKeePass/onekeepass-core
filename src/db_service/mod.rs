@@ -8,15 +8,15 @@ pub use crate::db::{
 pub use crate::db_content::{AllTags, Entry, EntryType, FieldDataType, Group};
 pub use crate::error;
 pub use crate::error::{Error, Result};
-pub use crate::form_data::*;
+
 pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions, PasswordScore};
 pub use crate::util::{file_name, formatted_key, parse_attachment_hash, string_to_simple_hash};
 
 use crate::db::{self, write_kdbx_file, write_kdbx_file_with_backup_file, KdbxFile};
 use crate::db_content::{standard_types_ordered_by_id, KeepassFile};
-use crate::password_generator;
 use crate::searcher;
 use crate::util;
+use crate::{form_data, password_generator};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
@@ -28,8 +28,14 @@ use std::{
 };
 
 use chrono::NaiveDateTime;
-use log::{debug, info};
+use log::debug;
 use uuid::Uuid;
+
+pub use crate::form_data::{
+    CategoryDetail, DbSettings, EntryCategories, EntryCategory, EntryCategoryGrouping,
+    EntryCategoryInfo, EntryFormData, EntrySummary, EntryTypeFormData, EntryTypeHeader,
+    EntryTypeHeaders, EntryTypeNames, GroupSummary, GroupTree, KdbxLoaded, KdbxSaved,
+};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SaveStatus {
@@ -724,9 +730,9 @@ pub fn set_db_settings(db_key: &str, db_settings: DbSettings) -> Result<()> {
         //     then password_used = false , password_changed = true, password = None  ;
         //          key_file_used = true , key_file_changed = true or false ,  key_file_name = Some value
         //
-        // If a key file is changed, 
+        // If a key file is changed,
         //      then key_file_used = true ,key_file_changed = true, key_file_name = Some value
-        //      password_used = true or false, password_changed = false    
+        //      password_used = true or false, password_changed = false
         // If the key file use is removed,
         //      then key_file_used = false, key_file_changed = true,key_file_name = None; password_used = true , password_changed = true or false
 
@@ -736,52 +742,55 @@ pub fn set_db_settings(db_key: &str, db_settings: DbSettings) -> Result<()> {
         );
 
         // Both password and key file can not be none at the same time
-        // Note the existing db_settings.password = None when password_changed = false as 
+        // Note the existing db_settings.password = None when password_changed = false as
         // the password field in DbSetttings is None (db_settings.password = None) in 'get_db_settings' call
         // Because of this db_settings.password will have Some value only when password_used = true and password_changed = true
 
-        // If we do not use password, then key file should be used; 
-        // db_settings.password_used is false when password use is removed in Settings UI  
+        // If we do not use password, then key file should be used;
+        // db_settings.password_used is false when password use is removed in Settings UI
         if !db_settings.password_used && db_settings.key_file_name.is_none() {
             return Err(error::Error::InSufficientCredentials);
         }
 
-        // Password is used and expected some value when it is changed or added 
+        // Password is used and expected some value when it is changed or added
         if db_settings.password_used
             && db_settings.password_changed
             && db_settings.password.is_none()
         {
             return Err(Error::DataError("Password can not be empty"));
-        } 
-
-        if !db_settings.password_used && db_settings.password.is_some() {
-            return Err(Error::DataError("Password is not used, but found some value"));
         }
 
-        // When key_file_used is true, 
+        if !db_settings.password_used && db_settings.password.is_some() {
+            return Err(Error::DataError(
+                "Password is not used, but found some value",
+            ));
+        }
+
+        // When key_file_used is true,
         // then key file name should have some value - either the existing one or new one
-        if db_settings.key_file_used
-            && db_settings.key_file_name.is_none()
-        {
+        if db_settings.key_file_used && db_settings.key_file_name.is_none() {
             return Err(Error::DataError("Key file name can not be empty"));
         }
 
         // password is considered only when it is changed
         let password = if db_settings.password_used && db_settings.password_changed {
-            // May be this check redundant ? 
+            // May be this check redundant ?
             if db_settings.password.is_none() {
-                return Err(Error::DataError("Password can not be empty when password file used flag is set"));
+                return Err(Error::DataError(
+                    "Password can not be empty when password file used flag is set",
+                ));
             }
             db_settings.password.as_deref()
         } else {
             None
         };
 
-        
         let file_key = if db_settings.key_file_used {
-            // May be this check redundant ? 
+            // May be this check redundant ?
             if db_settings.key_file_name.is_none() {
-                return Err(Error::DataError("Key file name can not be empty when key file used flag is set"));
+                return Err(Error::DataError(
+                    "Key file name can not be empty when key file used flag is set",
+                ));
             }
             db_settings.key_file_name.as_deref()
         } else {
@@ -954,6 +963,25 @@ pub fn categories_to_show(db_key: &str) -> Result<EntryCategoryInfo> {
     main_content_action!(db_key, action)
 }
 
+// Deprecate as we use combined_category_details 
+pub fn tag_categories_to_show(db_key: &str) -> Result<Vec<CategoryDetail>> {
+    let action = |k: &KeepassFile| Ok(form_data::tag_category_details(k));
+    main_content_action!(db_key, action)
+}
+
+pub fn combined_category_details(
+    db_key: &str,
+    grouping_kind: EntryCategoryGrouping,
+) -> Result<EntryCategories> {
+    let action = |k: &KeepassFile| {
+        Ok(form_data::combined_category_details(
+            k,
+            grouping_kind.clone(),
+        ))
+    };
+    main_content_action!(db_key, action)
+}
+
 pub fn mark_group_as_category(db_key: &str, group_id: &str) -> Result<()> {
     let gid = Uuid::parse_str(group_id)?;
     main_content_mut_action!(db_key, |k: &mut KeepassFile| {
@@ -980,7 +1008,8 @@ pub fn entry_summary_data(
     entry_category: EntryCategory,
 ) -> Result<Vec<EntrySummary>> {
     let action = |k: &KeepassFile| {
-        let mut entries = EntrySummary::entry_summary_data(entry_by_category(&k, &entry_category));
+        let mut entries =
+            EntrySummary::entry_summary_data(form_data::entry_by_category(&k, &entry_category));
         // for now sort just by the title
         entries.sort_unstable_by(|a, b| a.title.cmp(&b.title));
         Ok(entries)

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::constants::general_category_names::FAVORITES;
 use crate::db_content::{move_to_recycle_bin, verify_uuid, AttachmentHashValue, Entry, Group};
 use crate::error::{Error, Result};
 use crate::util;
@@ -164,7 +165,7 @@ impl Root {
             .filter(|x| {
                 // Consider the entries whose  parent group is not in recycle bin or its parent is not in recycle bin and Tag has Favorites
                 !excluded_group_ids.contains(&x.group_uuid)
-                    && split_tags(&x.tags).contains(&"Favorites".into())
+                    && split_tags(&x.tags).contains(&FAVORITES.into())
             })
             //.filter(|e| split_tags(&e.tags).contains(&"Favorites".into()))
             .collect();
