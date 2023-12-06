@@ -837,6 +837,8 @@ pub fn search_term(db_key: &str, term: &str) -> Result<EntrySearchResult> {
                     secondary_title: t2,
                     icon_id: e.icon_id,
                     history_index: None,
+                    modified_time: Some(e.times.last_modification_time.timestamp()),
+                    created_time: Some(e.times.creation_time.timestamp()),
                 });
             }
         }
@@ -963,7 +965,7 @@ pub fn categories_to_show(db_key: &str) -> Result<EntryCategoryInfo> {
     main_content_action!(db_key, action)
 }
 
-// Deprecate as we use combined_category_details 
+// Deprecate as we use combined_category_details
 pub fn tag_categories_to_show(db_key: &str) -> Result<Vec<CategoryDetail>> {
     let action = |k: &KeepassFile| Ok(form_data::tag_category_details(k));
     main_content_action!(db_key, action)

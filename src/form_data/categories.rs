@@ -250,7 +250,9 @@ fn type_name_categories(
 
 pub fn general_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
     let all = keepass_file.collect_all_active_entries();
-
+    
+    //debug!("Loading all cat data with entries count {}", all.len());
+    
     let (title, display_title) = EntryCategory::AllEntries.as_title_key();
     let all_entries = CategoryDetail {
         title,

@@ -14,7 +14,7 @@ pub trait GroupVisitor {
 
 use std::collections::HashSet;
 
-use super::{Meta, split_tags};
+use super::{split_tags, Meta};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AllTags {
@@ -345,16 +345,29 @@ impl Root {
     /// Deletes all entries and groups permanently
     pub(crate) fn empty_trash(&mut self, recycle_group_uuid: Uuid) -> Result<()> {
         verify_uuid!(self, recycle_group_uuid, all_groups);
-        for gid in self.deleted_group_uuids() {
-            self.all_groups
-                .remove(&gid)
-                .ok_or("The recycled group is not found in All Groups map")?;
-        }
+
+        //debug!("Before emptying all_groups count {}, all_entries count {}",self.all_groups.len(), self.all_entries.len());
+
+        // IMPORTANT:
+        // Need to remove the deleted entries first which includes
+        // entries that are in deleted groups.
+
+        // If this is not done and if the deleted groups are removed first, then calling
+        // 'deleted_entry_uuids' will miss out those entry uuids that were in the deleted groups
+        // see 'group_visitor_action' as we will walk through groups to get all groups or entries
 
         for eid in self.deleted_entry_uuids() {
             self.all_entries
                 .remove(&eid)
                 .ok_or("The recycled entry is not found in All Entries map")?;
+        }
+
+        // This will remove all deleted groups. The groups' entries have been deleted
+        // already in the above loop
+        for gid in self.deleted_group_uuids() {
+            self.all_groups
+                .remove(&gid)
+                .ok_or("The recycled group is not found in All Groups map")?;
         }
 
         let recycle_group = self
@@ -364,26 +377,50 @@ impl Root {
         recycle_group.group_uuids = vec![];
         recycle_group.entry_uuids = vec![];
 
+        //debug!("After emptying all_groups count {}, all_entries count {}",self.all_groups.len(), self.all_entries.len());
+
         Ok(())
     }
 
     pub fn remove_group_permanently(&mut self, group_uuid: Uuid) -> Result<()> {
         verify_uuid!(self, group_uuid, all_groups);
+
         // verify that group_uuid is in the recycle group before removing permanently
         if !self.deleted_group_uuids().contains(&group_uuid) {
             return Err(Error::NotFound(
                 "The group is not found in recycle bin".into(),
             ));
         }
+
+        let entry_ids = self.children_entry_uuids(&group_uuid);
+
+        // First we need to remove all entries found in this group and in its sub groups
+        for eid in entry_ids {
+            self.remove_entry_permanently(eid)?;
+        }
+
+        let sub_group_ids = self.children_groups_uuids(&group_uuid);
+
+        // Remove all sub groups
+        for gid in sub_group_ids {
+            self.all_groups.remove(&gid).ok_or(Error::Other(format!(
+                "The group {} is not found in All Groups map",
+                &gid
+            )))?;
+        }
+
         // Remove the group from all_groups map
         let g = self
             .all_groups
             .remove(&group_uuid)
             .ok_or("The group is not found in All groups")?;
-        // Remove this group id from group_uuids of its parent ( parent may recycle bin group or group that is in recycle)
+
+        // Remove this group id from group_uuids of its parent where
+        // the parent may recycle bin group or group that is in recycle
         if let Some(old_parent) = self.all_groups.get_mut(&g.parent_group_uuid) {
             old_parent.group_uuids.retain(|&id| id != group_uuid);
         }
+
         Ok(())
     }
 
@@ -401,6 +438,7 @@ impl Root {
             .all_entries
             .remove(&entry_uuid)
             .ok_or("The entry is not found in All entries")?;
+
         // Remove this entry id from entry_uuids of its parent group.
         // The parent should be a recycle bin group  or group that is in recycle bin
         if let Some(old_parent) = self.all_groups.get_mut(&e.group_uuid) {
@@ -467,7 +505,7 @@ impl Root {
         verify_uuid!(self, new_parent_id, all_groups);
 
         // all_entries map contains the key 'entry_uuid' as we have that verified above. Calling unwrap() is fine
-        let mut entry = self.all_entries.get_mut(&entry_uuid).unwrap();
+        let entry = self.all_entries.get_mut(&entry_uuid).unwrap();
         let old_parent_id = entry.group_uuid;
 
         if old_parent_id == new_parent_id {
@@ -566,7 +604,7 @@ impl Root {
     }
 
     // Collects the attachment hash values from all entries in an order
-    // This is called before writing db file  
+    // This is called before writing db file
     pub fn get_attachment_hashes(&self) -> Vec<AttachmentHashValue> {
         let mut hashes = vec![];
         for id in self.get_all_inorder_entry_uuids() {
@@ -672,6 +710,27 @@ impl Root {
     /// Visit each group starting with the root and do some action using the node group's data
     pub fn root_group_visitor_action(&self, acc: &mut dyn GroupVisitor) {
         self.group_visitor_action(&self.root_uuid, acc);
+    }
+
+    // Gets all sub groups' uuids found under a group with the group_uuid
+    pub(crate) fn children_groups_uuids(&self, group_uuid: &Uuid) -> Vec<Uuid> {
+        let mut acc = InOrderIds {
+            ids: vec![],
+            entry_ids_wanted: false,
+        };
+        self.group_visitor_action(&group_uuid, &mut acc);
+        acc.ids
+    }
+
+    // Gets all entry uuids found under a group with the group_uuid and
+    // also all entry uuids found in all sub groups under this group_uuid
+    pub(crate) fn children_entry_uuids(&self, group_uuid: &Uuid) -> Vec<Uuid> {
+        let mut acc = InOrderIds {
+            ids: vec![],
+            entry_ids_wanted: true,
+        };
+        self.group_visitor_action(&group_uuid, &mut acc);
+        acc.ids
     }
 
     // Calls GroupVisitor action recursively on all sub groups for a given group uuid
