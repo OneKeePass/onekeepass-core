@@ -127,6 +127,7 @@ pub(crate) fn entry_by_category<'a>(
     }
 }
 
+// Deprecate
 // Need to deprecated once we use 'combined_category_details' in all cases
 // Called in 'categories_to_show' fn to get EnteryCategoryInfo from KeePassFile
 impl From<&KeepassFile> for EntryCategoryInfo {
@@ -248,7 +249,7 @@ fn type_name_categories(
     cats
 }
 
-pub fn general_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
+fn general_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
     let all = keepass_file.collect_all_active_entries();
     
     //debug!("Loading all cat data with entries count {}", all.len());
@@ -295,7 +296,7 @@ pub fn general_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetai
     vec![all_entries, favorite_entries, deleted]
 }
 
-pub fn group_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
+fn group_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
     let mut group_categories: Vec<CategoryDetail> = vec![];
 
     // By calling get_all_groups with true we are excluding recycle bin group from category
@@ -320,7 +321,7 @@ pub fn group_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail>
     group_categories
 }
 
-pub fn type_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
+fn type_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
     let all = keepass_file.collect_all_active_entries();
 
     let mut type_categories: Vec<CategoryDetail> =
@@ -335,7 +336,7 @@ pub fn type_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> 
     type_categories
 }
 
-pub fn tag_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
+fn tag_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
     let vals = keepass_file.collect_all_active_entries().iter().fold(
         HashMap::<String, CategoryDetail>::default(),
         |mut acc, e| {

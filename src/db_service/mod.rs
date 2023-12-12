@@ -959,18 +959,14 @@ pub fn groups_summary_data(db_key: &str) -> Result<GroupTree> {
     main_content_action!(db_key, create_groups_summary_data)
 }
 
-/// All categories that can be shown in the UI layer including individual groups
+// Deprecate
+// All categories that can be shown in the UI layer including individual groups
 pub fn categories_to_show(db_key: &str) -> Result<EntryCategoryInfo> {
     let action = |k: &KeepassFile| Ok(k.into());
     main_content_action!(db_key, action)
 }
 
-// Deprecate as we use combined_category_details
-pub fn tag_categories_to_show(db_key: &str) -> Result<Vec<CategoryDetail>> {
-    let action = |k: &KeepassFile| Ok(form_data::tag_category_details(k));
-    main_content_action!(db_key, action)
-}
-
+// All categories that can be shown in the UI layer
 pub fn combined_category_details(
     db_key: &str,
     grouping_kind: EntryCategoryGrouping,
