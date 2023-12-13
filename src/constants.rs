@@ -1,17 +1,16 @@
-//FileSignature1, FileSignature2 and FileVersion32 in KeePassLib/Serialization/KdbxFile.cs
+// FileSignature1, FileSignature2 and FileVersion32 in KeePassLib/Serialization/KdbxFile.cs
 #[allow(dead_code)]
 pub const SIG1: u32 = 0x9AA2_D903;
 pub const SIG2: u32 = 0xB54B_FB67;
 pub const VERSION_40: u32 = 0x0004_0000;
 pub const VERSION_41: u32 = 0x0004_0001;
 
-//Not supported versions
-pub const OLD_SIG1: u32 = 0x9AA2_D903 ;
+// Not supported versions
+pub const OLD_SIG1: u32 = 0x9AA2_D903;
 pub const OLD_SIG2: u32 = 0xB54B_FB65;
 pub const VERSION_30: u32 = 0x0003_0000;
 pub const VERSION_31: u32 = 0x0003_0001;
 pub const VERSION_20: u32 = 0x0002_0000;
-
 
 #[allow(dead_code)]
 pub const VD_VER: u16 = 0x0100;
@@ -22,7 +21,7 @@ pub const SALSA20_IV: &[u8] = &[0xE8, 0x30, 0x09, 0x4B, 0x97, 0x20, 0x5D, 0x2A];
 #[allow(dead_code)]
 pub const EMPTY: &[u8] = &[];
 
-//Encrypted data is split into blocks of this size before prefixed with its hmac
+// Encrypted data is split into blocks of this size before prefixed with its hmac
 pub const PAYLOAD_BLOCK_SIZE: u64 = 1048576; // (1MB = 1024 * 1024), 65536  1048576
 
 pub const INTERNAL_VERSION: i32 = 1;
@@ -35,19 +34,31 @@ pub const EMPTY_STR: &str = "";
 // Do not change the existing key to make sure for backward compatability
 pub mod custom_data_key {
     pub const OKP_INTERNAL_VERSION: &str = "OKP_K1";
+
     pub const OKP_GROUP_AS_CATEGORY: &str = "OKP_K2";
+
     // Key for the name of the Entry type
     pub const OKP_ENTRY_TYPE: &str = "OKP_K3";
+
     // The value found corresponding to this custom data key is the serialized Entry type Data
     pub const OKP_ENTRY_TYPE_DATA: &str = "OKP_K4";
-    // The value found corresponding to this custom data key is the serialized
-    // HashMap of Entry type Data
+
+    // The value found corresponding to this custom data key is
+    // the serialized HashMap of Entry type Data
     pub const OKP_ENTRY_TYPE_MAP_DATA: &str = "OKP_K5";
+
     // The value associated to this key is the list of serialized Entry type Data
     // that may be used in an entry's history entries
     pub const OKP_ENTRY_TYPE_LIST_DATA: &str = "OKP_K6";
+
     // The index in place of Entry type Data in the history entry
     pub const OKP_ENTRY_TYPE_DATA_INDEX: &str = "OKP_K7";
+}
+
+pub mod general_category_names {
+    pub const ALL_ENTRIES: &str = "AllEntries";
+    pub const FAVORITES: &str = "Favorites";
+    pub const DELETED: &str = "Deleted";
 }
 
 #[allow(dead_code)]
@@ -199,7 +210,7 @@ pub mod xml_element {
     pub const AUTO_TYPE: &[u8] = b"AutoType";
     pub const ENABLED: &[u8] = b"Enabled";
     // empty means use the inherited default one (from group)
-    pub const DEFAULT_SEQUENCE: &[u8] = b"DefaultSequence";  
+    pub const DEFAULT_SEQUENCE: &[u8] = b"DefaultSequence";
     // multiple association possible for an entry
     pub const ASSOCIATION: &[u8] = b"Association";
     pub const WINDOW: &[u8] = b"Window";
@@ -209,12 +220,13 @@ pub mod xml_element {
     // <EnableAutoType>null</EnableAutoType> when 'Inherit from parent is diabled'
     // <EnableAutoType>true</EnableAutoType> when 'enable' is selected
 
-    pub const ENABLE_AUTO_TYPE: &[u8] = b"EnableAutoType"; // Group level ? 
+    pub const ENABLE_AUTO_TYPE: &[u8] = b"EnableAutoType"; // Group level ?
+
     // <DefaultAutoTypeSequence/> when default parent's AutoTypeSequence is enabled
     // <DefaultAutoTypeSequence>{USERNAME}</DefaultAutoTypeSequence> when custom AutoTypeSequence is used
     pub const DEFAULT_AUTO_TYPE_SEQUENCE: &[u8] = b"DefaultAutoTypeSequence"; // Group level
-    
-    pub const DATA_TRANSFER_OBFUSCATION: &[u8] = b"DataTransferObfuscation";  // entry level - not used ?
+
+    pub const DATA_TRANSFER_OBFUSCATION: &[u8] = b"DataTransferObfuscation"; // entry level - not used ?
 
     //pub const KEEPASS_FILE_TAGS:&[&[u8]] = &[META,ROOT];
 }
@@ -222,7 +234,7 @@ pub mod xml_element {
 pub mod key_file_xml_element {
     pub const KEY_FILE: &[u8] = b"KeyFile";
     pub const KEY_FILE_META: &[u8] = b"Meta";
-    pub const KEY_FILE_VERSION: &[u8] = b"Version"; 
+    pub const KEY_FILE_VERSION: &[u8] = b"Version";
     pub const KEY_FILE_KEY: &[u8] = b"Key";
     pub const KEY_FILE_DATA: &[u8] = b"Data";
     pub const KEY_FILE_DATA_HASH: &[u8] = b"Hash";

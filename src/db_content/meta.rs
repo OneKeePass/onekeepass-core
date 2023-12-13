@@ -6,7 +6,6 @@ use crate::error::Result;
 use crate::util;
 use chrono::NaiveDateTime;
 use log::debug;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
@@ -73,15 +72,13 @@ impl MetaShare {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Meta {
     pub(crate) generator: String,
     pub(crate) database_name: String,
     pub(crate) database_description: String,
     pub(crate) database_name_changed: NaiveDateTime,
     pub(crate) settings_changed: NaiveDateTime,
-    //pub(crate) history_max_items: i32,
-    //pub(crate) history_max_size: i32,
     pub(crate) maintenance_history_days: i32,
     pub(crate) recycle_bin_enabled: bool,
     pub(crate) recycle_bin_uuid: Uuid,
@@ -89,8 +86,8 @@ pub struct Meta {
     pub(crate) custom_icons: CustomIcons,
     pub(crate) last_selected_group: Uuid,
     pub(crate) custom_data: CustomData,
-    #[serde(skip)]
-    pub(crate) meta_share: Arc<MetaShare>,
+    // history_max_items and history_max_size are moved to MetaShare
+    pub(crate) meta_share: Arc<MetaShare>, 
 }
 
 //As NaiveDateTime does not have default fn, we need to implement "new" or "default" fn for Meta explicitly
@@ -102,8 +99,6 @@ impl Meta {
             database_description: String::default(),
             database_name_changed: util::now_utc(),
             settings_changed: util::now_utc(),
-            //history_max_items: 10,
-            //history_max_size: 6291456 , // 6*1024*1024  // 6291450,     //6291456
             maintenance_history_days: 365, //365
             recycle_bin_enabled: false,
             recycle_bin_uuid: Uuid::default(),
@@ -115,8 +110,7 @@ impl Meta {
         }
     }
 
-    // TODO: Should it receive a MetaFormData instead of Meta from db_service ?
-    // Or we can form partially filled Meta and pass it here
+    // The incoming Meta instance 'other' is partially filled from db_service::MetaFormData and passed it here
     pub fn update(&mut self, other: Meta) -> Result<()> {
         // For now, only the relevant fields that need to be updated are copied from other to self
         self.database_name = other.database_name;

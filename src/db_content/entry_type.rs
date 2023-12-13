@@ -99,9 +99,11 @@ impl EntryTypeV1 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum VersionedEntryType {
-    // Uses MessagePack dataformat
+    // Uses MessagePack dataformated EntryType 
     RmpV1(EntryTypeV1),
+    // Maps the EntryType UUID to the EntryType to store in MessagePack dataformat
     RmpKeyedV1(HashMap<Uuid, EntryTypeV1>),
+    // Keeps a list of EntryTypes to store in MessagePack dataformat
     RmpListV1(Vec<EntryTypeV1>),
     //RmpV2(EntryTypeV2),
 }
@@ -279,9 +281,12 @@ impl VersionedEntryType {
         }
     }
 
-    pub fn encoded_entry_type_list_to_encoded_types(data: &str) -> Vec<String> {
-        let et_v: Vec<EntryType> = VersionedEntryType::from_encoded(data);
-        //Note: et_v is a vec of unadjusted EntryType as it the vec was formed earlier with modified EntryType
+    // Converts a list of EntryTypes from the 'base64_str_data' to a vec of base64_str where
+    // each member is serilaized entry type  
+    pub fn encoded_entry_type_list_to_encoded_types(base64_str_data: &str) -> Vec<String> {
+        let et_v: Vec<EntryType> = VersionedEntryType::from_encoded(base64_str_data);
+        // Note: et_v is a vec of unadjusted EntryType as it the vec was formed earlier with modified EntryType
+        // Returns a vec of base64_str representation of EntryType
         let list: Vec<String> = et_v
             .iter()
             .flat_map(|e| VersionedEntryType::from_entry_type(e).serilaize())
@@ -638,7 +643,8 @@ mod tests {
         let s = VersionedEntryType::encode_entry_type(&et1, &HashMap::default()).unwrap();
         println!("Encoded str size is {} ", s.len());
 
-        let d = VersionedEntryType::decode_entry_type(&s, &*UUID_TO_ENTRY_TYPE_MAP);
+        //let d = VersionedEntryType::decode_entry_type(&s, &*UUID_TO_ENTRY_TYPE_MAP);
+        let d = VersionedEntryType::decode_entry_type(&s, &HashMap::default());
         //println!("d is {:?}", &d);
 
         assert_eq!(&et1 == &d, true);

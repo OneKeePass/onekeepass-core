@@ -7,6 +7,7 @@ mod meta;
 mod root;
 mod standard_entry_types;
 
+
 pub(crate) use self::custom_data::{CustomData, Item};
 pub use self::entry::{
     Association, AutoType, BinaryKeyValue, Entry, EntryField, History, KeyValue,
@@ -16,7 +17,7 @@ pub use self::group::Group;
 pub use self::keepass::KeepassFile;
 pub use self::meta::Meta;
 
-pub use self::root::{join_tags, split_tags, AllTags, GroupVisitor, Root};
+pub use self::root::{ AllTags, GroupVisitor, Root};
 pub use self::standard_entry_types::{
     standard_type_uuids_names_ordered_by_id, standard_types_ordered_by_id,
 };
@@ -29,6 +30,21 @@ use uuid::Uuid; //info, warn
 use crate::util;
 
 pub type AttachmentHashValue = u64;
+
+const TAGS_SEPARATORS: [char; 2] = [';', ','];
+
+// Splits tags string into vector of tags
+pub fn split_tags(tags: &str) -> Vec<String> {
+    let splits = tags.split(&TAGS_SEPARATORS[..]);
+    splits
+        .filter(|w| !w.is_empty())
+        .map(|w| w.trim().into())
+        .collect::<Vec<String>>()
+}
+
+pub fn join_tags(tag_vec: &Vec<String>) -> String {
+    tag_vec.join(";")
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MemoryProtection {

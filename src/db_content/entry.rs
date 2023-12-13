@@ -264,8 +264,8 @@ impl Entry {
 
     // Called when an entry is updated or a new entry inserted
     pub fn copy_to_custom_data(&mut self) {
-        // To be safe first we need to remove the existing entry type related
-        // keys. It is expected we have either OKP_ENTRY_TYPE or OKP_ENTRY_TYPE_DATA. Not both
+        // To be safe first we need to remove the existing entry type related keys.
+        // It is expected we have either OKP_ENTRY_TYPE or OKP_ENTRY_TYPE_DATA. Not both
         self.custom_data.remove_item(OKP_ENTRY_TYPE);
         self.custom_data.remove_item(OKP_ENTRY_TYPE_DATA);
 

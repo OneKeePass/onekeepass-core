@@ -392,6 +392,8 @@ pub struct EntrySummary {
     pub secondary_title: Option<String>, //usually the user name
     pub icon_id: i32,
     pub history_index: Option<i32>,
+    pub modified_time:Option<i64>,
+    pub created_time:Option<i64>
 }
 
 impl EntrySummary {
@@ -419,6 +421,8 @@ impl EntrySummary {
                 // )),
                 icon_id: he.icon_id,
                 history_index: Some(i as i32),
+                modified_time:None,
+                created_time:None,
             });
         }
         summary_list
@@ -476,6 +480,8 @@ impl EntrySummary {
                 secondary_title,
                 icon_id: e.icon_id,
                 history_index: None,
+                modified_time:Some(e.times.last_modification_time.timestamp()),
+                created_time:Some(e.times.creation_time.timestamp()),
             });
         }
         summary_list
