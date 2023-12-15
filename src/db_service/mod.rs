@@ -1,6 +1,8 @@
 mod attachment;
+mod io;
 
 pub use attachment::*;
+pub use io::*;
 
 pub use crate::db::{
     KeyStoreOperation, KeyStoreService, KeyStoreServiceType, NewDatabase, SecureKeyInfo,
@@ -12,16 +14,15 @@ pub use crate::error::{Error, Result};
 pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions, PasswordScore};
 pub use crate::util::{file_name, formatted_key, parse_attachment_hash, string_to_simple_hash};
 
-use crate::db::{self, write_kdbx_file, write_kdbx_file_with_backup_file, KdbxFile};
+use crate::db::KdbxFile;
 use crate::db_content::{standard_types_ordered_by_id, KeepassFile};
 use crate::searcher;
 use crate::util;
 use crate::{form_data, password_generator};
+
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
-use std::io::{Cursor, Read, Seek, Write};
-use std::path::Path;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -97,7 +98,20 @@ fn main_store() -> &'static MainStore {
     &MAIN_STORE
 }
 
-/// A macro to do a db query and then update the last read time for tracking
+// Gets a ref to the main keepass content
+#[macro_export]
+macro_rules! to_keepassfile {
+    ($kdbx_file:expr) => {
+        // Need to get Option<&KeepassFile> from Option<KeepassFile> using as_ref
+        $kdbx_file
+            .keepass_main_content
+            .as_ref()
+            .ok_or("No main content")?
+    };
+}
+
+// A macro to do a db query and then update the last read time for tracking
+#[macro_export]
 macro_rules! main_content_action {
     ($db_key:expr,$closure_fn:expr) => {{
         let r = call_main_content_action($db_key, $closure_fn);
@@ -114,7 +128,8 @@ macro_rules! main_content_action {
     };
 }
 
-/// A macro to call a db modification and then update the last write time for tracking  
+// A macro to call a db modification and then update the last write time for tracking
+#[macro_export]
 macro_rules! main_content_mut_action {
     ($db_key:expr,$closure_fn:expr) => {{
         let r = call_main_content_mut_action($db_key, $closure_fn);
@@ -133,6 +148,7 @@ macro_rules! main_content_mut_action {
 }
 
 /// A macro to call a db reading and then update the last read time for tracking
+#[macro_export]
 macro_rules! kdbx_context_action {
     ($db_key:expr,$closure_fn:expr) => {{
         let r = call_kdbx_context_action($db_key, $closure_fn);
@@ -149,6 +165,7 @@ macro_rules! kdbx_context_action {
     };
 }
 
+#[macro_export]
 macro_rules! kdbx_context_mut_action {
     ($db_key:expr,$closure_fn:expr) => {{
         let r = call_kdbx_context_mut_action($db_key, $closure_fn);
@@ -236,91 +253,6 @@ where
     }
 }
 
-/// Opens and reads a valid KDBX file.
-/// Returns KdbxLoaded with db key which is required to access such loaded db content from the cache
-pub fn load_kdbx(
-    db_file_name: &str,
-    password: Option<&str>,
-    key_file_name: Option<&str>,
-) -> Result<KdbxLoaded> {
-    let mut db_file_reader = db::open_db_file(db_file_name)?;
-    let file_name = util::file_name(&db_file_name);
-    read_kdbx(
-        &mut db_file_reader,
-        db_file_name,
-        password,
-        key_file_name,
-        file_name.as_deref(),
-    )
-}
-
-// Gets a ref to the main keepass content
-macro_rules! to_keepassfile {
-    ($kdbx_file:expr) => {
-        // Need to get Option<&KeepassFile> from Option<KeepassFile> using as_ref
-        $kdbx_file
-            .keepass_main_content
-            .as_ref()
-            .ok_or("No main content")?
-    };
-}
-
-// Used for both desktop and mobile
-// db_file_name is full uri and used as db_key in all subsequent calls
-pub fn read_kdbx<R: Read + Seek>(
-    reader: &mut R,
-    db_file_name: &str,
-    password: Option<&str>,
-    key_file_name: Option<&str>,
-    file_name: Option<&str>,
-) -> Result<KdbxLoaded> {
-    let kdbx_file = db::read_db_from_reader(reader, db_file_name, password, key_file_name)?;
-
-    let kp = to_keepassfile!(kdbx_file);
-    //let file_name = util::file_name(&db_file_name);
-    let kdbx_loaded = KdbxLoaded {
-        db_key: db_file_name.into(),
-        database_name: kp.meta.database_name.clone(),
-        key_file_name: key_file_name.map(|s| s.to_string()),
-        file_name: file_name.map(|s| s.to_string()),
-    };
-
-    let mut kdbx_context = KdbxContext::default();
-    kdbx_context.kdbx_file = kdbx_file;
-
-    // Arc<T> automatically dereferences to T (via the Deref trait),
-    // so you can call T’s methods on a value of type Arc<T>
-    let mut store = main_store().lock().unwrap();
-    // Each database has a unique uri (File Path) and accordingly only one db with that name can be opened at a time
-    // The 'db_file_name' is the full uri and used as a unique db_key throughout all db specific calls
-    store.insert(db_file_name.into(), kdbx_context);
-    debug!("Reading KDBX file {} is completed", db_file_name);
-    Ok(kdbx_loaded)
-}
-
-// Desktop
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows",))]
-pub fn reload_kdbx(db_key: &str) -> Result<KdbxLoaded> {
-    call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
-        // db_key is full database file uri
-        let mut db_file_reader = db::open_db_file(db_key)?;
-        let reloaded_kdbx_file = db::reload(&mut db_file_reader, &ctx.kdbx_file)?;
-        let kp = to_keepassfile!(reloaded_kdbx_file);
-
-        let file_name = util::file_name(db_key);
-        let kdbx_loaded = KdbxLoaded {
-            db_key: db_key.into(),
-            database_name: kp.meta.database_name.clone(),
-            file_name,
-            key_file_name: ctx.kdbx_file.get_key_file_name(),
-        };
-
-        ctx.kdbx_file = reloaded_kdbx_file;
-
-        Ok(kdbx_loaded)
-    })
-}
-
 pub fn all_kdbx_cache_keys() -> Result<Vec<String>> {
     let store = main_store().lock().unwrap();
     let mut vec = vec![];
@@ -339,274 +271,21 @@ pub fn close_all_databases() -> Result<()> {
     Ok(())
 }
 
-// Called to generate random 32 bytes key and stored in an xml file (Version 2.0)
-pub fn generate_key_file(key_file_name: &str) -> Result<()> {
-    db::create_key_file(key_file_name)
-}
-
-// TODO: Refactor create_kdbx (used mainly for desktop app) and create_and_write_to_writer to use common functionalties
-/// Called to create a new KDBX database and perists the file
-/// Returns KdbxLoaded with dbkey to locate this KDBX database in cache
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows",))]
-pub fn create_kdbx(new_db: NewDatabase) -> Result<KdbxLoaded> {
-    if let Some(kf) = &new_db.key_file_name {
-        if !kf.trim().is_empty() & !Path::new(kf).exists() {
-            return Err(Error::NotFound(format!(
-                "The key file {} is not valid one",
-                kf
-            )));
-        }
-    }
-    let kdbx_file = new_db.create()?;
-    let kp = to_keepassfile!(kdbx_file);
-    let file_name = util::file_name(&new_db.database_file_name);
-    let kdbx_loaded = KdbxLoaded {
-        db_key: new_db.database_file_name.clone(),
-        database_name: kp.meta.database_name.clone(),
-        file_name,
-        key_file_name: kdbx_file.get_key_file_name(),
-    };
-
-    // IMPORTANT:
-    // We need to call the following inserting of db to the shared cache in a {} block
-    // so that the Mutex guard is unlocked when this block's scope ends and the save_kdbx_with_backup fn
-    // can be called.
-    // If this is not done, save_kdbx_with_backup will deadlock the thread as it will be waiting for
-    // the same main_store lock to be released
-    {
-        // Add the newly created db to cache for UI use
-        let mut kdbx_context = KdbxContext::default();
-        kdbx_context.kdbx_file = kdbx_file;
-
-        let mut store = main_store().lock().unwrap();
-        store.insert(new_db.database_file_name.clone(), kdbx_context);
-    }
-    // Mutex guard is now released
-
-    // Save the newly created db to the file system for persistence
-    // See above block comment. The drop(main_store()) is not working; Also there is no method 'unlock' in Mutex yet;
-    save_kdbx_with_backup(&new_db.database_file_name, None, true)?;
-    Ok(kdbx_loaded)
-}
-
-// Mobile
-/// Creates a new db and writes into the supplied writer as kdbx db
-pub fn create_and_write_to_writer<W: Read + Write + Seek>(
-    writer: &mut W,
-    new_db: NewDatabase,
-) -> Result<KdbxLoaded> {
-    if let Some(kf) = &new_db.key_file_name {
-        if !kf.trim().is_empty() & !Path::new(kf).exists() {
-            return Err(Error::NotFound(format!(
-                "The key file {} is not valid one",
-                kf
-            )));
-        }
-    }
-    let kdbx_file = new_db.create()?;
-    let kp = to_keepassfile!(kdbx_file);
-    let kdbx_loaded = KdbxLoaded {
-        db_key: new_db.database_file_name.clone(),
-        database_name: kp.meta.database_name.clone(),
-        // only for android 'file_name' will have some value.
-        // In case of iOS, not done as full uri is temp one
-        // For desktop, see create_kdbx
-        file_name: new_db.file_name,
-        key_file_name: new_db.key_file_name,
-    };
-
-    // IMPORTANT:
-    // We need to call the following inserting of db to the shared cache in {} block
-    // so that the Mutex guard is unlocked so that outside this block, the save_kdbx fn
-    // can be called. If this is not done, save_kdbx will deadlock the thread as it will be waiting for
-    // main_store lock to be released
-    {
-        // Add the newly created db to cache for UI use
-        let mut kdbx_context = KdbxContext::default();
-        kdbx_context.kdbx_file = kdbx_file;
-
-        let mut store = main_store().lock().unwrap();
-        store.insert(new_db.database_file_name.clone(), kdbx_context);
-    }
-    let mut buf = Cursor::new(Vec::<u8>::new());
-    // Mutex guard is now released
-    // Save the newly created db to the file system for persistence
-    // See above block comment. The drop(main_store()) is not working;Also there is no method 'unclock' in Mutex yet;
-    save_kdbx_to_writer(&mut buf, &new_db.database_file_name)?; //new_db.database_file_name is the db_key
-    buf.rewind()?;
-    calculate_db_file_checksum(&new_db.database_file_name, &mut buf)?;
-    buf.rewind()?; //do we require this
-    std::io::copy(&mut buf, writer)?;
-
-    //Ok(new_db.database_file_name.clone())
-    Ok(kdbx_loaded)
-}
 
 /// Removes the previously opened KDBX file from cache
 pub fn close_kdbx(db_key: &str) -> Result<()> {
     let mut store = main_store().lock().unwrap();
-
     // UI side save is handled for any changes.
     // As an additional check, on the backendside, we may need to verify that all changes are persisted and
     // ask the user to save or not if there are any unsaved changes
-
     store.remove(db_key);
     KeyStoreOperation::delete_key(db_key)?;
     Ok(())
 }
 
-/// Called to save the modified database with a backup in desktop
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows",))]
-pub fn save_kdbx_with_backup(
-    db_key: &str,
-    backup_file_name: Option<&str>,
-    overwrite: bool,
-) -> Result<KdbxSaved> {
-    let kdbx_saved = call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
-        write_kdbx_file_with_backup_file(&mut ctx.kdbx_file, backup_file_name, overwrite)?;
-        // All changes are now saved to file
-        ctx.save_pending = false;
-        Ok(KdbxSaved {
-            db_key: db_key.into(),
-            database_name: ctx.kdbx_file.get_database_name().into(),
-        })
-    })?;
-    Ok(kdbx_saved)
-}
-
 // Mobile
-pub fn verify_db_file_checksum<R: Read + Seek>(db_key: &str, reader: &mut R) -> Result<()> {
-    call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
-        db::verify_db_file_checksum(&mut ctx.kdbx_file, reader)
-    })?;
-    Ok(())
-}
-
-// Mobile
-pub fn calculate_db_file_checksum<R: Read + Seek>(db_key: &str, reader: &mut R) -> Result<()> {
-    call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
-        ctx.kdbx_file.checksum_hash = db::calculate_db_file_checksum(reader)?;
-        Ok(())
-    })
-}
-
-// Mobile
-/// Converts all data from memory structs to kdbx database formatted data and
-/// writes the final complte db content to the supplied writer. The writer may be in memory or a file
-/// Returns the result of saving in KdbxSaved struct to the client
-pub fn save_kdbx_to_writer<W: Read + Write + Seek>(
-    writer: &mut W,
-    db_key: &str,
-) -> Result<KdbxSaved> {
-    let kdbx_saved = call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
-        db::write_db(writer, &mut ctx.kdbx_file)?;
-        // All changes are now saved to file
-        ctx.save_pending = false;
-        debug!(
-            "Saving database_name {} with db_key {}",
-            ctx.kdbx_file.get_database_name(),
-            &db_key
-        );
-        Ok(KdbxSaved {
-            db_key: db_key.into(),
-            database_name: ctx.kdbx_file.get_database_name().into(),
-        })
-    })?;
-    Ok(kdbx_saved)
-}
-
-/// Called to save all modified db files in one go and also creating backups in desktop
-pub fn save_all_modified_dbs_with_backups(
-    db_keys_and_backups: Vec<(String, Option<String>)>,
-) -> Result<Vec<SaveAllResponse>> {
-    if db_keys_and_backups.is_empty() {
-        return Err(Error::DataError(
-            "Empty db keys list is passed. Expected at least one db key in the list",
-        ));
-    }
-    let mut save_result = vec![];
-    // We should not make any other calls that may require main_store().lock()
-    // If used, that will lead to deadlock. For example, using any of 'save_kdbx*' methods
-    // instead of 'write_kdbx*' methods
-    let mut store = main_store().lock().unwrap();
-    for (db_key, backup_file_name) in db_keys_and_backups {
-        match store.get_mut(&db_key) {
-            Some(ctx) => {
-                if ctx.save_pending == true {
-                    match write_kdbx_file_with_backup_file(
-                        &mut ctx.kdbx_file,
-                        backup_file_name.as_deref(),
-                        false,
-                    ) {
-                        Ok(()) => {
-                            ctx.save_pending = false;
-                            save_result.push(SaveAllResponse {
-                                db_key,
-                                save_status: SaveStatus::Success,
-                            })
-                        }
-                        Err(e) => save_result.push(SaveAllResponse {
-                            db_key,
-                            save_status: SaveStatus::Failed(format!(
-                                "Writing failed with error {}",
-                                e
-                            )),
-                        }),
-                    }
-                } else {
-                    save_result.push(SaveAllResponse {
-                        db_key,
-                        save_status: SaveStatus::Message(
-                            "The db file is not in modified status. No saving was done".into(),
-                        ),
-                    })
-                }
-            }
-            None => save_result.push(SaveAllResponse {
-                db_key,
-                save_status: SaveStatus::Failed(format!("The supplied db key is not found")),
-            }),
-        };
-    }
-    Ok(save_result)
-}
-
-/// Saves to a new db file in desktop app and returns the db key in KdbxLoaded when successfully the file is saved
-pub fn save_as_kdbx(db_key: &str, database_file_name: &str) -> Result<KdbxLoaded> {
-    // Need to copy the encrytion key for the new name from the existing one
-    db::KeyStoreOperation::copy_key(db_key, database_file_name)?;
-
-    let kdbx_loaded = call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
-        // database_file_name is full name uri and will be used the new saved as file's db_key
-        ctx.kdbx_file.set_database_file_name(database_file_name);
-
-        write_kdbx_file(&mut ctx.kdbx_file, true)?;
-        // All changes are now saved to file
-        ctx.save_pending = false;
-        let file_name = util::file_name(&database_file_name);
-        Ok(KdbxLoaded {
-            db_key: database_file_name.into(),
-            database_name: ctx.kdbx_file.get_database_name().into(),
-            file_name,
-            key_file_name: ctx.kdbx_file.get_key_file_name(),
-        })
-    })?;
-
-    // As the db_file_name is changed, we need to reset the db key to this new name
-    let mut store = main_store().lock().unwrap();
-    if let Some(v) = store.remove(db_key) {
-        store.insert(database_file_name.into(), v);
-    }
-
-    // Remove the old encryption key for the old db_key
-    db::KeyStoreOperation::delete_key(db_key)?;
-
-    Ok(kdbx_loaded)
-}
-
-// Mobile
-/// Called to rename the db key used and the database_file_name as we know
-/// the full db file name and db_key are used interchangeabley
+// Called to rename the db key used and the database_file_name as we know
+// the full db file name and db_key are used interchangeably
 pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
     let kdbx_loaded = call_kdbx_context_mut_action(old_db_key, |ctx: &mut KdbxContext| {
         ctx.kdbx_file.set_database_file_name(new_db_key);
@@ -639,7 +318,7 @@ pub fn unlock_kdbx_on_biometric_authentication(db_key: &str) -> Result<KdbxLoade
     })
 }
 
-/// Compares the entered credentials with the stored one for a quick unlock of the db
+// Compares the entered credentials with the stored one for a quick unlock of the db
 pub fn unlock_kdbx(
     db_key: &str,
     password: Option<&str>,
@@ -660,26 +339,7 @@ pub fn unlock_kdbx(
     })
 }
 
-pub fn read_and_verify_db_file(db_key: &str) -> Result<()> {
-    call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
-        db::read_and_verify_db_file(&mut ctx.kdbx_file)
-    })
-}
-
-pub fn export_main_content_as_xml(db_key: &str, xml_file_name: &str) -> Result<()> {
-    main_content_action!(db_key, |k: &KeepassFile| {
-        Ok(db::export_db_main_content_as_xml(k, xml_file_name)?)
-    })
-}
-
-// This will call before_xml_writing and any attachemnt hash to ref conversion is done
-pub fn export_as_xml(db_key: &str, xml_file_name: &str) -> Result<()> {
-    kdbx_context_mut_action!(db_key, |ctx: &mut KdbxContext| {
-        db::export_as_xml(&mut ctx.kdbx_file, Some(xml_file_name))
-    })
-}
-
-/// Gather all unique tags that are used in all groups and entries
+// Gather all unique tags that are used in all groups and entries
 pub fn collect_entry_group_tags(db_key: &str) -> Result<AllTags> {
     main_content_action!(db_key, move |k: &KeepassFile| Ok(k.root.collect_tags()))
 }
@@ -846,33 +506,6 @@ pub fn search_term(db_key: &str, term: &str) -> Result<EntrySearchResult> {
     })
 }
 
-// Deprecated; Use entry_type_headers
-pub fn entry_type_names(db_key: &str) -> Result<EntryTypeNames> {
-    main_content_action!(db_key, |k: &KeepassFile| {
-        k.meta
-            .custom_entry_type_names_by_id()
-            .sort_by(|a, b| a.1.cmp(&b.1));
-        //let mut sn = standard_type_names();
-        let mut sn = standard_types_ordered_by_id()
-            .into_iter()
-            .map(|e| e.name.clone())
-            .collect::<Vec<String>>();
-        //let mut sn = standard_type_uuids_names_ordered_by_id();
-        sn.sort();
-        let type_names = EntryTypeNames {
-            custom: k
-                .meta
-                .custom_entry_type_names_by_id()
-                .into_iter()
-                .map(|(_, s)| s)
-                .collect(), //entries.sort_unstable_by(|a, b| a.title.cmp(&b.title));
-            //standard: sn.into_iter().map(|(_,s)| s).collect(),
-            standard: sn,
-        };
-        Ok(type_names)
-    })
-}
-
 pub fn entry_type_headers(db_key: &str) -> Result<EntryTypeHeaders> {
     main_content_action!(db_key, |k: &KeepassFile| {
         let to_headers = |v: Vec<&EntryType>| {
@@ -905,8 +538,8 @@ pub fn insert_or_update_custom_entry_type(
     })
 }
 
-/// Adjusts the special groups are such as recycle bin group listed
-/// in the end of the child group ids in case of root group
+// Adjusts the special groups are such as recycle bin group listed
+// in the end of the child group ids in case of root group
 fn adjust_special_groups_order(k: &KeepassFile, group: &Group) -> Vec<String> {
     if k.root.root_uuid == group.uuid {
         let v: Vec<String> = group
@@ -930,7 +563,7 @@ fn adjust_special_groups_order(k: &KeepassFile, group: &Group) -> Vec<String> {
     }
 }
 
-/// Create as group summary data for all groups
+// Create as group summary data for all groups
 fn create_groups_summary_data(k: &KeepassFile) -> Result<GroupTree> {
     let mut grps: HashMap<String, GroupSummary> = HashMap::new();
     // All groups including special groups (e.g Recycle Bin Group) are collected
@@ -987,8 +620,8 @@ pub fn mark_group_as_category(db_key: &str, group_id: &str) -> Result<()> {
     })
 }
 
-/// Extracts the primary, secondary title and icon id only to show the entries in a list
-/// TODO: Deprecate after changing its use in "search_term" fn
+// Extracts the primary, secondary title and icon id only to show the entries in a list
+// TODO: Deprecate after changing its use in "search_term" fn
 fn extract_entry_titles(entry: &Entry) -> (Option<String>, Option<String>) {
     let mut titles: (Option<String>, Option<String>) = (None, None);
     for kv in &entry.entry_field.get_key_values() {
@@ -1014,34 +647,6 @@ pub fn entry_summary_data(
     };
     main_content_action!(db_key, action)
 }
-
-// Deprecate - See below fn comment
-// A macro to query the db store for an entry or group by id
-macro_rules! query_main_content_by_id {
-    ($db_key:expr, $uuid:expr, $coll_name:tt) => {
-        main_content_action!(
-            $db_key,
-            (|k: &KeepassFile| match Uuid::parse_str($uuid) {
-                Ok(p_uuid) => {
-                    if let Some(g) = k.root.$coll_name(&p_uuid) {
-                        return Ok(g.clone());
-                    } else {
-                        return Err(Error::NotFound(
-                            "No entry Entry/Group found for the id".into(),
-                        ));
-                    }
-                }
-                Err(e) => Err(Error::UuidCoversionFailed(e)),
-            })
-        )
-    };
-}
-
-// Deprecate after using get_group_by_id in Mobile
-pub fn query_group_by_id(db_key: &str, group_uuid: &str) -> Result<Group> {
-    query_main_content_by_id!(db_key, group_uuid, group_by_id)
-}
-
 pub fn get_group_by_id(db_key: &str, group_uuid: &Uuid) -> Result<Group> {
     main_content_action!(db_key, move |k: &KeepassFile| {
         match k.root.group_by_id(group_uuid) {
@@ -1235,3 +840,66 @@ pub fn analyzed_password(password_options: PasswordGenerationOptions) -> Result<
 pub fn score_password(password: &str) -> PasswordScore {
     password_generator::score_password(password)
 }
+
+
+
+/*
+
+// Deprecated; Use entry_type_headers
+pub fn entry_type_names(db_key: &str) -> Result<EntryTypeNames> {
+    main_content_action!(db_key, |k: &KeepassFile| {
+        k.meta
+            .custom_entry_type_names_by_id()
+            .sort_by(|a, b| a.1.cmp(&b.1));
+        //let mut sn = standard_type_names();
+        let mut sn = standard_types_ordered_by_id()
+            .into_iter()
+            .map(|e| e.name.clone())
+            .collect::<Vec<String>>();
+        //let mut sn = standard_type_uuids_names_ordered_by_id();
+        sn.sort();
+        let type_names = EntryTypeNames {
+            custom: k
+                .meta
+                .custom_entry_type_names_by_id()
+                .into_iter()
+                .map(|(_, s)| s)
+                .collect(), //entries.sort_unstable_by(|a, b| a.title.cmp(&b.title));
+            //standard: sn.into_iter().map(|(_,s)| s).collect(),
+            standard: sn,
+        };
+        Ok(type_names)
+    })
+}
+
+
+
+// Deprecate - See below fn comment
+// A macro to query the db store for an entry or group by id
+macro_rules! query_main_content_by_id {
+    ($db_key:expr, $uuid:expr, $coll_name:tt) => {
+        main_content_action!(
+            $db_key,
+            (|k: &KeepassFile| match Uuid::parse_str($uuid) {
+                Ok(p_uuid) => {
+                    if let Some(g) = k.root.$coll_name(&p_uuid) {
+                        return Ok(g.clone());
+                    } else {
+                        return Err(Error::NotFound(
+                            "No entry Entry/Group found for the id".into(),
+                        ));
+                    }
+                }
+                Err(e) => Err(Error::UuidCoversionFailed(e)),
+            })
+        )
+    };
+}
+
+// Deprecate after using get_group_by_id in Mobile
+pub fn query_group_by_id(db_key: &str, group_uuid: &str) -> Result<Group> {
+    query_main_content_by_id!(db_key, group_uuid, group_by_id)
+}
+
+
+*/

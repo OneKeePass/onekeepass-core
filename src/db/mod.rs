@@ -655,6 +655,28 @@ pub fn write_kdbx_file(kdbx_file: &mut KdbxFile, overwrite: bool) -> Result<()> 
     Ok(())
 }
 
+// Desktop
+// Called to save the current database content to a given file
+pub fn write_kdbx_content_to_file(kdbx_file: &mut KdbxFile, full_file_name: &str) -> Result<()> {
+    // Ensure that the parent dir exists
+    if let Some(p) = Path::new(full_file_name).parent() {
+        if !p.exists() {
+            std::fs::create_dir_all(p)?;
+        }
+    }
+
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(full_file_name)?;
+
+    write_db(&mut file, kdbx_file)?;
+    file.sync_all()?;
+
+    Ok(())
+}
+
 // Called to save first to a backup file and then copied from that backup to the actual db file
 pub fn write_kdbx_file_with_backup_file(
     kdbx_file: &mut KdbxFile,
@@ -692,7 +714,7 @@ pub fn write_kdbx_file_with_backup_file(
 // obtained after decrypting the database. Useful for debugging
 // when read the database file created by other programs
 
-/// Writes the xml bytes data to a file as xml
+// Writes the xml bytes data to a file as xml
 fn write_xml_to_file(xml_file_name: &str, xml_bytes: &[u8]) -> Result<()> {
     let mut file = File::create(xml_file_name)?;
     file.write_all(xml_bytes)?;
