@@ -401,6 +401,7 @@ where
     W: Read + Write + Seek,
 {
     writer: &'a mut W,
+    // kdbx_file needs to be mutable as keys of KdbxFile etc are recomputed before writing
     kdbx_file: &'a mut KdbxFile,
 }
 

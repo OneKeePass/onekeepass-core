@@ -54,8 +54,6 @@ impl KeyStoreService for KeyStoreServiceImpl {
   }
 }
 
-
-
 pub fn init_logging() {
   let _ = env_logger::builder()
       // Include all events in tests
