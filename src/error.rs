@@ -66,6 +66,8 @@ pub enum Error {
     #[error("{0}")]
     XmlParsingFailed(#[from] quick_xml::Error),
     #[error("{0}")]
+    XmlEscapeFailed(#[from] quick_xml::escape::EscapeError),
+    #[error("{0}")]
     XmlParsingFailed023(#[from] quick_xml_023::Error),
 
     

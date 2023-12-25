@@ -1,3 +1,4 @@
+use quick_xml::escape::{self, unescape};
 use quick_xml::events::attributes::{Attribute, Attributes};
 use quick_xml::events::Event;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText};
@@ -106,6 +107,27 @@ fn skip_tag<B: BufRead>(tag: &[u8], reader: &mut QuickXmlReader<B>) -> Result<()
     let mut buf = vec![];
     reader.read_to_end_into(QName(tag), &mut buf)?;
     Ok(())
+}
+
+// Need to unescape the previously escaped `content` and replaces all xml
+// escaped characters (`&...;`) into their corresponding value.
+// quick_xml escapes any text content while writing and here we are doing reverse unescape
+// "   &quot;
+// '   &apos;
+// <   &lt;
+// >   &gt;
+// &   &amp;
+// See https://stackoverflow.com/questions/1091945/what-characters-do-i-need-to-escape-in-xml-documents
+// https://docs.rs/quick-xml/0.30.0/quick_xml/escape/fn.escape.html
+// https://docs.rs/quick-xml/0.30.0/quick_xml/events/struct.BytesText.html#method.new (escapes text content in this call)
+fn content_unescape(content: &str) -> String {
+    match unescape(&content) {
+        Ok(unescaped_content) => unescaped_content.to_string(),
+        Err(e) => {
+            error!("XML read time content unescaping failed with error {} ; Returning the original content", e);
+            content.to_string()
+        }
+    }
 }
 
 #[inline]
@@ -452,7 +474,7 @@ impl<'a> XmlReader<'a> {
                 ICON_ID => (|content:String, _,  _| group.icon_id = content_to_int(content)),
                 LAST_TOP_VISIBLE_ENTRY => (|content:String, _,  _| group.last_top_visible_group = content_to_uuid(&content)),
                 IS_EXPANDED => (|content:String, _,  _| group.is_expanded = content_to_bool(content)),
-                NOTES => (|content:String, _,  _| group.notes = content),
+                NOTES => (|content:String, _,  _| group.notes = content_unescape(&content)),
                 TAGS => (|content:String, _,  _| group.tags = content),
                 ENABLE_AUTO_TYPE => (|content:String, _,  _| {
                     if content.trim().to_lowercase() == "null" {
@@ -584,23 +606,28 @@ impl<'a> XmlReader<'a> {
             start_tag_fns {
                 KEY =>
                 (|content:String, _attributes, _cipher| {
-                    kv.key = content;
+                    // Xml tag 'Key' may have a text content with escaped charaters that are to be unescaped
+                    kv.key = content_unescape(&content);
                 }),
                 VALUE =>
                 (|content:String, attributes:&mut Attributes, cipher:&mut Option<ProtectedContentStreamCipher>| {
+                        // Xml tag 'Value' may have a text content with escaped charaters that are to be unescaped
+                        //println!("KV:Value content is {}",&content);
+
                         kv.protected = is_value_protected(attributes);
                         //debug!("Key Value content is key:{}, value:{},protected:{}",&kv.key,&content,&kv.protected);
                         if kv.protected {
+                            // Will there be a situation where field is protected and no cipher is used?
                             if let Some(ref mut cip) = cipher {
                                 if let Ok(v) = cip.process_basic64_str(&content) {
                                     kv.value = v;
                                 }
                             } else {
-                                kv.value = content;
+                                kv.value = content_unescape(&content);
                             }
                         }
                         else {
-                                kv.value = content;
+                                kv.value = content_unescape(&content);
                         }
                     }
                 )
@@ -786,6 +813,8 @@ macro_rules! write_tags {
                 $self.writer.write_event(Event::Empty(BytesStart::new(name_of_tag)))?;
             } else {
                 $self.writer.write_event(Event::Start(BytesStart::new(name_of_tag)))?;
+                // Creates a new BytesText from a string. The string is expected not to be escaped
+                // quick_xml escapes the text content internally
                 $self.writer.write_event(Event::Text(BytesText::new(val)))?;
                 $self.writer.write_event(Event::End(BytesEnd::new(name_of_tag)))?;
             }
@@ -1436,6 +1465,19 @@ mod tests {
         path.push(name);
         //println!("The current directory is {}", path.display());
         path
+    }
+
+    #[test]
+    fn escape_test() {
+        let s = "asddaads\nKim's idea";
+        let es = quick_xml::escape::escape(s);
+        println!("escaped {:?}", es);
+
+        let ues = quick_xml::escape::unescape(&es);
+        println!("unescaped {:?}", ues);
+
+        let s2 = "My name&amp;apos;s none ddd\n\nThe name’s of nature….  Boy’s name\n\n";
+        println!("unescaped {:?}", quick_xml::escape::unescape(s2));
     }
 
     #[test]
