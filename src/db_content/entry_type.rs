@@ -107,11 +107,11 @@ pub enum VersionedEntryType {
     RmpListV1(Vec<EntryTypeV1>),
     //RmpV2(EntryTypeV2),
 }
-trait EntryDserializer<T> {
+trait EntryDeserializer<T> {
     fn from_encoded(data: &str) -> T;
 }
 
-impl EntryDserializer<EntryType> for VersionedEntryType {
+impl EntryDeserializer<EntryType> for VersionedEntryType {
     fn from_encoded(base64_str: &str) -> EntryType {
         match VersionedEntryType::deserialize_data(base64_str) {
             Ok(vet) => {
@@ -132,7 +132,7 @@ impl EntryDserializer<EntryType> for VersionedEntryType {
     }
 }
 
-impl EntryDserializer<HashMap<Uuid, EntryType>> for VersionedEntryType {
+impl EntryDeserializer<HashMap<Uuid, EntryType>> for VersionedEntryType {
     fn from_encoded(base64_str: &str) -> HashMap<Uuid, EntryType> {
         match VersionedEntryType::deserialize_data(base64_str) {
             Ok(vet) => match vet {
@@ -150,7 +150,7 @@ impl EntryDserializer<HashMap<Uuid, EntryType>> for VersionedEntryType {
     }
 }
 
-impl EntryDserializer<Vec<EntryType>> for VersionedEntryType {
+impl EntryDeserializer<Vec<EntryType>> for VersionedEntryType {
     fn from_encoded(base64_str: &str) -> Vec<EntryType> {
         match VersionedEntryType::deserialize_data(base64_str) {
             Ok(vet) => match vet {
