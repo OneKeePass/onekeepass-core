@@ -1471,13 +1471,22 @@ mod tests {
     fn escape_test() {
         let s = "asddaads\nKim's idea";
         let es = quick_xml::escape::escape(s);
-        println!("escaped {:?}", es);
+        //println!("escaped {:?}", es);
+        assert_eq!(es,"asddaads\nKim&apos;s idea");
 
         let ues = quick_xml::escape::unescape(&es);
-        println!("unescaped {:?}", ues);
+        //println!("unescaped {:?}", ues);
+        assert!(ues.is_ok());
+        assert_eq!(ues.unwrap(),"asddaads\nKim's idea");
 
-        let s2 = "My name&amp;apos;s none ddd\n\nThe name’s of nature….  Boy’s name\n\n";
-        println!("unescaped {:?}", quick_xml::escape::unescape(s2));
+        // Here unicode U+2019 ’ is used and that is not escaped
+        let es2 = "My name&amp;apos;s none ddd\n\nThe name’s of nature….  Boy’s name\n\n";
+        let ues2 = quick_xml::escape::unescape(es2);
+        //println!("unescaped {:?}", ues2);
+        assert!(ues2.is_ok());
+        // &amp;apos;s on unescape &apos;s 
+        // Only &amp;  -> &
+        assert_eq!(ues2.unwrap(),"My name&apos;s none ddd\n\nThe name’s of nature….  Boy’s name\n\n");
     }
 
     #[test]
