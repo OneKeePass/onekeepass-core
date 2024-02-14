@@ -1468,7 +1468,7 @@ mod tests {
     }
 
     #[test]
-    fn escape_test() {
+    fn verify_escape_unescape() {
         let s = "asddaads\nKim's idea";
         let es = quick_xml::escape::escape(s);
         //println!("escaped {:?}", es);
