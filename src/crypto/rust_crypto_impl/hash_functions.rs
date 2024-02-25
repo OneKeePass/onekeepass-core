@@ -16,12 +16,6 @@ pub fn verify_hmac_sha256(key: &[u8], data: &[&[u8]], test_hash: &[u8]) -> Resul
     }
     let r = mac.verify_slice(test_hash).map_err(|_| Error::DataError).is_ok();
 
-    // println!("Key is {:?}",key);
-    // println!("data {:?}", data);
-    // //println!("Test hash {:?} ",test_hash);
-    // let calculated = hmac_sha256_from_slices(key,data);
-    // println!("Test hash {:?} and calculated hash {:?}",test_hash,calculated);
-
     Ok(r)
 }
 
@@ -87,13 +81,6 @@ pub fn calculate_hash(data: &Vec<Vec<u8>>) -> Result<Vec<u8>> {
     let result = hasher.finalize();
     Ok(result.to_vec())
 }
-
-// #[allow(dead_code)]
-// pub fn do_vec_sha256_hash(data: Vec<u8>) -> Result<GenericArray<u8, U32>> {
-//     let mut hasher = Sha256::new();
-//     hasher.update(data);
-//     Ok(hasher.finalize())
-// }
 
 //32 bytes hash output
 pub fn sha256_hash_vec_vecs(data: &Vec<&Vec<u8>>) -> Result<Vec<u8>> {

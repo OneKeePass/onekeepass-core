@@ -3,7 +3,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::{crypto::{hmac_sha1_from_slice, hmac_sha256_from_slice, hmac_sha512_from_slice, print_crypto_lib_info}, error::{Error, Result}};
+use crate::{
+    crypto::{
+        hmac_sha1_from_slice, hmac_sha256_from_slice, hmac_sha512_from_slice, print_crypto_lib_info,
+    },
+    error::{Error, Result},
+};
 
 use data_encoding::BASE32_NOPAD;
 use url::Url;
@@ -19,9 +24,17 @@ pub enum OtpAlgorithm {
 pub(crate) struct OtpData {
     // non-encoded value
     // Any base32 encoded incoming value needs to be decoded
-    pub(crate) decoded_secret: Vec<u8>, 
+    pub(crate) decoded_secret: Vec<u8>,
+    // Duration in seconds of a period or a step.
+    // The recommended value per [rfc-6238](https://tools.ietf.org/html/rfc6238#section-5.2) is 30 seconds
     pub(crate) period: u64,
+    // The number of digits composing the auth code.
+    // Per [rfc-4226](https://tools.ietf.org/html/rfc4226#section-5.3), this may be between 6 and 8 digits
     pub(crate) digits: usize,
+    // Number of steps allowed as network delay. 1 would mean one step before current step and one step after are valids.
+    // The recommended value per [rfc-6238](https://tools.ietf.org/html/rfc6238#section-5.2) is 1.
+    pub(crate) skew: u8,
+    // SHA-1 is the most widespread algorithm used
     pub(crate) algorithm: OtpAlgorithm,
     pub(crate) issuer: Option<String>,
     pub(crate) account_name: Option<String>,
@@ -60,18 +73,66 @@ impl OtpAlgorithm {
 }
 
 impl OtpData {
-    pub fn new(secret: &str) -> Result<OtpData> {
+    pub fn new(
+        algorithm: OtpAlgorithm,
+        // expects a base32 encoded string as secret key and will be decoded
+        encoded_secret: &str,
+        digits: usize,
+        period: u64,
+        issuer: Option<String>,
+        account_name: Option<String>,
+    ) -> Result<OtpData> {
         Ok(OtpData {
-            decoded_secret: BASE32_NOPAD.decode(secret.as_bytes())?,
+            decoded_secret: BASE32_NOPAD.decode(encoded_secret.as_bytes())?,
+            period,
+            digits,
+            skew: 1,
+            algorithm,
+            issuer,
+            account_name,
+        })
+    }
+
+    pub fn from_key(encoded_secret: &str) -> Result<OtpData> {
+        Ok(OtpData {
+            decoded_secret: BASE32_NOPAD.decode(encoded_secret.as_bytes())?,
             period: 30,
             digits: 6,
+            skew: 1,
             algorithm: OtpAlgorithm::SHA1,
             issuer: None,
             account_name: None,
         })
     }
 
-    pub fn try_from_url(otp_url: &str) -> Result<OtpData> {
+    pub fn from_key_digits(encoded_secret: &str, digits: usize) -> Result<OtpData> {
+        Ok(OtpData {
+            decoded_secret: BASE32_NOPAD.decode(encoded_secret.as_bytes())?,
+            period: 30,
+            digits: digits,
+            skew: 1,
+            algorithm: OtpAlgorithm::SHA1,
+            issuer: None,
+            account_name: None,
+        })
+    }
+
+    pub fn with_digits(&mut self, digits: usize) -> &mut Self {
+        self.digits = digits;
+        self
+    }
+
+    pub fn with_period(&mut self, period: u64) -> &mut Self {
+        self.period = period;
+        self
+    }
+
+    pub fn with_algorithm(&mut self, algorithm: OtpAlgorithm) -> &mut Self {
+        self.algorithm = algorithm;
+        self
+    }
+
+    pub fn from_url(otp_url: &str) -> Result<OtpData> {
         let mut algorithm = OtpAlgorithm::SHA1;
         let mut digits = 6;
         let mut period = 30;
@@ -151,11 +212,16 @@ impl OtpData {
             }
         }
 
+        if secret.is_empty() {
+            return Err(Error::OtpUrlParseError("Key value cannot be empty".into()));
+        }
+
         Ok(OtpData {
             algorithm,
             decoded_secret: secret,
             period,
             digits,
+            skew: 1,
             issuer,
             account_name,
         })
@@ -247,16 +313,276 @@ impl OtpData {
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::HashMap, time::SystemTime};
+
+    use data_encoding::BASE32_NOPAD;
+
     use super::OtpData;
     use crate::{crypto::init_log_lib_info, db_content::otp::OtpAlgorithm};
 
+    struct V1 {
+        ascii_key: String,
+        encoded_key: String,
+        time: u64,
+        token: String,
+    }
+
+    impl V1 {
+        fn new(ascii_key: &str, time: u64, token: &str) -> Self {
+            Self {
+                ascii_key: ascii_key.to_string(),
+                encoded_key: BASE32_NOPAD.encode(ascii_key.as_bytes()),
+                time,
+                token: token.to_string(),
+            }
+        }
+    }
+
+    // Refer
+    // https://datatracker.ietf.org/doc/html/rfc6238#appendix-B (Appendix B.  Test Vectors)
+    // https://github.com/pyauth/pyotp/blob/develop/test.py
+
+    // encoded value GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ
+    static TEST_KEY_SHA1: &str = "12345678901234567890";
+
+    // encoded value GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA
+    static TEST_KEY_SHA256: &str = "12345678901234567890123456789012";
+
+    // encoded value GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA
+    static TEST_KEY_SHA512: &str =
+        "1234567890123456789012345678901234567890123456789012345678901234";
+
+    fn test_rfc_values() -> HashMap<String, Vec<V1>> {
+        let m: HashMap<String, Vec<V1>> = HashMap::from([
+            (
+                "SHA1".into(),
+                vec![
+                    V1::new(TEST_KEY_SHA1, 59, "94287082"),
+                    V1::new(TEST_KEY_SHA1, 1111111109, "07081804"),
+                    V1::new(TEST_KEY_SHA1, 1111111111, "14050471"),
+                    V1::new(TEST_KEY_SHA1, 2000000000, "69279037"),
+                    V1::new(TEST_KEY_SHA1, 20000000000, "65353130"),
+                ],
+            ),
+            (
+                "SHA256".into(),
+                vec![
+                    V1::new(TEST_KEY_SHA256, 59, "46119246"),
+                    V1::new(TEST_KEY_SHA256, 1111111109, "68084774"),
+                    V1::new(TEST_KEY_SHA256, 1111111111, "67062674"),
+                    V1::new(TEST_KEY_SHA256, 1234567890, "91819424"),
+                    V1::new(TEST_KEY_SHA256, 2000000000, "90698825"),
+                    V1::new(TEST_KEY_SHA256, 20000000000, "77737706"),
+                ],
+            ),
+            (
+                "SHA512".into(),
+                vec![
+                    V1::new(TEST_KEY_SHA512, 59, "90693936"),
+                    V1::new(TEST_KEY_SHA512, 1111111109, "25091201"),
+                    V1::new(TEST_KEY_SHA512, 1111111111, "99943326"),
+                    V1::new(TEST_KEY_SHA512, 1234567890, "93441116"),
+                    V1::new(TEST_KEY_SHA512, 2000000000, "38618901"),
+                    V1::new(TEST_KEY_SHA512, 20000000000, "47863826"),
+                ],
+            ),
+        ]);
+
+        m
+    }
 
     #[test]
-    fn verify_totp_59_sec() {
+    fn verify_totp_sha1_with_test_vectors() {
+        let data = test_rfc_values();
+
+        for v in data.get("SHA1").unwrap().iter().into_iter() {
+            let od = OtpData::new(OtpAlgorithm::SHA1, &v.encoded_key, 8, 30, None, None).unwrap();
+            assert_eq!(
+                od.generate(v.time).unwrap(),
+                v.token,
+                "Failed test case time {}, ascii_key {} ",
+                v.time,
+                v.ascii_key
+            );
+        }
+    }
+
+    #[test]
+    fn verify_totp_sha256_with_test_vectors() {
+        let data = test_rfc_values();
+
+        for v in data.get("SHA256").unwrap().iter().into_iter() {
+            let od = OtpData::new(OtpAlgorithm::SHA256, &v.encoded_key, 8, 30, None, None).unwrap();
+            assert_eq!(
+                od.generate(v.time).unwrap(),
+                v.token,
+                "Failed test case time {}, ascii_key {} ",
+                v.time,
+                v.ascii_key
+            );
+        }
+    }
+
+    #[test]
+    fn verify_totp_sha512_with_test_vectors() {
+        let data = test_rfc_values();
+
+        for v in data.get("SHA512").unwrap().iter().into_iter() {
+            let od = OtpData::new(OtpAlgorithm::SHA512, &v.encoded_key, 8, 30, None, None).unwrap();
+            assert_eq!(
+                od.generate(v.time).unwrap(),
+                v.token,
+                "Failed test case time {}, ascii_key {} ",
+                v.time,
+                v.ascii_key
+            );
+        }
+    }
+
+    #[test]
+    fn from_url_err() {
+        // HOTP is not supported
+        let r = OtpData::from_url("otpauth://hotp/123");
+        if r.is_err() {
+            println!("Error is {:?}", r);
+        }
+        assert!(r.is_err());
+
+        // Shared Key cannot be empty
+        let r = OtpData::from_url("otpauth://totp/GitHub:test");
+        if r.is_err() {
+            println!("Error is {:?}", r);
+        }
+        assert!(r.is_err());
+
+        // secret decoding error
+        let r = OtpData::from_url(
+            "otpauth://totp/GitHub:test:?secret=ABC&digits=8&period=60&algorithm=SHA256",
+        );
+
+        if r.is_err() {
+            println!("Error is {:?}", r);
+        }
+        assert!(r.is_err());
+
+        // Issuer mismatch error
+        let r = OtpData::from_url("otpauth://totp/Github:john.doe%40github.com?issuer=GitHub&secret=KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ&digits=6&algorithm=SHA1");
+        if r.is_err() {
+            println!("Error is {:?}", r);
+        }
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn url_for_secret_matches_sha1_without_issuer() {
+        // "KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ" is the base32 encoded value
+        // derived from the bytes of "TestSecretSuperSecret"
+        let totp = OtpData::new(
+            OtpAlgorithm::SHA1,
+            "KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ",
+            6,
+            30,
+            None,
+            Some("john.doe@github.com".to_string()),
+        )
+        .unwrap();
+        let url = totp.get_url();
+        assert_eq!(
+            url.as_str(),
+            "otpauth://totp/john.doe%40github.com?secret=KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ"
+        );
+    }
+
+    #[test]
+    fn url_for_secret_matches_sha1() {
+        let totp = OtpData::new(
+            OtpAlgorithm::SHA1,
+            "KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ",
+            6,
+            30,
+            Some("Github".to_string()),
+            Some("john.doe@github.com".to_string()),
+        )
+        .unwrap();
+        let url = totp.get_url();
+        assert_eq!(url.as_str(), "otpauth://totp/Github:john.doe%40github.com?secret=KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ&issuer=Github");
+    }
+
+    #[test]
+    fn url_for_secret_matches_sha256() {
+        let totp = OtpData::new(
+            OtpAlgorithm::SHA256,
+            "KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ",
+            6,
+            30,
+            Some("Github".to_string()),
+            Some("john.doe@github.com".to_string()),
+        )
+        .unwrap();
+        let url = totp.get_url();
+        assert_eq!(url.as_str(), "otpauth://totp/Github:john.doe%40github.com?secret=KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ&algorithm=SHA256&issuer=Github");
+    }
+
+    #[test]
+    fn url_for_secret_matches_sha512() {
+        let totp = OtpData::new(
+            OtpAlgorithm::SHA512,
+            "KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ",
+            6,
+            30,
+            Some("Github".to_string()),
+            Some("john.doe@github.com".to_string()),
+        )
+        .unwrap();
+        let url = totp.get_url();
+        assert_eq!(url.as_str(), "otpauth://totp/Github:john.doe%40github.com?secret=KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ&algorithm=SHA512&issuer=Github");
+    }
+
+    #[test]
+    fn from_url_to_url() {
+        let totp = OtpData::from_url("otpauth://totp/Github:john.doe%40github.com?issuer=Github&secret=KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ&digits=6&algorithm=SHA1").unwrap();
+        let totp_bis = OtpData::new(
+            OtpAlgorithm::SHA1,
+            "KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ",
+            6,
+            30,
+            Some("Github".to_string()),
+            Some("john.doe@github.com".to_string()),
+        )
+        .unwrap();
+        assert_eq!(totp.get_url(), totp_bis.get_url());
+    }
+
+    #[test]
+    fn generate_token_current() {
+        let totp = OtpData::new(
+            OtpAlgorithm::SHA1,
+            "KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ",
+            6,
+            1,
+            None,
+            None,
+        )
+        .unwrap();
+        let time = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert_eq!(
+            totp.generate(time).unwrap().as_str(),
+            totp.generate_current().unwrap()
+        );
+    }
+
+    ///////////
+    #[test]
+    fn verify1_totp_59_sec() {
         let key = data_encoding::BASE32_NOPAD.encode("12345678901234567890".as_bytes());
         // Encoded key is GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ
         println!("Encoded key is {}", key);
-        let mut od = OtpData::new(key.as_str()).unwrap();
+        let dk = data_encoding::BASE32_NOPAD.decode(key.as_bytes()).unwrap();
+        println!("Decoded key is {:?}", String::from_utf8(dk));
+        let mut od = OtpData::from_key(key.as_str()).unwrap();
         od.digits = 8;
         println!(
             "od generate  is {:?} with ttl {:?}",
@@ -265,7 +591,8 @@ mod tests {
         );
 
         let key = data_encoding::BASE32_NOPAD.encode("12345678901234567890123456789012".as_bytes());
-        let mut od = OtpData::new(key.as_str()).unwrap();
+        println!("Encoded key is {}", key);
+        let mut od = OtpData::from_key(key.as_str()).unwrap();
         od.digits = 8;
         od.algorithm = OtpAlgorithm::SHA256;
         println!(
@@ -274,8 +601,9 @@ mod tests {
             od.ttl()
         );
 
-        let key = data_encoding::BASE32_NOPAD.encode("1234567890123456789012345678901234567890123456789012345678901234".as_bytes());
-        let mut od = OtpData::new(key.as_str()).unwrap();
+        let key = data_encoding::BASE32_NOPAD
+            .encode("1234567890123456789012345678901234567890123456789012345678901234".as_bytes());
+        let mut od = OtpData::from_key(key.as_str()).unwrap();
         od.digits = 8;
         od.algorithm = OtpAlgorithm::SHA512;
         println!(
@@ -288,7 +616,7 @@ mod tests {
     #[test]
     fn verify_totp_1111111109_sec() {
         let key = data_encoding::BASE32_NOPAD.encode("12345678901234567890".as_bytes());
-        let mut od = OtpData::new(key.as_str()).unwrap();
+        let mut od = OtpData::from_key(key.as_str()).unwrap();
         od.digits = 8;
         od.algorithm = OtpAlgorithm::SHA1;
         println!(
@@ -296,16 +624,15 @@ mod tests {
             od.generate(1111111109),
             od.ttl()
         );
-        
+
         // Encoded key is GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ
         // od.get_secret_base32() is GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ
         println!("Key is {}", od.get_secret_base32());
     }
 
-
     #[test]
     fn verify_otp1() {
-        let od = OtpData::new("BASE32SECRET3232").unwrap();
+        let od = OtpData::from_key("BASE32SECRET3232").unwrap();
         println!("Od is {:?}", od);
 
         println!(
@@ -388,7 +715,7 @@ mod tests {
             }
         }
     }
-    
+
 
 */
 
