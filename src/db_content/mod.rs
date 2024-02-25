@@ -6,6 +6,7 @@ mod keepass;
 mod meta;
 mod root;
 mod standard_entry_types;
+mod otp;
 
 
 pub(crate) use self::custom_data::{CustomData, Item};
@@ -21,6 +22,8 @@ pub use self::root::{ AllTags, GroupVisitor, Root};
 pub use self::standard_entry_types::{
     standard_type_uuids_names_ordered_by_id, standard_types_ordered_by_id,
 };
+
+
 
 use chrono::NaiveDateTime;
 

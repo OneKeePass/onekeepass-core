@@ -89,7 +89,7 @@ impl FileKey {
                 debug!(
                     "Key file is not xml based one and calculating the hash of content of the file"
                 );
-                crypto::do_slice_sha256_hash(&buf)?
+                crypto::sha256_hash_from_slice(&buf)?
             }
 
             Err(e) => return Err(e),
@@ -123,7 +123,7 @@ impl KeyFileData {
             //     .collect::<Vec<_>>()
             //     .join("");
             let data_vec = hex::decode(&data)?;
-            let d = crypto::do_slice_sha256_hash(&data_vec)?;
+            let d = crypto::sha256_hash_from_slice(&data_vec)?;
             let h = hex::decode(hash)?;
             // First 4 bytes of hash of the decoded key data should match the checksum hash bytes
             if &d[..4] != &h {
@@ -140,7 +140,7 @@ impl KeyFileData {
 
     pub fn generate_key_data() -> Result<Self> {
         let data_vec = crypto::get_random_bytes::<32>();
-        let data_vec_hash = crypto::do_slice_sha256_hash(&data_vec)?;
+        let data_vec_hash = crypto::sha256_hash_from_slice(&data_vec)?;
         let check_sum_hash = hex::encode_upper(&data_vec_hash[..4]);
         //let check_sum_hash =
         let data_hex = hex::encode_upper(&data_vec);

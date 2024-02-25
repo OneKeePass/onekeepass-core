@@ -129,7 +129,8 @@ impl EntryField {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+//#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Entry {
     pub(crate) uuid: Uuid,
     //The parent group uuid to refer back the group if required
@@ -143,7 +144,7 @@ pub struct Entry {
     pub custom_data: CustomData,
     pub auto_type: AutoType,
     pub history: History,
-    #[serde(skip)]
+    //#[serde(skip)]
     pub(crate) meta_share: Arc<MetaShare>,
 }
 
@@ -759,7 +760,8 @@ pub struct Association {
     pub(crate) key_stroke_sequence: Option<String>,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone)]
+//#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct History {
     //History has a list of previous entries
     pub(crate) entries: Vec<Entry>,

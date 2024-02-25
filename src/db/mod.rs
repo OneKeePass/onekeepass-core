@@ -187,24 +187,24 @@ impl SecuredDatabaseKeys {
         let (p, f, c) = match (password, file_key) {
             (Some(p), Some(f)) => {
                 // Final hash is sha256(sha256(password) + keyfile_content)
-                let phash = crypto::do_slice_sha256_hash(p.as_bytes())?;
+                let phash = crypto::sha256_hash_from_slice(p.as_bytes())?;
                 let fhash = f.content_hash();
                 let data = vec![&phash, &fhash];
-                let final_hash = crypto::do_vecs_sha256_hash(&data)?;
+                let final_hash = crypto::sha256_hash_vec_vecs(&data)?;
 
                 (Some(phash), Some(fhash), final_hash)
             }
             (Some(p), None) => {
                 // Final hash is sha256(sha256(password))
-                let phash = crypto::do_slice_sha256_hash(p.as_bytes())?;
-                let final_hash = crypto::do_slice_sha256_hash(phash.as_ref())?;
+                let phash = crypto::sha256_hash_from_slice(p.as_bytes())?;
+                let final_hash = crypto::sha256_hash_from_slice(phash.as_ref())?;
 
                 (Some(phash), None, final_hash)
             }
             (None, Some(f)) => {
                 // Final hash is sha256(keyfile_content)
                 let fhash = f.content_hash();
-                let final_hash = crypto::do_slice_sha256_hash(&fhash)?;
+                let final_hash = crypto::sha256_hash_from_slice(&fhash)?;
 
                 (None, Some(fhash), final_hash)
             }
@@ -259,13 +259,13 @@ impl SecuredDatabaseKeys {
         // 1 byte with value 1 added as suffix
         let suffix = vec![1u8; 1];
         self.hmac_part_key =
-            crypto::do_sha512_hash(&[master_seed, &self.transformed_key, &suffix])?;
+            crypto::sha512_hash_from_slice_vecs(&[master_seed, &self.transformed_key, &suffix])?;
 
         // 8 bytes of value 255 prefixed (value 255 repeated 8 times) ; -1 in i8
         let prefix = vec![255u8; 8];
 
-        self.hmac_key = crypto::do_sha512_hash(&[&prefix, &self.hmac_part_key])?;
-        self.master_key = crypto::do_sha256_hash(&[master_seed, &self.transformed_key])?;
+        self.hmac_key = crypto::sha512_hash_from_slice_vecs(&[&prefix, &self.hmac_part_key])?;
+        self.master_key = crypto::sha256_hash_from_slice_vecs(&[master_seed, &self.transformed_key])?;
 
         Ok(())
     }
@@ -340,19 +340,19 @@ impl SecuredDatabaseKeys {
     ) -> Result<bool> {
         let chash = match (password, file_key) {
             (Some(p), Some(f)) => {
-                let phash = crypto::do_slice_sha256_hash(p.as_bytes())?;
+                let phash = crypto::sha256_hash_from_slice(p.as_bytes())?;
                 let fhash = f.content_hash();
                 let data = vec![&phash, &fhash];
-                let final_hash = crypto::do_vecs_sha256_hash(&data)?;
+                let final_hash = crypto::sha256_hash_vec_vecs(&data)?;
                 final_hash
             }
             (Some(p), None) => {
-                let phash = crypto::do_slice_sha256_hash(p.as_bytes())?;
-                crypto::do_slice_sha256_hash(&phash)?
+                let phash = crypto::sha256_hash_from_slice(p.as_bytes())?;
+                crypto::sha256_hash_from_slice(&phash)?
             }
             (None, Some(f)) => {
                 let fhash = f.content_hash();
-                crypto::do_slice_sha256_hash(&fhash)?
+                crypto::sha256_hash_from_slice(&fhash)?
             }
             (None, None) => {
                 return Err(error::Error::InSufficientCredentials);
@@ -369,23 +369,23 @@ impl SecuredDatabaseKeys {
         let (pw_hash, chash) = match (password, &self.key_file_data_hash) {
             (Some(p), Some(key_file_hash)) => {
                 // User changed the password, but retained the current key file
-                let phash = crypto::do_slice_sha256_hash(p.as_bytes())?;
+                let phash = crypto::sha256_hash_from_slice(p.as_bytes())?;
                 // Need to get the previous key file hash
                 let fhash = self.decrypt_key(db_key, key_file_hash)?;
                 let data = vec![&phash, &fhash];
-                let final_hash = crypto::do_vecs_sha256_hash(&data)?;
+                let final_hash = crypto::sha256_hash_vec_vecs(&data)?;
                 (Some(phash), final_hash)
             }
             (Some(p), None) => {
                 // User changed the password and currently no key file is used
-                let phash = crypto::do_slice_sha256_hash(p.as_bytes())?;
-                let final_hash = crypto::do_slice_sha256_hash(&phash)?;
+                let phash = crypto::sha256_hash_from_slice(p.as_bytes())?;
+                let final_hash = crypto::sha256_hash_from_slice(&phash)?;
                 (Some(phash), final_hash)
             }
             (None, Some(key_file_hash)) => {
                 // User has removed the use of password and only the currently used key file is kept
                 let fhash = self.decrypt_key(db_key, key_file_hash)?;
-                let final_hash = crypto::do_slice_sha256_hash(&fhash)?;
+                let final_hash = crypto::sha256_hash_from_slice(&fhash)?;
                 (None, final_hash)
             }
 
@@ -418,19 +418,19 @@ impl SecuredDatabaseKeys {
                 let phash = self.decrypt_key(db_key, p)?;
                 // phash is already the sha256_hash of original password str
                 let data = vec![&phash, &file_hash];
-                let chash = crypto::do_vecs_sha256_hash(&data)?;
+                let chash = crypto::sha256_hash_vec_vecs(&data)?;
                 (Some(file_hash), chash)
             }
             (Some(p), None) => {
                 // User removed the use of key file
                 let phash = self.decrypt_key(db_key, p)?;
-                let chash = crypto::do_slice_sha256_hash(&phash)?;
+                let chash = crypto::sha256_hash_from_slice(&phash)?;
                 (None, chash)
             }
             (None, Some(file_key)) => {
                 // User changed the key file and no password is used as before
                 let file_hash = file_key.content_hash();
-                let chash = crypto::do_slice_sha256_hash(&file_hash)?;
+                let chash = crypto::sha256_hash_from_slice(&file_hash)?;
                 (Some(file_hash), chash)
             }
             (None, None) => {
@@ -590,7 +590,7 @@ pub fn calculate_db_file_checksum<R: Read + Seek>(reader: &mut R) -> Result<Vec<
     // read up to 1000 bytes
 
     let _n = reader.read(&mut buffer[..])?;
-    let cs = crypto::do_slice_sha256_hash(&buffer);
+    let cs = crypto::sha256_hash_from_slice(&buffer);
 
     reader.seek(SeekFrom::Start(pos))?;
     Ok(cs?.to_vec())

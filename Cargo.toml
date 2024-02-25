@@ -1,6 +1,6 @@
 [package]
 name = "onekeepass-core"
-version = "0.12.0"
+version = "0.13.0"
 authors = ["jeyasankar"]
 edition = "2021"
 
@@ -8,8 +8,10 @@ edition = "2021"
 argon2-sys = "0.1.0"
 
 # RustCrypto https://github.com/RustCrypto
-sha2 = "0.9.5"
-hmac = "0.11.0"
+sha1 = "0.10.6"
+sha2 = "0.10.8"
+hmac = "0.12.1"
+
 aes = "0.7.4"
 block-modes = "0.8.1" 
 chacha20 = "0.7.1"
@@ -20,7 +22,12 @@ rand_chacha = "0.3.1"
 
 secstr = "0.5.1"
 
+data-encoding = "2.5.0"
+## TODO: Replace base64 with data-encoding crate
 base64 = "0.21.4"
+url = "2.5.0"
+urlencoding = "2.1.3"
+
 uuid = { version = "0.8.2", features = ["serde", "v4"] }
 chrono =  {version = "0.4.23", features = ["serde"]}
 chrono-tz = "0.8.1"
@@ -32,21 +39,18 @@ log = "0.4.17"
 hex-literal = "0.3.1"
 hex = "0.4.3"
 once_cell = "1.18.0"
-thiserror = "1.0.31"
+thiserror = "1.0.57"
 regex = "1.7.1"
 lazy_static = "1.4.0"
 
-quick-xml = "0.30.0"
-
-## To be removed in the next release
-quick_xml_023 = { package = "quick-xml", version = "0.23.0" }
-
 serde = { version = "1.0.137", features = [ "derive" ]}
 serde_json = "1.0.81"
-
 rmp-serde = "1.1.0" 
-
 cfg-if = "1.0"
+
+quick-xml = "0.30.0"
+## To be removed in the next release
+quick_xml_023 = { package = "quick-xml", version = "0.23.0" }
 
 [target."cfg(any(target_os = \"linux\", target_os = \"macos\", target_os = \"windows\"))".dependencies]
 botan = {version = "0.10.7", features = ["vendored"] }
@@ -65,7 +69,9 @@ features = ["common-password"]
 [dev-dependencies]
 env_logger = "0.8.4"
 mockall = "0.10.2"
-rstest = "0.11.0"
+rstest = "0.18.1"
+
+#totp-rs = "5.5.1"
 
 #alkali = { version = "0.3.0", features = ["aes","hazmat"] }
 

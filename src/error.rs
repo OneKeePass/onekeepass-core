@@ -70,6 +70,14 @@ pub enum Error {
     #[error("{0}")]
     XmlParsingFailed023(#[from] quick_xml_023::Error),
 
+    #[error("{0}")]
+    SystemTimeError(#[from] std::time::SystemTimeError),
+
+    #[error("{0}")]
+    UrlParseError(#[from] url::ParseError),
+
+    #[error("{0}")]
+    OtpUrlParseError(String),
     
     #[cfg(any(
         target_os = "macos",
@@ -89,6 +97,8 @@ pub enum Error {
     #[error("{0}")]
     Utf8Error(#[from] std::str::Utf8Error),
     #[error("{0}")]
+    FromUtf8Error(#[from] std::string::FromUtf8Error),
+    #[error("{0}")]
     RegexError(#[from] ReError),
 
     #[error("{0}")]
@@ -97,8 +107,12 @@ pub enum Error {
     #[error("{0}")]
     RmpDecodeError(#[from] rmp_serde::decode::Error),
 
+    // To be removed
     #[error("{0}")]
     Base64DecodeError(#[from] base64::DecodeError),
+
+    #[error("{0}")]
+    DataEncodingDecodeError(#[from] data_encoding::DecodeError),
 
     #[error("CustomEntryTypeInUse")]
     CustomEntryTypeInUse,

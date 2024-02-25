@@ -10,9 +10,10 @@ use chrono::{
 use uuid::Uuid;
 
 //use crate::result::{Result};
-use crate::{constants::EMPTY_STR, error::Error};
 use crate::error::Result;
+use crate::{constants::EMPTY_STR, error::Error};
 
+// TODO: Need to use data_encoding::BASE64 for encoding and decoding
 use base64::{engine::general_purpose, Engine as _};
 
 pub fn base64_decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>> {
@@ -38,7 +39,7 @@ pub fn encode_uuid(uuid: &Uuid) -> String {
 }
 
 // The .NET epoch is 0001-01-01T00:00:00, which is better known as DateTime.MinValue
-// This is the epoch (starting point of time) used in KeePass as reference 
+// This is the epoch (starting point of time) used in KeePass as reference
 // We need to calculate seconds with reference to this point
 fn datetime_epoch() -> NaiveDateTime {
     NaiveDate::from_ymd_opt(1, 1, 1)
@@ -309,10 +310,22 @@ pub fn sub_strings(string: &str, sub_len: usize) -> Vec<&str> {
 
 #[inline]
 pub fn parse_attachment_hash(data_hash_str: &str) -> Result<u64> {
-    let data_hash = data_hash_str.parse::<u64>().map_err(|e| {
-        Error::Other(format!("Data hash str to u64 conversion failed - {} ", e))
-    })?;
+    let data_hash = data_hash_str
+        .parse::<u64>()
+        .map_err(|e| Error::Other(format!("Data hash str to u64 conversion failed - {} ", e)))?;
     Ok(data_hash)
+}
+
+// To see logging output during unit testing
+#[test]
+pub fn init_test_logging() {
+    let _ = env_logger::builder()
+        // Include all events in tests
+        .filter_level(log::LevelFilter::max())
+        // Ensure events are captured by `cargo test`
+        .is_test(true)
+        // Ignore errors initializing the logger if tests race to configure it
+        .try_init();
 }
 
 // const TAGS_SEPARATORS: [char; 2] = [';', ','];
@@ -368,6 +381,21 @@ mod tests {
     }
 
     #[test]
+    fn decode_uuid_sample_b64str_1() {
+        use data_encoding::BASE64;
+
+        let b64_str = "3aBY+AcLQmiPas0vjK2zng==";
+        let decoded = BASE64.decode(b64_str.as_bytes()).unwrap();
+        let u = Uuid::from_slice(&decoded).ok();
+        assert_eq!(u.is_some(), true);
+        println!("Uuid is {}", u.unwrap());
+        assert_eq!(
+            u.unwrap().to_string(),
+            "dda058f8-070b-4268-8f6a-cd2f8cadb39e"
+        );
+    }
+
+    #[test]
     fn decode_uuid_to_none_sample() {
         let s = "dda058f8-070b-4268-8f6a-cd2f8cadb39e";
         let u = decode_uuid(s);
@@ -382,6 +410,16 @@ mod tests {
         let u = encode_uuid(&ur.unwrap());
         assert_eq!(u == "3aBY+AcLQmiPas0vjK2zng==", true);
     }
+
+    #[test]
+    fn encode_uuid_to_b64_1() {
+        use data_encoding::BASE64;
+        let ur = Uuid::parse_str("dda058f8-070b-4268-8f6a-cd2f8cadb39e");
+        assert_eq!(ur.is_ok(), true);
+        let u = BASE64.encode(ur.unwrap().as_bytes());
+        assert_eq!(u == "3aBY+AcLQmiPas0vjK2zng==", true);
+    }
+
     #[allow(dead_code)]
     use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, TimeZone, Utc};
 
@@ -637,6 +675,7 @@ mod tests {
         assert_eq!(&b, &hex::decode("0c032c07061622").unwrap());
     }
 }
+
 
 /*
 #[test]
