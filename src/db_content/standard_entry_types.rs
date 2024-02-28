@@ -45,7 +45,8 @@ lazy_static! {
 
     pub static ref DEFAULT_ENTRY_TYPE: EntryType = EntryType {
         //try **(STANDARD_TYPE_UUIDS_BY_NAME.get(LOGIN).unwrap()),
-        uuid: build_uuid!(entry_type_uuid::LOGIN),     //uuid::Builder::from_slice(&entry_type_uuid::LOGIN).unwrap().build(),
+        //uuid::Builder::from_slice(&entry_type_uuid::LOGIN).unwrap().build(),
+        uuid: build_uuid!(entry_type_uuid::LOGIN),     
         name: LOGIN.into(),
         secondary_title: Some("UserName".into()),
         icon_name:None,
@@ -56,6 +57,7 @@ lazy_static! {
                 FieldDef::new("Password")
                     .required()
                     .set_require_protection(true),
+                FieldDef::new("otp").set_data_type(FieldDataType::OneTimePassword),
                 FieldDef::new("URL"),
                 FieldDef::new("Additional URLs"),
                 //FieldDef::new("Date created").set_data_type(FieldDataType::Date),
@@ -93,6 +95,17 @@ lazy_static! {
                 secondary_title: Some("Number".into()),
                 icon_name:None,
                 sections: vec![
+                    Section {
+                        name: "Login Details".into(),
+                        field_defs: vec![
+                            FieldDef::new("UserName").required(),
+                            FieldDef::new("Password")
+                                .required()
+                                .set_require_protection(true),
+                            FieldDef::new("otp").set_data_type(FieldDataType::OneTimePassword),
+                            FieldDef::new("URL")
+                        ],
+                    },
                     Section {
                         name: "Card Details".into(),
                         field_defs: vec![
@@ -146,6 +159,7 @@ lazy_static! {
                         FieldDef::new("Password")
                             .required()
                             .set_require_protection(true),
+                        FieldDef::new("otp").set_data_type(FieldDataType::OneTimePassword),
                         FieldDef::new("URL")
                     ],
                 },

@@ -10,8 +10,8 @@ use crate::password_generator::{score_password, PasswordScore};
 use crate::util::{self, empty_str};
 
 use crate::db_content::{
-    join_tags, split_tags, BinaryKeyValue, Entry, EntryField, EntryType, FieldDataType, FieldDef,
-    KeyValue, Section, AutoType,
+    join_tags, split_tags, AutoType, BinaryKeyValue, Entry, EntryField, EntryType, FieldDataType,
+    FieldDef, KeyValue, Section,
 };
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -153,7 +153,11 @@ impl EntryFormData {
 
         let standard_field_names = entry.entry_field.entry_type.standard_field_names_by_id();
         // All available fields that are read from xml content
+        // Kept in a map for easy access using its name
         let mut fields = entry.entry_field.fields.clone();
+
+        // Keep track of all field names that are added to various sections
+        let mut field_names_done: Vec<String> = vec![];
 
         // These two are treated separatley in UI layer. So we extract them from the list
         let title: String = fields
@@ -166,6 +170,7 @@ impl EntryFormData {
         // All KVs per section name
         let mut section_fields: HashMap<String, Vec<KeyValueData>> = HashMap::default();
 
+        // Combines each KeyValue with its field definition
         for n in section_names.iter() {
             let section_opt = entry
                 .entry_field
@@ -179,11 +184,11 @@ impl EntryFormData {
                 // Copy the data type info to KVs
                 for fd in section.field_defs.iter() {
                     // println!("Field Def is {:?}", fd);
+                    
                     // Remove the KV from fields for the matching name
                     if let Some(kv) = fields.remove(&fd.name) {
                         // Clone values from KeyValue to KeyValueData
                         let mut kvd: KeyValueData = (&kv).into();
-
                         // Additionally, the following field values are found in FieldDef and
                         // kvd is populated from them
                         kvd.data_type = fd.data_type;
@@ -200,11 +205,32 @@ impl EntryFormData {
                                     Some(v.iter().map(|s| s.to_string()).collect::<Vec<_>>());
                             }
                         }
+                        // Now this field is used to create KVD
+                        field_names_done.push(kv.key.clone());
 
                         kvs.push(kvd);
                     } else {
+                        
                         // The FieldDef of this entry type is not in KV. This can happen when new fields
                         // are added in standard types or when we need to use default entry type in case of deserilalizing issue
+
+                        // Need to ensure that the field name of this 'fd.name' is NOT yet
+                        // added earlier to any other section.
+
+                        // This will happen in a situation when a new field is introduced later in the satndard section with same name as
+                        // in any previously user added custom section
+
+                        // For example, let us assume we have a previously user defined section "Section1" with field name "UserName" for
+                        // this standard entry type
+                        // Now assume that this entry type does not have "Login Details".
+                        // If a section with name "Login Details"is added to this standard type that includes the
+                        // field name "UserName", then we do not want to have duplicate "UserName" fields in both "Login Details" and "Section1"
+                        // The following check ensures that this does not happen
+
+                        if field_names_done.contains(&fd.name) {
+                            continue;
+                        }
+
                         // debug!("Not found in KV - Field Def {:?}", fd);
                         let mut kvd: KeyValueData = KeyValueData::default();
                         kvd.data_type = fd.data_type;
@@ -212,6 +238,9 @@ impl EntryFormData {
                         kvd.helper_text = fd.helper_text(); //fd.helper_text.clone();
                         kvd.standard_field = standard_field_names.contains(&fd.name.as_str());
                         kvd.key = fd.name.clone();
+
+                        // Completed the combining of this field with its definition to create KVD
+                        field_names_done.push(kvd.key.clone());
 
                         kvs.push(kvd);
                     }
@@ -263,7 +292,7 @@ impl EntryFormData {
             expires: entry.times.expires,
             expiry_time: entry.times.expiry_time,
 
-            auto_type:entry.auto_type.clone(),
+            auto_type: entry.auto_type.clone(),
 
             history_count: entry.history.entries.len() as i32,
             entry_type_name,
@@ -276,7 +305,6 @@ impl EntryFormData {
             standard_section_names,
             section_names,
             section_fields,
-            
         }
     }
 
@@ -297,12 +325,16 @@ impl EntryFormData {
         let mut entry_field = EntryField::default();
         entry_field.fields.insert(TITLE.into(), title_kv);
         entry_field.fields.insert(NOTES.into(), notes_kv);
-
+        // section_names is list of all section names 
         for section_name in entry_form_data.section_names.iter() {
             // For each section name found, we find all KVs and form EntryField
             if let Some(kvds) = entry_form_data.section_fields.get(section_name) {
                 let mut fds: Vec<FieldDef> = vec![];
                 for kvd in kvds {
+                    // Here we are assuming we have unique field names for an entry
+                    // If we allow duplicate field names, we may need to check whether the kvd is already considerd or not using
+                    // entry_field.fields.contains_key(&kvd.key) and consider only the first or last value 
+                    
                     // Each KV Data found for a section a KV is created and inserted to entry_filed.fields
                     entry_field.fields.insert(kvd.key.clone(), kvd.into());
 
@@ -321,7 +353,6 @@ impl EntryFormData {
                         field_defs: fds,
                     });
                 }
-                
             }
         }
 
@@ -338,12 +369,12 @@ impl EntryFormData {
         entry.tags = join_tags(&entry_form_data.tags);
         entry.times.expires = entry_form_data.expires;
         entry.times.expiry_time = entry_form_data.expiry_time;
-        
+
         entry.auto_type = entry_form_data.auto_type.clone();
 
         // Attachment references if any
         entry.binary_key_values = entry_form_data.binary_key_values.clone();
-        
+
         entry
     }
 
@@ -392,8 +423,8 @@ pub struct EntrySummary {
     pub secondary_title: Option<String>, //usually the user name
     pub icon_id: i32,
     pub history_index: Option<i32>,
-    pub modified_time:Option<i64>,
-    pub created_time:Option<i64>
+    pub modified_time: Option<i64>,
+    pub created_time: Option<i64>,
 }
 
 impl EntrySummary {
@@ -421,8 +452,8 @@ impl EntrySummary {
                 // )),
                 icon_id: he.icon_id,
                 history_index: Some(i as i32),
-                modified_time:None,
-                created_time:None,
+                modified_time: None,
+                created_time: None,
             });
         }
         summary_list
@@ -480,8 +511,8 @@ impl EntrySummary {
                 secondary_title,
                 icon_id: e.icon_id,
                 history_index: None,
-                modified_time:Some(e.times.last_modification_time.timestamp()),
-                created_time:Some(e.times.creation_time.timestamp()),
+                modified_time: Some(e.times.last_modification_time.timestamp()),
+                created_time: Some(e.times.creation_time.timestamp()),
             });
         }
         summary_list

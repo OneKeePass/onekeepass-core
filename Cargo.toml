@@ -50,7 +50,7 @@ cfg-if = "1.0"
 
 quick-xml = "0.30.0"
 ## To be removed in the next release
-quick_xml_023 = { package = "quick-xml", version = "0.23.0" }
+## quick_xml_023 = { package = "quick-xml", version = "0.23.0" }
 
 [target."cfg(any(target_os = \"linux\", target_os = \"macos\", target_os = \"windows\"))".dependencies]
 botan = {version = "0.10.7", features = ["vendored"] }

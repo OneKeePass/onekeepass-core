@@ -83,7 +83,7 @@ impl EntryTypeV1 {
 //  e.g RmpV1 means the data format/serde algorthim used is 'Rmp' a MessagePack formated data
 //      V1 means the EntryType and all its child structs of version 1
 // EntryTypeV1 is aliased as EntryType to point to the latest EntryType used in all other modules
-// Upgrading EntryType or its constituents or change in serialize and deserialize hadnlers means, we need
+// Upgrading EntryType or its constituents or change in serialize and deserialize handlers means, we need
 // to use new version for EntryType and other child structs.
 // e.g Let us assume, we add a new field in EntryType, then we need to create EntryTypeV2 leaving EntryTypeV1 as such
 // Now EntryTypeV2 should be type aliased as EntryType and need to introduce RmpV2 and son on
@@ -376,15 +376,19 @@ where
     Ok(Some(base64_str))
 }
 
-fn deserialize_from_base64_str<F>(input: &str, decoder: F) -> Result<VersionedEntryType>
+// Successful decoded binary (base64 encoded data) should be a variant of VersionedEntryType or an error is returned
+fn deserialize_from_base64_str<T,F>(input: &str, decoder: F) -> Result<T>
 where
-    F: Fn(&Vec<u8>) -> Result<VersionedEntryType>,
+    F: Fn(&Vec<u8>) -> Result<T>,
 {
-    //let buf = base64::decode(input)?;
     let buf = util::base64_decode(input)?;
     let buf = util::decompress(&buf)?;
     Ok(decoder(&buf)?)
 }
+
+// For 'rmp' serialization to work, add any new variant at the end though adding in any place may work
+// When we add a new variant, the FieldDef deserialization works with any previous version without 
+// introducing FieldDef2. If we remove any variant, it may not work
 
 #[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum FieldDataType {
@@ -395,6 +399,7 @@ pub enum FieldDataType {
     Month,
     Year,
     MonthYear,
+    OneTimePassword,
 }
 
 impl Default for FieldDataType {

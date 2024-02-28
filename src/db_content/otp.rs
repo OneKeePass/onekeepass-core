@@ -11,16 +11,17 @@ use crate::{
 };
 
 use data_encoding::BASE32_NOPAD;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum OtpAlgorithm {
     SHA1,
     SHA256,
     SHA512,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct OtpData {
     // non-encoded value
     // Any base32 encoded incoming value needs to be decoded
