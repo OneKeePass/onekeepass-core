@@ -127,9 +127,11 @@ pub mod entry_type_uuid {
 pub mod entry_keyvalue_key {
     pub const TITLE: &str = "Title";
     pub const NOTES: &str = "Notes";
-    pub const PASSWORD: &str = "Password";
-    pub const URL: &str = "URL";
     pub const USER_NAME: &str = "UserName";
+    pub const PASSWORD: &str = "Password";
+    pub const OTP: &str = "otp";
+    pub const URL: &str = "URL";
+
     pub const NUMBER: &str = "Number";
 }
 

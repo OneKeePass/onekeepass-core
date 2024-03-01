@@ -12,7 +12,7 @@ use uuid::Uuid;
 #[macro_export]
 macro_rules! build_uuid {
     ($aname:expr) => {
-        uuid::Builder::from_slice(&$aname).unwrap().build()
+        uuid::Builder::from_slice(&$aname).unwrap().into_uuid()
     };
 }
 

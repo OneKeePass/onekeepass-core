@@ -13,6 +13,7 @@ use crate::db_content::{AttachmentHashValue, CustomData, Times};
 use crate::util;
 
 use super::meta::MetaShare;
+use super::otp::{OtpData, ParsedOtpData, OTP_URL_PREFIX};
 use super::Meta;
 
 // To carry additional entry field grouping and for easy KV data lookup
@@ -146,6 +147,7 @@ pub struct Entry {
     pub history: History,
     //#[serde(skip)]
     pub(crate) meta_share: Arc<MetaShare>,
+    pub(crate) parsed_otp_values: Option<HashMap<String, ParsedOtpData>>,
 }
 
 impl Entry {
@@ -164,6 +166,7 @@ impl Entry {
             //history has a list of previous entries and those entries listed will have its 'history' empty
             history: History::default(),
             meta_share: Arc::default(),
+            parsed_otp_values: None,
         }
     }
 
@@ -193,6 +196,9 @@ impl Entry {
 
         // Note this entry's history entries' entry_field.entry_type is set on demand
         // That is when user selects a particular history index to display. See method history_entry_by_index
+
+        // Otp fields are to be parsed from the url
+        self.parse_all_otp_fields();
     }
 
     pub fn before_xml_writing(&mut self) {
@@ -325,7 +331,7 @@ impl Entry {
         }
     }
 
-    // Called after loading the db file and xml is parsed 
+    // Called after loading the db file and xml is parsed
     pub fn set_attachment_hashes(
         &mut self,
         attachment_hash_indexed: &HashMap<i32, (AttachmentHashValue, usize)>,
@@ -347,7 +353,7 @@ impl Entry {
 
     // Called after forming inner header binary data and before writing xml as bytes
     // to set the correct attachment index based on the attachment hash value
-    // The arg 'hash_index_ref' is a newly prepared mappping 
+    // The arg 'hash_index_ref' is a newly prepared mappping
     pub fn set_attachment_index_refs(
         &mut self,
         hash_index_ref: &HashMap<AttachmentHashValue, i32>,
@@ -396,6 +402,45 @@ impl Entry {
             .into_iter()
             .map(|k| (k.key.clone(), k.value.clone()))
             .collect()
+    }
+
+    fn parse_all_otp_fields(&mut self) {
+        let otp_vals: HashMap<String, ParsedOtpData> = self
+            .entry_field
+            .get_key_values()
+            .into_iter()
+            .filter_map(|k| {
+                if k.value.starts_with(OTP_URL_PREFIX) {
+                    let parsed_otp_data = match OtpData::from_url(&k.value) {
+                        Ok(pd) => ParsedOtpData::Success(pd),
+                        Err(e) => ParsedOtpData::Failure(format!(
+                            "OtpUrl Parsing Failed with error {}",
+                            e
+                        )),
+                    };
+                    Some((k.key.clone(), parsed_otp_data))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if !otp_vals.is_empty() {
+            self.parsed_otp_values = Some(otp_vals);
+        }
+    }
+
+    pub fn current_otp(&self, otp_field_name: &str) -> ParsedOtpData {
+        match self
+            .parsed_otp_values
+            .as_ref()
+            .map(|m| m.get(otp_field_name))
+            .flatten()
+            .map(|pd| pd)
+        {
+            Some(otp_data) => otp_data.clone(),
+            None => ParsedOtpData::Failure("No parsed otp data is found".into()),
+        }
     }
 }
 

@@ -11,7 +11,7 @@ use crate::util::{self, empty_str};
 
 use crate::db_content::{
     join_tags, split_tags, AutoType, BinaryKeyValue, Entry, EntryField, EntryType, FieldDataType,
-    FieldDef, KeyValue, Section,
+    FieldDef, KeyValue, ParsedOtpData, Section,
 };
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +27,9 @@ pub struct KeyValueData {
     pub select_field_options: Option<Vec<String>>,
     #[serde(skip_deserializing)]
     pub password_score: Option<PasswordScore>,
+    // Following are set on otp token generation
+    pub otp_url: Option<String>,
+    pub otp_ttl: Option<u64>,
 }
 
 impl From<&KeyValue> for KeyValueData {
@@ -46,6 +49,8 @@ impl From<&KeyValue> for KeyValueData {
             standard_field: false,
             select_field_options: None,
             password_score,
+            otp_url: None,
+            otp_ttl: None,
         }
     }
 }
@@ -76,7 +81,31 @@ impl From<&KeyValueData> for FieldDef {
     }
 }
 
-//const CUSTOM_FILEDS:&str = "Custom Fields";
+impl KeyValueData {
+    fn generate_otp(&mut self, parsed_otp_values: &Option<HashMap<String, ParsedOtpData>>) {
+        if self.data_type == FieldDataType::OneTimePassword {
+            if let Some(parsed_otp_data) =
+                parsed_otp_values.as_ref().and_then(|pm| pm.get(&self.key))
+            {
+                match parsed_otp_data {
+                    ParsedOtpData::Success(pd) => {
+                        self.otp_url = Some(pd.get_url());
+                        if let Ok(token_ttl) = pd.generate_current_with_ttl() {
+                            self.value = Some(token_ttl.token);
+                            self.otp_ttl = Some(token_ttl.ttl);
+                        } else {
+                            self.value = Some("OtpParsingFailed".into());
+                        }
+                    }
+                    ParsedOtpData::Failure(_) => {
+                        self.value = Some("OtpParsingFailed".into());
+                    }
+                };
+            }
+        }
+    }
+}
+
 
 use lazy_static::lazy_static;
 
@@ -184,8 +213,8 @@ impl EntryFormData {
                 // Copy the data type info to KVs
                 for fd in section.field_defs.iter() {
                     // println!("Field Def is {:?}", fd);
-                    
-                    // Remove the KV from fields for the matching name
+
+                    // Remove the KV from 'fields' for the field def matching name
                     if let Some(kv) = fields.remove(&fd.name) {
                         // Clone values from KeyValue to KeyValueData
                         let mut kvd: KeyValueData = (&kv).into();
@@ -195,6 +224,10 @@ impl EntryFormData {
                         kvd.required = fd.required;
                         kvd.helper_text = fd.helper_text(); //fd.helper_text.clone();
                         kvd.standard_field = standard_field_names.contains(&kv.key.as_str());
+
+                        if fd.data_type == FieldDataType::OneTimePassword {
+                            kvd.generate_otp(&entry.parsed_otp_values);
+                        }
 
                         // This is specific to CREDIT_DEBIT_CARD entry form
                         if entry_type_name == CREDIT_DEBIT_CARD {
@@ -210,7 +243,6 @@ impl EntryFormData {
 
                         kvs.push(kvd);
                     } else {
-                        
                         // The FieldDef of this entry type is not in KV. This can happen when new fields
                         // are added in standard types or when we need to use default entry type in case of deserilalizing issue
 
@@ -325,7 +357,7 @@ impl EntryFormData {
         let mut entry_field = EntryField::default();
         entry_field.fields.insert(TITLE.into(), title_kv);
         entry_field.fields.insert(NOTES.into(), notes_kv);
-        // section_names is list of all section names 
+        // section_names is list of all section names
         for section_name in entry_form_data.section_names.iter() {
             // For each section name found, we find all KVs and form EntryField
             if let Some(kvds) = entry_form_data.section_fields.get(section_name) {
@@ -333,8 +365,8 @@ impl EntryFormData {
                 for kvd in kvds {
                     // Here we are assuming we have unique field names for an entry
                     // If we allow duplicate field names, we may need to check whether the kvd is already considerd or not using
-                    // entry_field.fields.contains_key(&kvd.key) and consider only the first or last value 
-                    
+                    // entry_field.fields.contains_key(&kvd.key) and consider only the first or last value
+
                     // Each KV Data found for a section a KV is created and inserted to entry_filed.fields
                     entry_field.fields.insert(kvd.key.clone(), kvd.into());
 
@@ -590,7 +622,7 @@ mod tests {
     fn verify_creating_display_entry() {
         let uuid = uuid::Builder::from_slice(&entry_type_uuid::LOGIN)
             .unwrap()
-            .build();
+            .into_uuid();
         let mut entry = Entry::new_blank_entry_by_type_id(&uuid, None, None);
 
         entry.entry_field.fields.insert(

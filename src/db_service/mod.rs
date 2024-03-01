@@ -15,7 +15,7 @@ pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions,
 pub use crate::util::{file_name, formatted_key, parse_attachment_hash, string_to_simple_hash};
 
 use crate::db::KdbxFile;
-use crate::db_content::{standard_types_ordered_by_id, KeepassFile};
+use crate::db_content::{standard_types_ordered_by_id, KeepassFile, ParsedOtpData};
 use crate::searcher;
 use crate::util;
 use crate::{form_data, password_generator};
@@ -270,7 +270,6 @@ pub fn close_all_databases() -> Result<()> {
     }
     Ok(())
 }
-
 
 /// Removes the previously opened KDBX file from cache
 pub fn close_kdbx(db_key: &str) -> Result<()> {
@@ -665,6 +664,19 @@ pub fn get_entry_form_data_by_id(db_key: &str, entry_uuid: &Uuid) -> Result<Entr
     })
 }
 
+pub fn entry_form_current_otp(
+    db_key: &str,
+    entry_uuid: &Uuid,
+    otp_field_name: &str,
+) -> Result<ParsedOtpData> {
+    main_content_action!(db_key, move |k: &KeepassFile| {
+        match k.root.entry_by_id(entry_uuid) {
+            Some(e) => Ok(e.current_otp(otp_field_name)),
+            None => Err(Error::NotFound("No entry Entry found for the id".into())),
+        }
+    })
+}
+
 // Collects all entry field names and its values (not in any particular order)
 pub fn entry_key_value_fields(db_key: &str, entry_uuid: &Uuid) -> Result<HashMap<String, String>> {
     main_content_action!(db_key, move |k: &KeepassFile| {
@@ -840,8 +852,6 @@ pub fn analyzed_password(password_options: PasswordGenerationOptions) -> Result<
 pub fn score_password(password: &str) -> PasswordScore {
     password_generator::score_password(password)
 }
-
-
 
 /*
 

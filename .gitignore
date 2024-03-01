@@ -4,3 +4,5 @@
 WixTools
 Cargo.lock
 .DS_Store
+.lsp
+.clj-kondo

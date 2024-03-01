@@ -14,36 +14,25 @@ use data_encoding::BASE32_NOPAD;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
+pub const OTP_URL_PREFIX:&str = "otpauth://totp";
+
+#[derive(Debug,Clone, Serialize, Deserialize)]
+pub enum ParsedOtpData {
+    Success(OtpData),
+    Failure(String),
+}
+
+#[derive(Debug,Clone, Serialize, Deserialize)]
+pub(crate) struct OtpTokenTTL {
+    pub(crate) token:String,
+    pub(crate) ttl:u64,
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum OtpAlgorithm {
     SHA1,
     SHA256,
     SHA512,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct OtpData {
-    // non-encoded value
-    // Any base32 encoded incoming value needs to be decoded
-    pub(crate) decoded_secret: Vec<u8>,
-    // Duration in seconds of a period or a step.
-    // The recommended value per [rfc-6238](https://tools.ietf.org/html/rfc6238#section-5.2) is 30 seconds
-    pub(crate) period: u64,
-    // The number of digits composing the auth code.
-    // Per [rfc-4226](https://tools.ietf.org/html/rfc4226#section-5.3), this may be between 6 and 8 digits
-    pub(crate) digits: usize,
-    // Number of steps allowed as network delay. 1 would mean one step before current step and one step after are valids.
-    // The recommended value per [rfc-6238](https://tools.ietf.org/html/rfc6238#section-5.2) is 1.
-    pub(crate) skew: u8,
-    // SHA-1 is the most widespread algorithm used
-    pub(crate) algorithm: OtpAlgorithm,
-    pub(crate) issuer: Option<String>,
-    pub(crate) account_name: Option<String>,
-}
-
-fn system_time() -> Result<u64> {
-    let t = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-    Ok(t)
 }
 
 impl std::default::Default for OtpAlgorithm {
@@ -71,6 +60,31 @@ impl OtpAlgorithm {
             _ => Err(Error::DataError("()")),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct OtpData {
+    // non-encoded value
+    // Any base32 encoded incoming value needs to be decoded
+    pub(crate) decoded_secret: Vec<u8>,
+    // Duration in seconds of a period or a step.
+    // The recommended value per [rfc-6238](https://tools.ietf.org/html/rfc6238#section-5.2) is 30 seconds
+    pub(crate) period: u64,
+    // The number of digits composing the auth code.
+    // Per [rfc-4226](https://tools.ietf.org/html/rfc4226#section-5.3), this may be between 6 and 8 digits
+    pub(crate) digits: usize,
+    // Number of steps allowed as network delay. 1 would mean one step before current step and one step after are valids.
+    // The recommended value per [rfc-6238](https://tools.ietf.org/html/rfc6238#section-5.2) is 1.
+    pub(crate) skew: u8,
+    // SHA-1 is the most widespread algorithm used
+    pub(crate) algorithm: OtpAlgorithm,
+    pub(crate) issuer: Option<String>,
+    pub(crate) account_name: Option<String>,
+}
+
+fn system_time() -> Result<u64> {
+    let t = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    Ok(t)
 }
 
 impl OtpData {
@@ -257,6 +271,14 @@ impl OtpData {
     pub fn generate_current(&self) -> Result<String> {
         let t = system_time()?;
         self.generate(t)
+    }
+
+    // Generate a token from the current system time
+    pub fn generate_current_with_ttl(&self) -> Result<OtpTokenTTL> {
+       Ok(OtpTokenTTL {
+        token:self.generate_current()?,
+        ttl:self.ttl()?,
+       })
     }
 
     // Returns the timestamp of the first second for the next period

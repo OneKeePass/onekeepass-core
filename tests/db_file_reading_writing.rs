@@ -24,10 +24,14 @@ fn verify_read_db_file() {
 fn verify_entry_1() {
     // get_entry_form_data_by_id
     common::init();
-    let db_key = "/Users/jeyasankar/Documents/OneKeePass/JeyFix/TJ-fixit.kdbx";
+    //let db_key = "/Users/jeyasankar/Documents/OneKeePass/JeyFix/TJ-fixit.kdbx";
+    let db_key = "/Users/jeyasankar/Documents/OneKeePass/Test-OTP1.kdbx";
+    
     let r = load_kdbx(db_key, Some("ss"), None);
     assert!(r.is_ok());
-    let entry_uuid_str = "3b8a5c10-3ec2-4afa-ab8b-e46aa43b1a18";
+    
+    //"3b8a5c10-3ec2-4afa-ab8b-e46aa43b1a18" or "3b8a5c103ec24afaab8be46aa43b1a18"
+    let entry_uuid_str = "991c0ddc-2531-4ec1-96e2-580687d376da" ; 
     let entry_uuid = uuid::Uuid::parse_str(entry_uuid_str).unwrap();
     
     let entry_form = get_entry_form_data_by_id(db_key, &entry_uuid);
