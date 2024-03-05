@@ -304,7 +304,7 @@ impl SecuredDatabaseKeys {
             let kc = crypto::KeyCipher::from(&keyinfo.key, &keyinfo.nonce);
             kc.decrypt(data)
         } else {
-            Err(Error::Other(format!(
+            Err(Error::UnexpectedError(format!(
                 "No key is available for the decryption of data for db key {}",
                 db_key
             )))
@@ -317,7 +317,7 @@ impl SecuredDatabaseKeys {
             let kc = crypto::KeyCipher::from(&keyinfo.key, &keyinfo.nonce);
             kc.encrypt(data)
         } else {
-            Err(Error::Other(format!(
+            Err(Error::UnexpectedError(format!(
                 "No key is available for the encryption of data for db key {}",
                 db_key
             )))

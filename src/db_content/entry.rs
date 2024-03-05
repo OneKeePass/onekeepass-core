@@ -1,4 +1,4 @@
-use log::debug;
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,7 +13,7 @@ use crate::db_content::{AttachmentHashValue, CustomData, Times};
 use crate::util;
 
 use super::meta::MetaShare;
-use super::otp::{OtpData, ParsedOtpData, OTP_URL_PREFIX};
+use super::otp::{CurrentOtpTokenData, OtpData, OTP_URL_PREFIX};
 use super::Meta;
 
 // To carry additional entry field grouping and for easy KV data lookup
@@ -147,7 +147,8 @@ pub struct Entry {
     pub history: History,
     //#[serde(skip)]
     pub(crate) meta_share: Arc<MetaShare>,
-    pub(crate) parsed_otp_values: Option<HashMap<String, ParsedOtpData>>,
+    //pub(crate) parsed_otp_values: Option<HashMap<String, ParsedOtpData>>,
+    pub(crate) parsed_otp_values: Option<HashMap<String, OtpData>>,
 }
 
 impl Entry {
@@ -405,20 +406,19 @@ impl Entry {
     }
 
     fn parse_all_otp_fields(&mut self) {
-        let otp_vals: HashMap<String, ParsedOtpData> = self
+        let otp_vals: HashMap<String, OtpData> = self
             .entry_field
             .get_key_values()
             .into_iter()
             .filter_map(|k| {
                 if k.value.starts_with(OTP_URL_PREFIX) {
-                    let parsed_otp_data = match OtpData::from_url(&k.value) {
-                        Ok(pd) => ParsedOtpData::Success(pd),
-                        Err(e) => ParsedOtpData::Failure(format!(
-                            "OtpUrl Parsing Failed with error {}",
-                            e
-                        )),
-                    };
-                    Some((k.key.clone(), parsed_otp_data))
+                    match OtpData::from_url(&k.value) {
+                        Ok(parsed_otp_data) => Some((k.key.clone(), parsed_otp_data)),
+                        Err(e) => {
+                            info!("OtpUrl Parsing Failed with error {}", e);
+                            None
+                        }
+                    }
                 } else {
                     None
                 }
@@ -430,17 +430,24 @@ impl Entry {
         }
     }
 
-    pub fn current_otp(&self, otp_field_name: &str) -> ParsedOtpData {
-        match self
-            .parsed_otp_values
+    // pub fn current_otp(&self, otp_field_name: &str) -> Option<&OtpData> {
+    //     self.parsed_otp_values
+    //         .as_ref()
+    //         .map(|m| m.get(otp_field_name))
+    //         .flatten()
+    //         .map(|pd| pd)
+    // }
+
+    pub fn current_otp_token_data(&self, otp_field_name: &str) -> Option<CurrentOtpTokenData> {
+        // as_ref() is to get Option<&HashMap<String, OtpData>>
+        // first flatten Option<Option<&OtpData>> -> Option<&OtpData>
+        // second flatten Option<Option<CurrentOtpTokenData>> -> Option<CurrentOtpTokenData>
+        self.parsed_otp_values
             .as_ref()
             .map(|m| m.get(otp_field_name))
             .flatten()
-            .map(|pd| pd)
-        {
-            Some(otp_data) => otp_data.clone(),
-            None => ParsedOtpData::Failure("No parsed otp data is found".into()),
-        }
+            .map(|pd| pd.current_otp_token_data().ok())
+            .flatten()
     }
 }
 
@@ -811,3 +818,45 @@ pub struct History {
     //History has a list of previous entries
     pub(crate) entries: Vec<Entry>,
 }
+
+/*
+fn parse_all_otp_fields(&mut self) {
+        let otp_vals: HashMap<String, ParsedOtpData> = self
+            .entry_field
+            .get_key_values()
+            .into_iter()
+            .filter_map(|k| {
+                if k.value.starts_with(OTP_URL_PREFIX) {
+                    let parsed_otp_data = match OtpData::from_url(&k.value) {
+                        Ok(pd) => ParsedOtpData::Success(pd),
+                        Err(e) => ParsedOtpData::Failure(format!(
+                            "OtpUrl Parsing Failed with error {}",
+                            e
+                        )),
+                    };
+                    Some((k.key.clone(), parsed_otp_data))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if !otp_vals.is_empty() {
+            self.parsed_otp_values = Some(otp_vals);
+        }
+    }
+
+    pub fn current_otp(&self, otp_field_name: &str) -> ParsedOtpData {
+        match self
+            .parsed_otp_values
+            .as_ref()
+            .map(|m| m.get(otp_field_name))
+            .flatten()
+            .map(|pd| pd)
+        {
+            Some(otp_data) => otp_data.clone(),
+            None => ParsedOtpData::Failure("No parsed otp data is found".into()),
+        }
+    }
+
+*/

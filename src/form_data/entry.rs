@@ -1,4 +1,5 @@
 use chrono::{DateTime, Datelike, Local, NaiveDateTime};
+use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::From;
@@ -10,9 +11,10 @@ use crate::password_generator::{score_password, PasswordScore};
 use crate::util::{self, empty_str};
 
 use crate::db_content::{
-    join_tags, split_tags, AutoType, BinaryKeyValue, Entry, EntryField, EntryType, FieldDataType,
-    FieldDef, KeyValue, ParsedOtpData, Section,
+    join_tags, split_tags, AutoType, BinaryKeyValue, CurrentOtpTokenData, Entry, EntryField,
+    EntryType, FieldDataType, FieldDef, KeyValue, OtpData, Section,
 };
+
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct KeyValueData {
@@ -28,8 +30,7 @@ pub struct KeyValueData {
     #[serde(skip_deserializing)]
     pub password_score: Option<PasswordScore>,
     // Following are set on otp token generation
-    pub otp_url: Option<String>,
-    pub otp_ttl: Option<u64>,
+    pub current_opt_token: Option<CurrentOtpTokenData>,
 }
 
 impl From<&KeyValue> for KeyValueData {
@@ -49,8 +50,7 @@ impl From<&KeyValue> for KeyValueData {
             standard_field: false,
             select_field_options: None,
             password_score,
-            otp_url: None,
-            otp_ttl: None,
+            current_opt_token: None,
         }
     }
 }
@@ -82,30 +82,32 @@ impl From<&KeyValueData> for FieldDef {
 }
 
 impl KeyValueData {
-    fn generate_otp(&mut self, parsed_otp_values: &Option<HashMap<String, ParsedOtpData>>) {
+    fn generate_otp(&mut self, parsed_otp_values: &Option<HashMap<String, OtpData>>) {
         if self.data_type == FieldDataType::OneTimePassword {
             if let Some(parsed_otp_data) =
                 parsed_otp_values.as_ref().and_then(|pm| pm.get(&self.key))
             {
-                match parsed_otp_data {
-                    ParsedOtpData::Success(pd) => {
-                        self.otp_url = Some(pd.get_url());
-                        if let Ok(token_ttl) = pd.generate_current_with_ttl() {
-                            self.value = Some(token_ttl.token);
-                            self.otp_ttl = Some(token_ttl.ttl);
-                        } else {
-                            self.value = Some("OtpParsingFailed".into());
-                        }
+                match parsed_otp_data.current_otp_token_data() {
+                    Ok(token_data) => {
+                        self.current_opt_token = Some(token_data);
                     }
-                    ParsedOtpData::Failure(_) => {
-                        self.value = Some("OtpParsingFailed".into());
+                    Err(e) => {
+                        info!("Generating current otp failed {}", e);
                     }
-                };
+                }
+            }
+        }
+    }
+
+    fn generate_otp_custom_field(&mut self, parsed_otp_values: &Option<HashMap<String, OtpData>>) {
+        if let Some(m) = parsed_otp_values.as_ref() {
+            if m.contains_key(&self.key) {
+                self.data_type = FieldDataType::OneTimePassword;
+                self.generate_otp(parsed_otp_values);
             }
         }
     }
 }
-
 
 use lazy_static::lazy_static;
 
@@ -294,13 +296,34 @@ impl EntryFormData {
             // to convert to "Custom Fields"
             // Need to figure out what to do for languages other than 'en'
             if let Some(mut all_custom_fields_kv_data) = section_fields.remove(&*CUSTOM_FILEDS) {
-                all_custom_fields_kv_data.extend(fields.values().map(|kv| kv.into()));
+                all_custom_fields_kv_data.extend(fields.values().map(|kv| {
+                    let mut kvd: KeyValueData = kv.into();
+                    // There is a possibility a field may have a valid totp url created in other app
+                    // In that case, we need to generate token and set its data type
+                    kvd.generate_otp_custom_field(&entry.parsed_otp_values);
+                    kvd
+                }));
                 section_fields.insert(CUSTOM_FILEDS.clone(), all_custom_fields_kv_data);
             } else {
                 section_names.push(CUSTOM_FILEDS.clone());
                 section_fields.insert(
                     CUSTOM_FILEDS.clone(),
-                    fields.values().map(|kv| kv.into()).collect(),
+                    fields
+                        .values()
+                        .map(|kv| {
+                            let mut kvd: KeyValueData = kv.into();
+                            // There is a possibility a field may have a valid totp url created in other app
+                            // In that case, we need to generate token and set its data type
+                            kvd.generate_otp_custom_field(&entry.parsed_otp_values);
+                            // if let Some(m) = entry.parsed_otp_values.as_ref() {
+                            //     if m.contains_key(&kvd.key) {
+                            //         kvd.data_type = FieldDataType::OneTimePassword;
+                            //         kvd.generate_otp(&entry.parsed_otp_values);
+                            //     }
+                            // }
+                            kvd
+                        })
+                        .collect(),
                 );
             }
         }

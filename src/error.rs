@@ -137,9 +137,9 @@ pub enum Error {
     DuplicateKeyFileName(String),
 
     // See DataError where we can use str
-    // Other is used where we can use format!
+    // UnexpectedError is used where we can use format!
     #[error("{0}")]
-    Other(String),
+    UnexpectedError(String),
 }
 
 // Tauri main converts App error such as above as "hooks::InvokeError" using serde call and then returns to to the UI
@@ -155,7 +155,7 @@ impl From<Error> for String {
 
 impl From<&'static str> for Error {
     fn from(err: &'static str) -> Self {
-        Error::Other(err.to_string())
+        Error::UnexpectedError(err.to_string())
     }
 }
 

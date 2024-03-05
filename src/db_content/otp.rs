@@ -23,9 +23,10 @@ pub enum ParsedOtpData {
 }
 
 #[derive(Debug,Clone, Serialize, Deserialize)]
-pub(crate) struct OtpTokenTTL {
+pub struct CurrentOtpTokenData {
     pub(crate) token:String,
     pub(crate) ttl:u64,
+    pub(crate) period:u64,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -274,10 +275,11 @@ impl OtpData {
     }
 
     // Generate a token from the current system time
-    pub fn generate_current_with_ttl(&self) -> Result<OtpTokenTTL> {
-       Ok(OtpTokenTTL {
+    pub fn current_otp_token_data(&self) -> Result<CurrentOtpTokenData> {
+       Ok(CurrentOtpTokenData {
         token:self.generate_current()?,
         ttl:self.ttl()?,
+        period:self.period,
        })
     }
 

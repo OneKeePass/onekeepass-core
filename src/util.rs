@@ -312,7 +312,7 @@ pub fn sub_strings(string: &str, sub_len: usize) -> Vec<&str> {
 pub fn parse_attachment_hash(data_hash_str: &str) -> Result<u64> {
     let data_hash = data_hash_str
         .parse::<u64>()
-        .map_err(|e| Error::Other(format!("Data hash str to u64 conversion failed - {} ", e)))?;
+        .map_err(|e| Error::UnexpectedError(format!("Data hash str to u64 conversion failed - {} ", e)))?;
     Ok(data_hash)
 }
 

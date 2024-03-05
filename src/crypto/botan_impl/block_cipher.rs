@@ -86,10 +86,10 @@ fn encrypt(alg_name: &str, plain_data: &[u8], key: &[u8], enc_iv: &[u8]) -> Resu
         .map_err(|_| Error::Encryption)?;
     cipher
         .set_key(&key)
-        .map_err(|e| Error::Other(format!("Encryption failed due to {:?}", e)))?;
+        .map_err(|e| Error::UnexpectedError(format!("Encryption failed due to {:?}", e)))?;
     let encrypted = cipher
         .process(&enc_iv, plain_data)
-        .map_err(|e| Error::Other(format!("Encryption failed due to {:?}", e)))?;
+        .map_err(|e| Error::UnexpectedError(format!("Encryption failed due to {:?}", e)))?;
 
     Ok(encrypted)
 }
@@ -101,10 +101,10 @@ pub fn decrypt(alg_name: &str, encrypted: &[u8], key: &[u8], enc_iv: &[u8]) -> R
         .map_err(|_| Error::Decryption)?;
     cipher
         .set_key(&key)
-        .map_err(|e| Error::Other(format!("Encryption failed due to {:?}", e)))?;
+        .map_err(|e| Error::UnexpectedError(format!("Encryption failed due to {:?}", e)))?;
     let plain_data = cipher
         .process(&enc_iv, encrypted)
-        .map_err(|e| Error::Other(format!("Encryption failed due to {:?}", e)))?;
+        .map_err(|e| Error::UnexpectedError(format!("Encryption failed due to {:?}", e)))?;
 
     Ok(plain_data)
 }

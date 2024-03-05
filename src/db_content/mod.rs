@@ -10,7 +10,9 @@ mod otp;
 
 
 pub(crate) use self::custom_data::{CustomData, Item};
-pub(crate) use self::otp::ParsedOtpData;
+pub(crate) use self::otp::OtpData;
+
+pub use self::otp::CurrentOtpTokenData;
 pub use self::entry::{
     Association, AutoType, BinaryKeyValue, Entry, EntryField, History, KeyValue,
 };

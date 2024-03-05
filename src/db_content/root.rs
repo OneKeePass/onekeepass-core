@@ -288,7 +288,7 @@ impl Root {
 
     pub fn insert_group(&mut self, group: Group) -> Result<()> {
         if group.parent_group_uuid == Uuid::default() {
-            return Err(Error::Other("Valid parent group is not set".into()));
+            return Err(Error::UnexpectedError("Valid parent group is not set".into()));
         }
 
         if !self.all_groups.contains_key(&group.parent_group_uuid) {
@@ -403,7 +403,7 @@ impl Root {
 
         // Remove all sub groups
         for gid in sub_group_ids {
-            self.all_groups.remove(&gid).ok_or(Error::Other(format!(
+            self.all_groups.remove(&gid).ok_or(Error::UnexpectedError(format!(
                 "The group {} is not found in All Groups map",
                 &gid
             )))?;

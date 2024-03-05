@@ -15,7 +15,7 @@ pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions,
 pub use crate::util::{file_name, formatted_key, parse_attachment_hash, string_to_simple_hash};
 
 use crate::db::KdbxFile;
-use crate::db_content::{standard_types_ordered_by_id, KeepassFile, ParsedOtpData};
+use crate::db_content::{standard_types_ordered_by_id, KeepassFile};
 use crate::searcher;
 use crate::util;
 use crate::{form_data, password_generator};
@@ -31,6 +31,9 @@ use std::{
 use chrono::NaiveDateTime;
 use log::debug;
 use uuid::Uuid;
+
+// Re-exports
+pub use crate::db_content::CurrentOtpTokenData;
 
 pub use crate::form_data::{
     CategoryDetail, DbSettings, EntryCategories, EntryCategory, EntryCategoryGrouping,
@@ -659,20 +662,27 @@ pub fn get_entry_form_data_by_id(db_key: &str, entry_uuid: &Uuid) -> Result<Entr
     main_content_action!(db_key, move |k: &KeepassFile| {
         match k.root.entry_by_id(entry_uuid) {
             Some(e) => Ok(e.into()),
-            None => Err(Error::NotFound("No entry Entry found for the id".into())),
+            None => Err(Error::NotFound(format!("No entry is found for the id {}",entry_uuid))),
         }
     })
 }
 
+// Gets the current TOPT token for an entry's opt field
 pub fn entry_form_current_otp(
     db_key: &str,
     entry_uuid: &Uuid,
     otp_field_name: &str,
-) -> Result<ParsedOtpData> {
+) -> Result<CurrentOtpTokenData> {
     main_content_action!(db_key, move |k: &KeepassFile| {
         match k.root.entry_by_id(entry_uuid) {
-            Some(e) => Ok(e.current_otp(otp_field_name)),
-            None => Err(Error::NotFound("No entry Entry found for the id".into())),
+            Some(e) => match e.current_otp_token_data(otp_field_name) {
+                Some(pd) => Ok(pd),
+                None => Err(Error::UnexpectedError(format!(
+                    "Current TOPT token data is not available for the field: {}",
+                    otp_field_name
+                ))),
+            },
+            None => Err(Error::NotFound(format!("No entry is found for the id {}",entry_uuid))),
         }
     })
 }
@@ -838,7 +848,9 @@ pub fn new_blank_group_with_parent(
     mark_as_category: bool,
 ) -> Result<Group> {
     if parent_group_uuid == Uuid::default() {
-        return Err(Error::Other("Valid parent group is not provided".into()));
+        return Err(Error::UnexpectedError(
+            "Valid parent group is not provided".into(),
+        ));
     }
     let mut group = new_blank_group(mark_as_category);
     group.parent_group_uuid = parent_group_uuid;
