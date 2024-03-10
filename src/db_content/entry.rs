@@ -263,6 +263,8 @@ impl Entry {
 
         self.entry_field = updated_entry.entry_field;
 
+        self.parse_all_otp_fields();
+
         // Call copy_to_custom_data after we set entry_field from the incoming updated_entry
         self.copy_to_custom_data();
         // Now we need to do this for the last added history entry

@@ -7,26 +7,36 @@ use crate::{
     crypto::{
         hmac_sha1_from_slice, hmac_sha256_from_slice, hmac_sha512_from_slice, print_crypto_lib_info,
     },
-    error::{Error, Result},
+    error::{self, Error, Result},
 };
 
 use data_encoding::BASE32_NOPAD;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-pub const OTP_URL_PREFIX:&str = "otpauth://totp";
+pub const OTP_URL_PREFIX: &str = "otpauth://totp";
 
-#[derive(Debug,Clone, Serialize, Deserialize)]
-pub enum ParsedOtpData {
-    Success(OtpData),
-    Failure(String),
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CurrentOtpTokenData {
+    pub(crate) token: String,
+    pub(crate) ttl: u64,
+    pub(crate) period: u64,
 }
 
-#[derive(Debug,Clone, Serialize, Deserialize)]
-pub struct CurrentOtpTokenData {
-    pub(crate) token:String,
-    pub(crate) ttl:u64,
-    pub(crate) period:u64,
+#[derive(Serialize, Deserialize, Debug)]
+pub struct OtpSettings {
+    pub secret_or_url: String,
+    pub period: Option<u64>,
+    pub digits: Option<usize>,
+    pub hash_algorithm: Option<OtpAlgorithm>,
+}
+
+impl OtpSettings {
+    pub fn otp_url(&self) -> Result<String> {
+        let od = OtpData::from_otp_settings(self)?;
+        Ok(od.get_url())
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -109,9 +119,41 @@ impl OtpData {
         })
     }
 
+    pub fn from_otp_settings(otp_settings: &OtpSettings) -> Result<OtpData> {
+        if otp_settings.secret_or_url.starts_with(OTP_URL_PREFIX) {
+            OtpData::from_url(&otp_settings.secret_or_url)
+        } else {
+            let mut otp_data = OtpData::from_key(&otp_settings.secret_or_url)?;
+            if let Some(period) = otp_settings.period {
+                if period < 1 || period > 60 {
+                    return Err(Error::UnexpectedError(format!("Period should be in the range 1 - 60")))
+                }
+                otp_data.period = period;
+            }
+            if let Some(digits) = otp_settings.digits {
+                otp_data.digits = digits;
+            }
+
+            if let Some(alg) = otp_settings.hash_algorithm {
+                otp_data.algorithm = alg;
+            }
+
+            Ok(otp_data)
+        }
+    }
+
     pub fn from_key(encoded_secret: &str) -> Result<OtpData> {
+        // let space_removed =  encoded_secret;
+        // if let Ok(reg) = Regex::new(r"\s+") {
+        //     space_removed = reg.replace_all(encoded_secret, "").as;
+        // } 
+         
         Ok(OtpData {
-            decoded_secret: BASE32_NOPAD.decode(encoded_secret.as_bytes())?,
+            decoded_secret: BASE32_NOPAD
+                .decode(encoded_secret.as_bytes())
+                .map_err(|e| {
+                    Error::OtpKeyDecodeError(format!("Decoding '{}' failed with error {}",encoded_secret, e))
+                })?,
             period: 30,
             digits: 6,
             skew: 1,
@@ -119,33 +161,6 @@ impl OtpData {
             issuer: None,
             account_name: None,
         })
-    }
-
-    pub fn from_key_digits(encoded_secret: &str, digits: usize) -> Result<OtpData> {
-        Ok(OtpData {
-            decoded_secret: BASE32_NOPAD.decode(encoded_secret.as_bytes())?,
-            period: 30,
-            digits: digits,
-            skew: 1,
-            algorithm: OtpAlgorithm::SHA1,
-            issuer: None,
-            account_name: None,
-        })
-    }
-
-    pub fn with_digits(&mut self, digits: usize) -> &mut Self {
-        self.digits = digits;
-        self
-    }
-
-    pub fn with_period(&mut self, period: u64) -> &mut Self {
-        self.period = period;
-        self
-    }
-
-    pub fn with_algorithm(&mut self, algorithm: OtpAlgorithm) -> &mut Self {
-        self.algorithm = algorithm;
-        self
     }
 
     pub fn from_url(otp_url: &str) -> Result<OtpData> {
@@ -212,7 +227,11 @@ impl OtpData {
                 "secret" => {
                     println!("Secret is {}", value.as_ref());
                     let s = value.as_ref();
-                    secret = BASE32_NOPAD.decode(s.as_bytes())?;
+                    secret = BASE32_NOPAD
+                    .decode(s.as_bytes())
+                    .map_err(|e| {
+                        Error::OtpUrlParseError(format!("Decoding '{}' failed with error {}",s, e))
+                    })?;
                 }
 
                 "issuer" => {
@@ -276,11 +295,11 @@ impl OtpData {
 
     // Generate a token from the current system time
     pub fn current_otp_token_data(&self) -> Result<CurrentOtpTokenData> {
-       Ok(CurrentOtpTokenData {
-        token:self.generate_current()?,
-        ttl:self.ttl()?,
-        period:self.period,
-       })
+        Ok(CurrentOtpTokenData {
+            token: self.generate_current()?,
+            ttl: self.ttl()?,
+            period: self.period,
+        })
     }
 
     // Returns the timestamp of the first second for the next period
@@ -667,6 +686,37 @@ mod tests {
         );
     }
 }
+
+/*
+ pub fn from_key_digits(encoded_secret: &str, digits: usize) -> Result<OtpData> {
+        Ok(OtpData {
+            decoded_secret: BASE32_NOPAD.decode(encoded_secret.as_bytes())?,
+            period: 30,
+            digits: digits,
+            skew: 1,
+            algorithm: OtpAlgorithm::SHA1,
+            issuer: None,
+            account_name: None,
+        })
+    }
+
+    pub fn with_digits(&mut self, digits: usize) -> &mut Self {
+        self.digits = digits;
+        self
+    }
+
+    pub fn with_period(&mut self, period: u64) -> &mut Self {
+        self.period = period;
+        self
+    }
+
+    pub fn with_algorithm(&mut self, algorithm: OtpAlgorithm) -> &mut Self {
+        self.algorithm = algorithm;
+        self
+    }
+
+
+*/
 /*
 #[test]
     fn totp_rs_verify_totp_1111111109_sec() {

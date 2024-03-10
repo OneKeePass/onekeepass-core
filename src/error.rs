@@ -60,11 +60,13 @@ pub enum Error {
 
     #[error("{0}")]
     Argon2Error(String),
+
     #[error("{0}")]
     DataError(&'static str),
 
     #[error("{0}")]
     XmlParsingFailed(#[from] quick_xml::Error),
+    
     #[error("{0}")]
     XmlEscapeFailed(#[from] quick_xml::escape::EscapeError),
     
@@ -114,6 +116,9 @@ pub enum Error {
 
     #[error("{0}")]
     DataEncodingDecodeError(#[from] data_encoding::DecodeError),
+
+    #[error("OtpKeyDecodeError: {0}")]
+    OtpKeyDecodeError(String),
 
     #[error("CustomEntryTypeInUse")]
     CustomEntryTypeInUse,

@@ -1,21 +1,8 @@
 mod attachment;
 mod io;
 
-pub use attachment::*;
-pub use io::*;
-
-pub use crate::db::{
-    KeyStoreOperation, KeyStoreService, KeyStoreServiceType, NewDatabase, SecureKeyInfo,
-};
-pub use crate::db_content::{AllTags, Entry, EntryType, FieldDataType, Group};
-pub use crate::error;
-pub use crate::error::{Error, Result};
-
-pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions, PasswordScore};
-pub use crate::util::{file_name, formatted_key, parse_attachment_hash, string_to_simple_hash};
-
 use crate::db::KdbxFile;
-use crate::db_content::{standard_types_ordered_by_id, KeepassFile};
+use crate::db_content::{standard_types_ordered_by_id, Entry, KeepassFile};
 use crate::searcher;
 use crate::util;
 use crate::{form_data, password_generator};
@@ -32,13 +19,34 @@ use chrono::NaiveDateTime;
 use log::debug;
 use uuid::Uuid;
 
-// Re-exports
-pub use crate::db_content::CurrentOtpTokenData;
+//    ========  Re-exports to use in all api users ============
+pub use attachment::{
+    read_entry_attachment, remove_app_temp_dir_content, save_attachment_as,
+    save_attachment_as_temp_file, upload_entry_attachment, AttachmentUploadInfo,
+};
+pub use io::{
+    create_and_write_to_writer, create_kdbx, export_as_xml, export_main_content_as_xml,
+    generate_key_file, load_kdbx, read_and_verify_db_file, read_kdbx, reload_kdbx,
+    save_all_modified_dbs_with_backups, save_as_kdbx, save_kdbx_to_writer, save_kdbx_with_backup,
+    save_to_db_file,
+};
+
+pub use crate::error::{self, Error, Result};
+
+pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions, PasswordScore};
+pub use crate::util::{file_name, formatted_key, parse_attachment_hash, string_to_simple_hash};
+
+pub use crate::db::{
+    KeyStoreOperation, KeyStoreService, KeyStoreServiceType, NewDatabase, SecureKeyInfo,
+};
+
+pub use crate::db_content::{AllTags, EntryType, FieldDataType, Group, OtpSettings};
 
 pub use crate::form_data::{
-    CategoryDetail, DbSettings, EntryCategories, EntryCategory, EntryCategoryGrouping,
-    EntryCategoryInfo, EntryFormData, EntrySummary, EntryTypeFormData, EntryTypeHeader,
-    EntryTypeHeaders, EntryTypeNames, GroupSummary, GroupTree, KdbxLoaded, KdbxSaved,
+    CategoryDetail, CurrentOtpTokenData, DbSettings, EntryCategories, EntryCategory,
+    EntryCategoryGrouping, EntryCategoryInfo, EntryFormData, EntrySummary, EntryTypeFormData,
+    EntryTypeHeader, EntryTypeHeaders, EntryTypeNames, GroupSummary, GroupTree, KdbxLoaded,
+    KdbxSaved,
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -662,7 +670,10 @@ pub fn get_entry_form_data_by_id(db_key: &str, entry_uuid: &Uuid) -> Result<Entr
     main_content_action!(db_key, move |k: &KeepassFile| {
         match k.root.entry_by_id(entry_uuid) {
             Some(e) => Ok(e.into()),
-            None => Err(Error::NotFound(format!("No entry is found for the id {}",entry_uuid))),
+            None => Err(Error::NotFound(format!(
+                "No entry is found for the id {}",
+                entry_uuid
+            ))),
         }
     })
 }
@@ -682,9 +693,42 @@ pub fn entry_form_current_otp(
                     otp_field_name
                 ))),
             },
-            None => Err(Error::NotFound(format!("No entry is found for the id {}",entry_uuid))),
+            None => Err(Error::NotFound(format!(
+                "No entry is found for the id {}",
+                entry_uuid
+            ))),
         }
     })
+}
+
+pub fn entry_form_current_otps(
+    db_key: &str,
+    entry_uuid: &Uuid,
+    otp_field_names: Vec<String>,
+) -> Result<HashMap<String, CurrentOtpTokenData>> {
+    main_content_action!(db_key, move |k: &KeepassFile| {
+        match k.root.entry_by_id(entry_uuid) {
+            Some(e) => {
+                let v: HashMap<String, CurrentOtpTokenData> = otp_field_names
+                    .iter()
+                    .filter_map(|s| match e.current_otp_token_data(s) {
+                        Some(d) => Some((s.clone(), d)),
+                        None => None,
+                    })
+                    .collect();
+                Ok(v)
+            }
+            None => Err(Error::NotFound(format!(
+                "No entry is found for the id {}",
+                entry_uuid
+            ))),
+        }
+    })
+}
+
+#[inline]
+pub fn form_otp_url(otp_settings: &OtpSettings) -> Result<String> {
+    otp_settings.otp_url()
 }
 
 // Collects all entry field names and its values (not in any particular order)

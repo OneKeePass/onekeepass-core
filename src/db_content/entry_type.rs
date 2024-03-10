@@ -208,6 +208,7 @@ impl VersionedEntryType {
         VersionedEntryType::from_encoded(data)
     }
 
+    // Called to consider only non standard fields in an entry type 
     fn modify_entry_type_before_encoding(
         entry_type: &EntryType,
         custom_entry_types: &HashMap<Uuid, EntryType>,
@@ -247,6 +248,7 @@ impl VersionedEntryType {
         }
     }
 
+    // Called to merge all non standard fields in an entry type to the standard fields
     fn modify_entry_type_after_decoding(
         entry_type: &EntryType,
         custom_entry_types: &HashMap<Uuid, EntryType>,

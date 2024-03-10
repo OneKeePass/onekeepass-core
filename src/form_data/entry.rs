@@ -11,10 +11,11 @@ use crate::password_generator::{score_password, PasswordScore};
 use crate::util::{self, empty_str};
 
 use crate::db_content::{
-    join_tags, split_tags, AutoType, BinaryKeyValue, CurrentOtpTokenData, Entry, EntryField,
+    join_tags, split_tags, AutoType, BinaryKeyValue, Entry, EntryField,
     EntryType, FieldDataType, FieldDef, KeyValue, OtpData, Section,
 };
 
+pub use crate::db_content::CurrentOtpTokenData;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct KeyValueData {
@@ -99,9 +100,12 @@ impl KeyValueData {
         }
     }
 
-    fn generate_otp_custom_field(&mut self, parsed_otp_values: &Option<HashMap<String, OtpData>>) {
+    // Called to generate an otp token if there is a parsed otp data available for this KV
+    // The data type will be overriden to be 'OneTimePassword' 
+    fn generate_otp_on_check(&mut self, parsed_otp_values: &Option<HashMap<String, OtpData>>) {
         if let Some(m) = parsed_otp_values.as_ref() {
             if m.contains_key(&self.key) {
+                // We need to set data type as this field has a valid otp url
                 self.data_type = FieldDataType::OneTimePassword;
                 self.generate_otp(parsed_otp_values);
             }
@@ -231,6 +235,8 @@ impl EntryFormData {
                             kvd.generate_otp(&entry.parsed_otp_values);
                         }
 
+                        // kvd.generate_otp_on_check(&entry.parsed_otp_values);
+
                         // This is specific to CREDIT_DEBIT_CARD entry form
                         if entry_type_name == CREDIT_DEBIT_CARD {
                             // TODO: Send only the field name instead of option list and UI should have pulled
@@ -297,11 +303,11 @@ impl EntryFormData {
             // Need to figure out what to do for languages other than 'en'
             if let Some(mut all_custom_fields_kv_data) = section_fields.remove(&*CUSTOM_FILEDS) {
                 all_custom_fields_kv_data.extend(fields.values().map(|kv| {
-                    let mut kvd: KeyValueData = kv.into();
+                    // let mut kvd: KeyValueData = kv.into();
                     // There is a possibility a field may have a valid totp url created in other app
                     // In that case, we need to generate token and set its data type
-                    kvd.generate_otp_custom_field(&entry.parsed_otp_values);
-                    kvd
+                    // kvd.generate_otp_on_check(&entry.parsed_otp_values);
+                    kv.into()
                 }));
                 section_fields.insert(CUSTOM_FILEDS.clone(), all_custom_fields_kv_data);
             } else {
@@ -311,17 +317,12 @@ impl EntryFormData {
                     fields
                         .values()
                         .map(|kv| {
-                            let mut kvd: KeyValueData = kv.into();
+                            // let mut kvd: KeyValueData = kv.into();
                             // There is a possibility a field may have a valid totp url created in other app
                             // In that case, we need to generate token and set its data type
-                            kvd.generate_otp_custom_field(&entry.parsed_otp_values);
-                            // if let Some(m) = entry.parsed_otp_values.as_ref() {
-                            //     if m.contains_key(&kvd.key) {
-                            //         kvd.data_type = FieldDataType::OneTimePassword;
-                            //         kvd.generate_otp(&entry.parsed_otp_values);
-                            //     }
-                            // }
-                            kvd
+                            // kvd.generate_otp_on_check(&entry.parsed_otp_values);
+                            
+                            kv.into()
                         })
                         .collect(),
                 );

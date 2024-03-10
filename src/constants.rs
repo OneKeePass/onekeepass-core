@@ -62,6 +62,12 @@ pub mod general_category_names {
 }
 
 #[allow(dead_code)]
+pub mod standard_in_section_names {
+    pub const LOGIN_DETAILS: &str = "Login Details";
+    pub const CARD_DETAILS: &str = "Card Details" ;
+}
+
+#[allow(dead_code)]
 pub mod entry_type_name {
     pub const LOGIN: &str = "Login";
     pub const WIRELESS_ROUTER: &str = "Wireless Router";

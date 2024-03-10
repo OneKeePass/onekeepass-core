@@ -422,6 +422,7 @@ mod tests {
 
     #[allow(dead_code)]
     use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, TimeZone, Utc};
+    use regex::Regex;
 
     #[test]
     fn verify_decode_datetime_b64() {
@@ -673,6 +674,21 @@ mod tests {
         println!("{:x?}", &b);
         assert_eq!("0c032c07061622", hex::encode(&b));
         assert_eq!(&b, &hex::decode("0c032c07061622").unwrap());
+    }
+
+    use lazy_static::lazy_static;
+
+    lazy_static! {
+        pub  static ref RE_SPACES:Regex = Regex::new(r"\s+").unwrap();
+    }
+
+    #[test]
+    fn test1() {
+        //let RE_SPACES: Regex = Regex::new(r"\s+").unwrap();
+        let s = "BA3245";
+        println!("Space found {:?}", RE_SPACES.find(s));
+        let s1 = RE_SPACES.replace_all(s, "");
+        println!("s1 is {}",s1);
     }
 }
 
