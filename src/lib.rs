@@ -12,6 +12,7 @@ pub mod error;
 
 pub mod db_content;
 pub mod db_service;
+pub mod async_service;
 
 #[macro_use]
 extern crate slice_as_array;

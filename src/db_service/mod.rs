@@ -22,14 +22,21 @@ use uuid::Uuid;
 //    ========  Re-exports to use in all api users ============
 pub use attachment::{
     read_entry_attachment, remove_app_temp_dir_content, save_attachment_as,
-    save_attachment_as_temp_file, upload_entry_attachment, AttachmentUploadInfo,
+    save_attachment_as_temp_file, save_attachment_to_writter, upload_entry_attachment,
+    AttachmentUploadInfo,
 };
-pub use io::{
-    create_and_write_to_writer, create_kdbx, export_as_xml, export_main_content_as_xml,
-    generate_key_file, load_kdbx, read_and_verify_db_file, read_kdbx, reload_kdbx,
-    save_all_modified_dbs_with_backups, save_as_kdbx, save_kdbx_to_writer, save_kdbx_with_backup,
-    save_to_db_file,
-};
+
+// For now, as some fns are used only in desktop, need to include
+// all fns from this module so that desktop and mobile compilation
+// works
+pub use io::*;
+
+// pub use io::{
+//     create_and_write_to_writer, create_kdbx, export_as_xml,
+//     export_main_content_as_xml, generate_key_file, load_kdbx, read_and_verify_db_file, read_kdbx,
+//     reload_kdbx, save_all_modified_dbs_with_backups, save_as_kdbx,
+//     save_kdbx_to_writer, save_kdbx_with_backup, save_to_db_file,
+// };
 
 pub use crate::error::{self, Error, Result};
 

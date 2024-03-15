@@ -429,6 +429,8 @@ impl Entry {
 
         if !otp_vals.is_empty() {
             self.parsed_otp_values = Some(otp_vals);
+        } else {
+            self.parsed_otp_values = None;
         }
     }
 

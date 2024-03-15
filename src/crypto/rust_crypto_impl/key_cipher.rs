@@ -50,7 +50,7 @@ impl KeyCipher {
         };
         match final_data {
             Ok(v) => Ok(v),
-            Err(e) => Err(Error::Other(format!("AES GCM failed {}", e))),
+            Err(e) => Err(Error::UnexpectedError(format!("AES GCM failed {}", e))),
         }
     }
 }
