@@ -547,10 +547,8 @@ impl Root {
         } else {
             return Err(Error::NotFound("Group is not valid for the entry".into()));
         }
-        entry.copy_to_custom_data();
-        // entry
-        //     .custom_data
-        //     .encode_entry_type(&entry.entry_field.entry_type);
+        entry.complete_insert();
+
         self.all_entries.insert(entry.uuid, entry);
         Ok(())
     }

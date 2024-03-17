@@ -272,8 +272,19 @@ impl Entry {
         self.adjust_history_entries_entry_type_indexes();
     }
 
-    // Called when an entry is updated or a new entry inserted
-    pub fn copy_to_custom_data(&mut self) {
+    // Called to ensure the custom data values are created and otp fields are parsed when
+    // a new entry is created
+    pub(crate) fn complete_insert(&mut self,) {
+        self.parse_all_otp_fields();
+        // Call copy_to_custom_data from the incoming new entry
+        self.copy_to_custom_data();
+    }
+
+    // Called to create entry level custom data fields when an entry is updated or a new entry inserted 
+    // Currently mainly Entrytype definition info is stored
+    // We store entry type uuid if there is no change or the changed entry type serialized data when custom fields or sections 
+    // are added to the predefined entry type
+    pub(crate) fn copy_to_custom_data(&mut self) {
         // To be safe first we need to remove the existing entry type related keys.
         // It is expected we have either OKP_ENTRY_TYPE or OKP_ENTRY_TYPE_DATA. Not both
         self.custom_data.remove_item(OKP_ENTRY_TYPE);
@@ -433,14 +444,6 @@ impl Entry {
             self.parsed_otp_values = None;
         }
     }
-
-    // pub fn current_otp(&self, otp_field_name: &str) -> Option<&OtpData> {
-    //     self.parsed_otp_values
-    //         .as_ref()
-    //         .map(|m| m.get(otp_field_name))
-    //         .flatten()
-    //         .map(|pd| pd)
-    // }
 
     pub fn current_otp_token_data(&self, otp_field_name: &str) -> Option<CurrentOtpTokenData> {
         // as_ref() is to get Option<&HashMap<String, OtpData>>

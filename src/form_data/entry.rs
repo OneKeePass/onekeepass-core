@@ -177,6 +177,7 @@ impl EntryFormData {
         let entry_type_name = entry.entry_field.entry_type.name.clone();
         let entry_type_uuid = entry.entry_field.entry_type.uuid.clone();
         let entry_type_icon_name = entry.entry_field.entry_type.icon_name.clone();
+
         // Let us get the all section names
         let mut section_names: Vec<String> = entry
             .entry_field
@@ -381,7 +382,12 @@ impl EntryFormData {
         let mut entry_field = EntryField::default();
         entry_field.fields.insert(TITLE.into(), title_kv);
         entry_field.fields.insert(NOTES.into(), notes_kv);
-        // section_names is list of all section names
+
+        // section_names is list of all section names 
+        // Order of section and the fields order within a section are maintained for minimal
+        // Entrytype data storage
+        // See Entry's 'copy_to_custom_data' call flow where we store only the changed type information
+          
         for section_name in entry_form_data.section_names.iter() {
             // For each section name found, we find all KVs and form EntryField
             if let Some(kvds) = entry_form_data.section_fields.get(section_name) {
