@@ -7,13 +7,15 @@ use uuid::Uuid;
 use crate::constants::custom_data_key::{
     OKP_ENTRY_TYPE, OKP_ENTRY_TYPE_DATA, OKP_ENTRY_TYPE_DATA_INDEX, OKP_ENTRY_TYPE_LIST_DATA,
 };
+
+use crate::constants::OTP_URL_PREFIX;
 use crate::constants::entry_keyvalue_key::*;
 use crate::db_content::{entry_type::*, Item};
 use crate::db_content::{AttachmentHashValue, CustomData, Times};
 use crate::util;
 
 use super::meta::MetaShare;
-use super::otp::{CurrentOtpTokenData, OtpData, OTP_URL_PREFIX};
+use super::otp::{CurrentOtpTokenData, OtpData,};
 use super::Meta;
 
 // To carry additional entry field grouping and for easy KV data lookup
@@ -282,8 +284,8 @@ impl Entry {
 
     // Called to create entry level custom data fields when an entry is updated or a new entry inserted 
     // Currently mainly Entrytype definition info is stored
-    // We store entry type uuid if there is no change or the changed entry type serialized data when custom fields or sections 
-    // are added to the predefined entry type
+    // We store entry type uuid if there is no change and type is not LOGIN or the changed entry type's serialized 
+    // data when custom fields or sections are added to the predefined entry type
     pub(crate) fn copy_to_custom_data(&mut self) {
         // To be safe first we need to remove the existing entry type related keys.
         // It is expected we have either OKP_ENTRY_TYPE or OKP_ENTRY_TYPE_DATA. Not both

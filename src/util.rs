@@ -7,9 +7,11 @@ use std::path::Path;
 use chrono::{
     DateTime, Datelike, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc,
 };
+use regex::Regex;
 use uuid::Uuid;
 
-//use crate::result::{Result};
+use lazy_static::lazy_static;
+
 use crate::error::Result;
 use crate::{constants::EMPTY_STR, error::Error};
 
@@ -310,10 +312,30 @@ pub fn sub_strings(string: &str, sub_len: usize) -> Vec<&str> {
 
 #[inline]
 pub fn parse_attachment_hash(data_hash_str: &str) -> Result<u64> {
-    let data_hash = data_hash_str
-        .parse::<u64>()
-        .map_err(|e| Error::UnexpectedError(format!("Data hash str to u64 conversion failed - {} ", e)))?;
+    let data_hash = data_hash_str.parse::<u64>().map_err(|e| {
+        Error::UnexpectedError(format!("Data hash str to u64 conversion failed - {} ", e))
+    })?;
     Ok(data_hash)
+}
+
+lazy_static! {
+    pub static ref RE_SPACES: Regex = Regex::new(r"\s+").unwrap();
+}
+// Copied from once_cell https://docs.rs/once_cell/latest/once_cell/index.html#lazily-compiled-regex
+// macro_rules! regex {
+//     ($re:literal $(,)?) => {{
+//         static RE: once_cell::sync::OnceCell<regex::Regex> = once_cell::sync::OnceCell::new();
+//         RE.get_or_init(|| regex::Regex::new($re).unwrap())
+//     }};
+// }
+
+#[inline]
+pub fn strip_spaces(string_with_spaces: &str) -> String {
+    // regex macro can also be used
+    // let re = regex!(r"\s+"); re.replace_all(string_with_spaces, "");
+
+    let replaced_string = RE_SPACES.replace_all(string_with_spaces, "");
+    replaced_string.to_string()
 }
 
 // To see logging output during unit testing
@@ -676,22 +698,16 @@ mod tests {
         assert_eq!(&b, &hex::decode("0c032c07061622").unwrap());
     }
 
-    use lazy_static::lazy_static;
-
-    lazy_static! {
-        pub  static ref RE_SPACES:Regex = Regex::new(r"\s+").unwrap();
-    }
-
     #[test]
-    fn test1() {
+    fn verify_remove_spaces() {
         //let RE_SPACES: Regex = Regex::new(r"\s+").unwrap();
-        let s = "BA3245";
-        println!("Space found {:?}", RE_SPACES.find(s));
-        let s1 = RE_SPACES.replace_all(s, "");
-        println!("s1 is {}",s1);
+        let s = " ba3 r2 J45 ";
+
+        let s1 = strip_spaces(s);
+        println!("s1 is {}", s1);
+        assert_eq!(s1, "ba3r2J45")
     }
 }
-
 
 /*
 #[test]

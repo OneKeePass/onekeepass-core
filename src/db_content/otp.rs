@@ -4,18 +4,14 @@ use std::{
 };
 
 use crate::{
-    crypto::{
-        hmac_sha1_from_slice, hmac_sha256_from_slice, hmac_sha512_from_slice, print_crypto_lib_info,
-    },
-    error::{self, Error, Result},
+    constants::OTP_URL_PREFIX, crypto::{
+        hmac_sha1_from_slice, hmac_sha256_from_slice, hmac_sha512_from_slice,
+    }, error::{Error, Result}, util::strip_spaces
 };
 
 use data_encoding::BASE32_NOPAD;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use url::Url;
-
-pub const OTP_URL_PREFIX: &str = "otpauth://totp";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CurrentOtpTokenData {
@@ -73,6 +69,26 @@ impl OtpAlgorithm {
     }
 }
 
+macro_rules! verify_period {
+    ($period:expr) => {
+        if $period < 1 || $period > 60 {
+            return Err(Error::UnexpectedError(format!(
+                "Period should be in the range 1 - 60"
+            )));
+        }
+    };
+}
+
+macro_rules! verify_digits {
+    ($digits:expr) => {
+        if $digits < 6 || $digits > 10 {
+            return Err(Error::UnexpectedError(format!(
+                "Digits should be in the range 6 - 10"
+            )));
+        }
+    };
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct OtpData {
     // non-encoded value
@@ -125,13 +141,12 @@ impl OtpData {
         } else {
             let mut otp_data = OtpData::from_key(&otp_settings.secret_or_url)?;
             if let Some(period) = otp_settings.period {
-                if period < 1 || period > 60 {
-                    return Err(Error::UnexpectedError(format!("Period should be in the range 1 - 60")))
-                }
+                verify_period!(period);
                 otp_data.period = period;
             }
             if let Some(digits) = otp_settings.digits {
                 otp_data.digits = digits;
+                verify_digits!(digits);
             }
 
             if let Some(alg) = otp_settings.hash_algorithm {
@@ -143,16 +158,16 @@ impl OtpData {
     }
 
     pub fn from_key(encoded_secret: &str) -> Result<OtpData> {
-        // let space_removed =  encoded_secret;
-        // if let Ok(reg) = Regex::new(r"\s+") {
-        //     space_removed = reg.replace_all(encoded_secret, "").as;
-        // } 
-         
+        let space_removed = strip_spaces(encoded_secret).to_uppercase();
+
         Ok(OtpData {
             decoded_secret: BASE32_NOPAD
-                .decode(encoded_secret.as_bytes())
+                .decode(space_removed.as_bytes())
                 .map_err(|e| {
-                    Error::OtpKeyDecodeError(format!("Decoding '{}' failed with error {}",encoded_secret, e))
+                    Error::OtpKeyDecodeError(format!(
+                        "Decoding '{}' failed with error {}. Requires US-ASCII uppercase letters and digits",
+                        space_removed, e
+                    ))
                 })?,
             period: 30,
             digits: 6,
@@ -218,19 +233,19 @@ impl OtpData {
                     digits = value.parse::<usize>().map_err(|_| {
                         Error::OtpUrlParseError(format!("Invalid digits value {}", value))
                     })?;
+                    verify_digits!(digits);
                 }
                 "period" => {
                     period = value.parse::<u64>().map_err(|_| {
                         Error::OtpUrlParseError(format!("Invalid period value {}", value))
                     })?;
+                    verify_period!(period);
                 }
                 "secret" => {
                     println!("Secret is {}", value.as_ref());
                     let s = value.as_ref();
-                    secret = BASE32_NOPAD
-                    .decode(s.as_bytes())
-                    .map_err(|e| {
-                        Error::OtpUrlParseError(format!("Decoding '{}' failed with error {}",s, e))
+                    secret = BASE32_NOPAD.decode(s.as_bytes()).map_err(|e| {
+                        Error::OtpUrlParseError(format!("Decoding '{}' failed with error {}", s, e))
                     })?;
                 }
 
@@ -262,7 +277,7 @@ impl OtpData {
         })
     }
 
-    // Will sign the given timestamp
+    // Does a hmac sign of the given timestamp
     pub fn sign(&self, time: u64) -> Result<Vec<u8>> {
         self.algorithm.sign(
             self.decoded_secret.as_ref(),
@@ -270,19 +285,57 @@ impl OtpData {
         )
     }
 
-    // Will generate a token given the provided timestamp in seconds
+    // Will generate a token for the provided timestamp in seconds
     pub fn generate(&self, time: u64) -> Result<String> {
-        let result: &[u8] = &self.sign(time)?;
-        let offset = (result.last().unwrap() & 15) as usize;
-        #[allow(unused_mut)]
-        let mut result =
-            u32::from_be_bytes(result[offset..offset + 4].try_into().unwrap()) & 0x7fff_ffff;
+        let signed_bytes: &[u8] = &self.sign(time)?;
 
-        let s = format!(
-            "{1:00$}",
-            self.digits,
-            result % 10_u32.pow(self.digits as u32)
-        );
+        // Make sure that we have last element call succeed as we do unwrap call later
+        // if result.last().is_none() {
+        //     return Err(Error::UnexpectedError(
+        //         "Token generation failed to get last byte from signed bytes".into(),
+        //     ));
+        // }
+        // let offset = (result.last().unwrap() & 15) as usize;
+
+        let Some(last_byte) = signed_bytes.last() else {
+            return Err(Error::UnexpectedError(
+                "Token generation failed to get last byte from the signed bytes".into(),
+            ));
+        };
+
+        let offset = (last_byte & 15) as usize;
+
+        // log::debug!("offset calculated is {} for result with size {} and will look bytes from {} to {} in result bytes",offset,result.len(), offset, offset+4);
+
+        // Extract the 4 bytes
+        let offset_result: [u8; 4] = signed_bytes[offset..offset + 4].try_into().map_err(|e| {
+            Error::UnexpectedError(format!(
+                "Token generation failed during offeset calculation with error {}",
+                e
+            ))
+        })?;
+
+        //#[allow(unused_mut)]
+        let result = u32::from_be_bytes(offset_result) & 0x7fff_ffff;
+
+        //IMPORTANT: we need to use 10_u64 instead of using 10_u32 as it will result in num overflow error while calculating 10^10
+        let ten_pow: Option<u64> = 10_u64.checked_pow(self.digits as u32);
+        //log::debug!("ten_pow calculated is {}",&ten_pow);
+
+        let Some(ten_pow) = ten_pow else {
+            return Err(Error::UnexpectedError(
+                "10th Power calculation number overflows".into(),
+            ));
+        };
+
+        let final_num = (result as u64)
+            .checked_rem(ten_pow)
+            .ok_or_else(|| Error::UnexpectedError("Invalid remainder calculation".into()))?;
+
+        //let final_num = result as u64 % ten_pow;
+        //log::debug!("final_num calculated is {}",&final_num);
+
+        let s = format!("{1:00$}", self.digits, final_num);
 
         Ok(s)
     }
@@ -304,16 +357,16 @@ impl OtpData {
 
     // Returns the timestamp of the first second for the next period
     // given the provided timestamp in seconds
-    fn next_period(&self, time: u64) -> u64 {
+    fn _next_period(&self, time: u64) -> u64 {
         let period = time / self.period;
         (period + 1) * self.period
     }
 
     // Returns the timestamp of the first second of the next step
     // According to system time
-    fn next_step_current(&self) -> Result<u64> {
+    fn _next_step_current(&self) -> Result<u64> {
         let t = system_time()?;
-        Ok(self.next_period(t))
+        Ok(self._next_period(t))
     }
 
     // Give the ttl (in seconds) of the current token
@@ -361,8 +414,9 @@ mod tests {
 
     use data_encoding::BASE32_NOPAD;
 
-    use super::OtpData;
-    use crate::{crypto::init_log_lib_info, db_content::otp::OtpAlgorithm};
+    use super::{OtpData, OtpSettings};
+    use crate::db_content::otp::OtpAlgorithm;
+    use crate::util::init_test_logging;
 
     struct V1 {
         ascii_key: String,
@@ -437,6 +491,7 @@ mod tests {
 
     #[test]
     fn verify_totp_sha1_with_test_vectors() {
+        init_test_logging();
         let data = test_rfc_values();
 
         for v in data.get("SHA1").unwrap().iter().into_iter() {
@@ -484,6 +539,41 @@ mod tests {
     }
 
     #[test]
+    fn verify_using_settings() {
+        //from_otp_settings
+        let mut settings = OtpSettings {
+            period: Some(10),
+            digits: Some(6),
+            secret_or_url: "base 32se cret 3232".into(),
+            hash_algorithm: Some(OtpAlgorithm::SHA1),
+        };
+
+        let otp = OtpData::from_otp_settings(&settings);
+        assert!(otp.is_ok());
+
+        settings.secret_or_url = "BASE32SECRET3232".into();
+        let otp = OtpData::from_otp_settings(&settings);
+        assert!(otp.is_ok());
+
+        // digit 1 is not valid
+        settings.secret_or_url = "BASE32SECRET3231".into();
+        let otp = OtpData::from_otp_settings(&settings);
+        assert!(otp.is_err());
+
+        // Not sufficient length
+        settings.secret_or_url = "BASE32SECRET".into();
+        let otp = OtpData::from_otp_settings(&settings);
+        assert!(otp.is_err());
+
+        // Not correct length - multiple of 8?
+        settings.secret_or_url = "BASE32SECRET32323232".into();
+        let otp = OtpData::from_otp_settings(&settings);
+        assert!(otp.is_err());
+
+        println!("Error is {:?}", otp);
+    }
+
+    #[test]
     fn from_url_err() {
         // HOTP is not supported
         let r = OtpData::from_url("otpauth://hotp/123");
@@ -514,6 +604,72 @@ mod tests {
         if r.is_err() {
             println!("Error is {:?}", r);
         }
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn verify_url_max_digits_period() {
+        init_test_logging();
+        let url = "otpauth://totp/None?secret=HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ&digits=10&period=60&algorithm=SHA1";
+        let r = OtpData::from_url(url);
+        if r.is_err() {
+            println!("Error is {:?}", r);
+        }
+        assert!(r.is_ok());
+        let n = r.unwrap().generate_current();
+        assert!(n.is_ok());
+
+        println!("Generated Token is {}", n.unwrap());
+    }
+
+    #[test]
+    fn verify_url_min_digits_period() {
+        init_test_logging();
+        let url = "otpauth://totp/None?secret=HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ&digits=6&period=1&algorithm=SHA1";
+        let r = OtpData::from_url(url);
+        if r.is_err() {
+            println!("Error is {:?}", r);
+        }
+        assert!(r.is_ok());
+        let n = r.unwrap().generate_current();
+
+        assert!(n.is_ok());
+        println!("Generated Token is {}", n.unwrap());
+    }
+
+    #[test]
+    fn verify_url_digits_range_error() {
+        init_test_logging();
+        // Accepted range 6 - 10
+        let url = "otpauth://totp/None?secret=HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ&digits=11&period=60";
+        let r = OtpData::from_url(url);
+        if r.is_err() {
+            println!("Error is {:?}", r);
+        }
+        assert!(r.is_err());
+
+        let url = "otpauth://totp/None?secret=HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ&digits=5&period=60";
+        let r = OtpData::from_url(url);
+
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn verify_url_period_range_error() {
+        init_test_logging();
+
+        // Accepted period 1 - 60
+
+        let url = "otpauth://totp/None?secret=HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ&digits=10&period=65";
+        let r = OtpData::from_url(url);
+        if r.is_err() {
+            println!("Error is {:?}", r);
+        }
+        assert!(r.is_err());
+
+        let url = "otpauth://totp/None?secret=HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ&digits=10&period=0";
+        let r = OtpData::from_url(url);
+
         assert!(r.is_err());
     }
 

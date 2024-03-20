@@ -210,7 +210,8 @@ impl VersionedEntryType {
         VersionedEntryType::from_encoded(data)
     }
 
-    // Called to consider only non standard fields in an entry type 
+    // Called to consider only non standard fields or new custom sections in an entry type 
+    // This fn is called when there is a change in the incoming entry type's section data as the 'changed' fn is called before this
     fn modify_entry_type_before_encoding(
         incoming_entry_type: &EntryType,
         custom_entry_types: &HashMap<Uuid, EntryType>,
@@ -220,7 +221,9 @@ impl VersionedEntryType {
             .get(&incoming_entry_type.uuid)
             .or_else(|| UUID_TO_ENTRY_TYPE_MAP.get(&incoming_entry_type.uuid))
         {
+            // An incoming entry_type may have more sections or fields than that are in the predefined entry_type
             let mut incoming_et = incoming_entry_type.clone();
+
             // Set to some default values to reduce size
             incoming_et.name = String::default();
             incoming_et.icon_name = None;
@@ -240,7 +243,7 @@ impl VersionedEntryType {
                         .retain_mut(|f| !predefined_et_section.field_defs.contains(f)) 
                 }
             }
-            // As we have removed the built-in fields, a section will be empty and drop them
+            // As we have removed the built-in fields, a section may be empty and drop them from storing
             incoming_et.sections.retain(|sec| sec.field_defs.len() != 0);
 
             Some(incoming_et)
@@ -262,6 +265,7 @@ impl VersionedEntryType {
         {
             let mut built_in_et = predefined_et.clone();
 
+            // incoming_entry_type will have sections or custom fields that are not in the predefined entry_type
             for incoming_section in incoming_entry_type.sections.iter() {
                 // Find the built-in section that matches with incoming section
                 let built_in_section_opt = built_in_et

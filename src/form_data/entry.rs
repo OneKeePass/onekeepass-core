@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::constants::entry_keyvalue_key::*;
 use crate::constants::entry_type_name::CREDIT_DEBIT_CARD;
+use crate::constants::standard_in_section_names::ADDITIONAL_ONE_TIME_PASSWORDS;
 use crate::password_generator::{score_password, PasswordScore};
 use crate::util::{self, empty_str};
 
@@ -102,7 +103,7 @@ impl KeyValueData {
 
     // Called to generate an otp token if there is a parsed otp data available for this KV
     // The data type will be overriden to be 'OneTimePassword' 
-    fn generate_otp_on_check(&mut self, parsed_otp_values: &Option<HashMap<String, OtpData>>) {
+    fn _generate_otp_on_check(&mut self, parsed_otp_values: &Option<HashMap<String, OtpData>>) {
         if let Some(m) = parsed_otp_values.as_ref() {
             if m.contains_key(&self.key) {
                 // We need to set data type as this field has a valid otp url
@@ -225,13 +226,25 @@ impl EntryFormData {
                     if let Some(kv) = fields.remove(&fd.name) {
                         // Clone values from KeyValue to KeyValueData
                         let mut kvd: KeyValueData = (&kv).into();
+
+                        // Following may be requird when we change a field's protection flag 
+                        // in FieldDef from its earlier definition. 
+                        // May Need more tests to confirm no other issue. 
+                        // if kvd.protected != fd.require_protection {
+                        //     // Overriding the old protected flag read from db with new value from
+                        //     // field definition
+                        //     kvd.protected = fd.require_protection;
+                        // }
+
                         // Additionally, the following field values are found in FieldDef and
                         // kvd is populated from them
                         kvd.data_type = fd.data_type;
                         kvd.required = fd.required;
-                        kvd.helper_text = fd.helper_text(); //fd.helper_text.clone();
+                        kvd.helper_text = fd.helper_text(); 
                         kvd.standard_field = standard_field_names.contains(&kv.key.as_str());
 
+                        // There is a possibility, this field may have a valid otp url,
+                        // still it is treated as text data type and we generate token only if 'OneTimePassword' type
                         if fd.data_type == FieldDataType::OneTimePassword {
                             kvd.generate_otp(&entry.parsed_otp_values);
                         }
@@ -408,8 +421,8 @@ impl EntryFormData {
 
                 // Drop a section if it does not have any fields
                 // Mostly this is possible if user removes all custom fields of a custom section
-                // In case of standard sections, one or more field should be there
-                if !fds.is_empty() {
+                // In case of standard sections, one or more field should be there except for the ADDITIONAL_ONE_TIME_PASSWORDS section
+                if section_name == ADDITIONAL_ONE_TIME_PASSWORDS || !fds.is_empty() {
                     entry_field.entry_type.sections.push(Section {
                         name: section_name.clone(),
                         field_defs: fds,

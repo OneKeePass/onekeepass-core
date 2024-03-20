@@ -2,13 +2,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use log::{debug, error, info};
-//use std::cell::OnceCell;
-//use std::time::{Duration, Instant};
+
 use once_cell::sync::{Lazy, OnceCell};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::mpsc;
-use tokio::time::{self, sleep};
+use tokio::time::{self};
 use uuid::Uuid;
 
 use crate::db_service::entry_form_current_otp;
@@ -77,7 +76,7 @@ impl EntryOtpTokenTtl {
     fn remove_all(&self) {
         let mut e = self.entry_ttls.lock().unwrap();
         e.clear();
-        debug!("All entry polling removed and size is {}",e.len());
+        debug!("All entry polling removed and size is {}", e.len());
     }
 
     // Called to ensure we have the latest token and ttl before starting the polling loop
@@ -117,19 +116,21 @@ impl EntryOtpTokenTtl {
 
         if let Some(ttl_info_by_field) = e.get_mut(entry_uuid) {
             for (otp_field_name, otp_info) in ttl_info_by_field.token_ttls.iter_mut() {
-
-                // next ttl is dtermined for each sec
-                otp_info.ttl -= 1;
+                // next ttl is determined decrementing 1 sec. Make sure we are not decrementing below 0!
+                if otp_info.ttl != 0 {
+                    otp_info.ttl -= 1;
+                } else {
+                    error!("otp_info.ttl is already zero. This is not expected");
+                }
 
                 if otp_info.ttl == 0 {
-
                     // Reset the ttl
                     // otp_info.ttl = otp_info.period;
 
                     // generate new token for this field
                     match entry_form_current_otp(db_key, entry_uuid, otp_field_name) {
                         Ok(current_otp) => {
-                            // Reset the ttl to the latest. 
+                            // Reset the ttl to the latest.
                             // Typically most of the time current_otp.ttl = otp_info.period
                             // By the following reseting, we ensure the ttl is uptodate
                             otp_info.ttl = current_otp.ttl;
@@ -169,16 +170,19 @@ fn entry_opt_token_store() -> &'static EntryOtpTokenStore {
     &ENTRY_OTP_TOKEN_STORE
 }
 
-// Called to create mpsc channels 
-// The Receiver end is returned to the caller 
+// Called to create mpsc channels
+// The Receiver end is returned to the caller
 pub fn init_entry_channels() -> EntryOtpRx {
     let (tx, rx): (EntryOtpTx, EntryOtpRx) = mpsc::channel(32);
-    //entry_opt_token_store().sender.lock().unwrap().replace(tx);
-    //debug!("Tx and Rx are created {:?}, {:?}",&tx, &rx);
+
+    // This also works
+    // entry_opt_token_store().sender.lock().unwrap().replace(tx);
+
     let mut s = entry_opt_token_store().sender.lock().unwrap();
     if let Some(_s1) = &*s {
         error!("Error: Existing sender are found. init_entry_channels is called multiple time?");
     }
+    // Sender side is stored and receiver side is returned
     *s = Some(tx);
     rx
 }
@@ -190,15 +194,23 @@ pub fn start_polling_entry_otp_fields(
     entry_uuid: &Uuid,
     otp_fields: OtpTokenTtlInfoByField,
 ) {
+    // If we see this error, we may need to fix by making sure
+    // stop_polling_all_entries_otp_fields before this call
     if !entry_opt_token_store().is_stopped(entry_uuid) {
-        error!("Already an otp poll thread is running for the entry uuid {}. No new polling started",&entry_uuid);
-        return ;
+        error!(
+            "Already an otp poll thread is running for the entry uuid {}. No new polling started",
+            &entry_uuid
+        );
+        return;
     }
-    
+
     if let Some(previous_entry) = previous_entry_uuid {
         entry_opt_token_store().remove(previous_entry);
     }
+
     entry_opt_token_store().set(entry_uuid, otp_fields);
+
+    // Start the polling in a thread of Tokio runtime
     async_runtime().spawn(poll_token_generation(
         db_key.to_string(),
         entry_uuid.clone(),
@@ -216,9 +228,8 @@ pub fn stop_polling_entry_otp_fields(entry_uuid: &Uuid) {
 }
 
 async fn poll_token_generation(db_key: String, entry_uuid: Uuid) {
+    debug!("Started polling for entry_uuid {}", &entry_uuid);
 
-    debug!("Started polling for entry_uuid {}",&entry_uuid);
-    
     let sender;
     // Lock needs to be dropped by using a block
     // Otherwise, we see the error - future is not `Send` as this value is used across an await
@@ -228,6 +239,7 @@ async fn poll_token_generation(db_key: String, entry_uuid: Uuid) {
     }
 
     let replys = entry_opt_token_store().form_first_reply(&db_key, &entry_uuid);
+
     if let Some(ref t) = sender {
         t.send(replys).await.unwrap();
     }
@@ -239,7 +251,7 @@ async fn poll_token_generation(db_key: String, entry_uuid: Uuid) {
 
     loop {
         interval.tick().await;
-        
+
         // time::sleep(time::Duration::from_secs(1)).await;
 
         if entry_opt_token_store().is_stopped(&entry_uuid) {
@@ -291,60 +303,3 @@ pub fn async_runtime() -> &'static Runtime {
         .get()
         .expect("Tokio runtime is not initialized")
 }
-
-// async fn poll_token_generation_old(db_key: String, entry_uuid: Uuid) {
-//     let mut interval = time::interval(time::Duration::from_secs(1));
-//     loop {
-//         interval.tick().await;
-//         if entry_opt_token_store().is_stopped(&entry_uuid) {
-//             debug!(
-//                 "Polling is stopped for entry {} and exiting the loop",
-//                 &entry_uuid
-//             );
-//             break;
-//         }
-
-//         let replys = entry_opt_token_store().form_reply(&db_key, &entry_uuid);
-//         // Send to caller
-//         // let (t,r):(EntryOtpTx,EntryOtpRx) = mpsc::channel(32);
-//         // // let tt = t.clone();
-//         // t.send(replys).await.unwrap();
-
-//         //let mut t1: Option<EntryOtpTx> = None;
-
-//         let t1;
-
-//         // Lock needs to be dropped by using a block
-//         // Otherwise, we see the error - future is not `Send` as this value is used across an await
-//         {
-//             let sender = entry_opt_token_store().sender.lock().unwrap();
-
-//             t1 = (&*sender).clone();
-
-//             // if let Some(tx) = &*sender {
-//             //     let tx1 = tx.clone();
-//             //     t1 = Some(tx1);
-//             // }
-//         }
-
-//         if let Some(t) = t1 {
-//             t.send(replys).await.unwrap();
-//         }
-//     }
-// }
-
-// async fn task_1() {
-//     info!("Task is called ...{:?}", std::time::Instant::now());
-// }
-
-// async fn call_token_gen() {
-//     let mut interval = time::interval(time::Duration::from_secs(5));
-//     loop {
-//         interval.tick().await;
-//         task_1().await;
-//     }
-// }
-
-// pub fn start() {
-//     async_runtime().spawn(call_token_gen());
-// }

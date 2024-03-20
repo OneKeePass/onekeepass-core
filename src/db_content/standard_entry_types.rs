@@ -59,12 +59,16 @@ lazy_static! {
                 FieldDef::new(PASSWORD)
                     .required()
                     .set_require_protection(true),
-                FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword),
+                FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword).set_require_protection(true),
                 FieldDef::new(URL),
                 FieldDef::new("Additional URLs"),
                 //FieldDef::new("Date created").set_data_type(FieldDataType::Date),
             ],
-        }
+            
+        },
+        Section {
+            name: ADDITIONAL_ONE_TIME_PASSWORDS.into(),
+            field_defs: vec![],}
         ],
     };
 
@@ -105,7 +109,7 @@ lazy_static! {
                             FieldDef::new(PASSWORD)
                                 .required()
                                 .set_require_protection(true),
-                            FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword),
+                                FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword).set_require_protection(true),
                             FieldDef::new(URL)
                         ],
                     },
@@ -162,7 +166,7 @@ lazy_static! {
                         FieldDef::new(PASSWORD)
                             .required()
                             .set_require_protection(true),
-                        FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword),
+                            FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword).set_require_protection(true),
                         FieldDef::new(URL)
                     ],
                 },
