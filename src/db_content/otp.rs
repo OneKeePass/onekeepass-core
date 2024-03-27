@@ -64,7 +64,7 @@ impl OtpAlgorithm {
             OtpAlgorithm::SHA1 => hmac_sha1_from_slice(decoded_secret, data),
             OtpAlgorithm::SHA256 => hmac_sha256_from_slice(decoded_secret, data),
             OtpAlgorithm::SHA512 => hmac_sha512_from_slice(decoded_secret, data),
-            _ => Err(Error::DataError("()")),
+            // _ => Err(Error::DataError("()")),
         }
     }
 }
@@ -184,6 +184,7 @@ impl OtpData {
         let mut period = 30;
         let mut secret = Vec::new();
         let mut issuer: Option<String> = None;
+        #[allow(unused_assignments)]
         let mut account_name: Option<String> = None;
 
         let parsed_url = Url::parse(otp_url)?;

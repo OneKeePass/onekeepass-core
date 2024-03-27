@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use log::{debug, error, info};
@@ -39,6 +40,18 @@ impl OtpTokenReply {
 // Instead of 'EntryOtpTokenReply', we may need to use an enum with an variant for entry form otp tokens
 // another variant for entry list otp tokens
 
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "t")]
+pub enum AsyncResponse {
+    EntryOtpToken(EntryOtpTokenReply),
+    Tick(TickReply),
+}
+
+#[derive(Default, Serialize, Deserialize)]
+pub struct TickReply {
+    timer_id: TimerID,
+}
+
 // Collects all otp field replies for an entry
 #[derive(Default, Serialize, Deserialize, Debug)]
 pub struct EntryOtpTokenReply {
@@ -47,33 +60,97 @@ pub struct EntryOtpTokenReply {
     pub reply_field_tokens: HashMap<String, OtpTokenReply>,
 }
 
+pub type TimerID = u32;
+
+type TimerCancelled = bool;
+
+type EntryOtpTx = mpsc::Sender<AsyncResponse>;
+
+pub type EntryOtpRx = mpsc::Receiver<AsyncResponse>;
+
 // A singleton to hold sender channel and otp tokens for all fields for each entry
-#[derive(Default, Debug)]
-struct EntryOtpTokenTtl {
-    //receiver_sender:Mutex<(EntryOtpTx,EntryOtpRx)>,
-    sender: Mutex<Option<EntryOtpTx>>,
+struct MainAsyncData {
+    // A simple incrementing number is used as timer id for now
+    // Assumption is that we will be creating limited number of timers
+    timer_id_counter: AtomicU32,
     entry_ttls: Mutex<HashMap<Uuid, OtpTokenTtlInfoByField>>,
+    periodic_timers: Mutex<HashMap<TimerID, TimerCancelled>>,
+    sender: Mutex<Option<EntryOtpTx>>,
 }
 
-impl EntryOtpTokenTtl {
-    fn is_stopped(&self, entry_uuid: &Uuid) -> bool {
+impl Default for MainAsyncData {
+    fn default() -> Self {
+        Self {
+            // If the timer is created on the backend, all ids will be >= 2001
+            // 1 to 2000 are reserved for the client generated timer ids   
+            timer_id_counter: AtomicU32::new(2001),
+            entry_ttls: Mutex::default(),
+            periodic_timers: Mutex::default(),
+            sender: Mutex::default(),
+        }
+    }
+}
+
+impl MainAsyncData {
+    fn next_timer_id(&self) -> TimerID {
+        // fetch_add adds to the current value, returning the previous value
+        // So the first value is the intial value 5000
+        self.timer_id_counter.fetch_add(1, Ordering::Relaxed)
+    }
+
+    fn init_timer_id(&self, timer_id: Option<TimerID>) -> TimerID {
+        //debug!("Start counter timer id {:?}",&self.timer_id_counter);
+
+        let id = timer_id.unwrap_or_else(|| main_async_data_store().next_timer_id());
+
+        //debug!("After counter timer id {:?}, key id {} ",&self.timer_id_counter, &id);
+
+        let mut timers = self.periodic_timers.lock().unwrap();
+
+        // false indicates the timer is not yet cancelled
+        timers.insert(id.clone(), false);
+        id
+    }
+
+    fn remove_timer(&self, timer_id: &TimerID) {
+        let mut timers = self.periodic_timers.lock().unwrap();
+        timers.remove(timer_id);
+    }
+
+    fn is_timer_cancelled(&self, timer_id: &TimerID) -> TimerCancelled {
+        let timers = self.periodic_timers.lock().unwrap();
+        // On cancellation of a timer, it is removed from the map
+        // Should we use contains check only?
+        if let Some(v) = timers.get(timer_id) {
+            *v
+        } else {
+            true
+        }
+    }
+
+    fn sender(&self) -> Option<EntryOtpTx> {
+        let t = main_async_data_store().sender.lock().unwrap();
+        (&*t).clone()
+    }
+
+    fn is_entry_polling_stopped(&self, entry_uuid: &Uuid) -> bool {
         !self.entry_ttls.lock().unwrap().contains_key(entry_uuid)
     }
 
     // Sets the initial otp info for an entry when we start polling
-    fn set(&self, entry_uuid: &Uuid, otp_fields: OtpTokenTtlInfoByField) {
+    fn init_entry_otp_polling_data(&self, entry_uuid: &Uuid, otp_fields: OtpTokenTtlInfoByField) {
         let mut e: MutexGuard<'_, HashMap<Uuid, OtpTokenTtlInfoByField>> =
             self.entry_ttls.lock().unwrap();
         e.insert(*entry_uuid, otp_fields);
     }
 
     // Called during the stop polling call
-    fn remove(&self, entry_uuid: &Uuid) {
+    fn remove_entry_otp_polling_data(&self, entry_uuid: &Uuid) {
         let mut e = self.entry_ttls.lock().unwrap();
         e.remove(entry_uuid);
     }
 
-    fn remove_all(&self) {
+    fn remove_all_entry_otp_polling_data(&self) {
         let mut e = self.entry_ttls.lock().unwrap();
         e.clear();
         debug!("All entry polling removed and size is {}", e.len());
@@ -159,14 +236,10 @@ impl EntryOtpTokenTtl {
     }
 }
 
-type EntryOtpTx = mpsc::Sender<EntryOtpTokenReply>;
+type MainAsyncDataStore = Arc<MainAsyncData>;
 
-pub type EntryOtpRx = mpsc::Receiver<EntryOtpTokenReply>;
-
-type EntryOtpTokenStore = Arc<EntryOtpTokenTtl>;
-
-fn entry_opt_token_store() -> &'static EntryOtpTokenStore {
-    static ENTRY_OTP_TOKEN_STORE: Lazy<EntryOtpTokenStore> = Lazy::new(Default::default);
+fn main_async_data_store() -> &'static MainAsyncDataStore {
+    static ENTRY_OTP_TOKEN_STORE: Lazy<MainAsyncDataStore> = Lazy::new(Default::default);
     &ENTRY_OTP_TOKEN_STORE
 }
 
@@ -178,7 +251,7 @@ pub fn init_entry_channels() -> EntryOtpRx {
     // This also works
     // entry_opt_token_store().sender.lock().unwrap().replace(tx);
 
-    let mut s = entry_opt_token_store().sender.lock().unwrap();
+    let mut s = main_async_data_store().sender.lock().unwrap();
     if let Some(_s1) = &*s {
         error!("Error: Existing sender are found. init_entry_channels is called multiple time?");
     }
@@ -190,13 +263,38 @@ pub fn init_entry_channels() -> EntryOtpRx {
 // Called to start updating all otp fields of an entry periodically
 pub fn start_polling_entry_otp_fields(
     db_key: &str,
+    entry_uuid: &Uuid,
+    otp_fields: OtpTokenTtlInfoByField,
+) {
+    // If we see this error, we may need to fix by making sure
+    // stop_polling_all_entries_otp_fields before this call
+    if !main_async_data_store().is_entry_polling_stopped(entry_uuid) {
+        error!(
+            "Already an otp poll thread is running for the entry uuid {}. No new polling started",
+            &entry_uuid
+        );
+        return;
+    }
+    main_async_data_store().init_entry_otp_polling_data(entry_uuid, otp_fields);
+
+    // Start the polling in a thread of Tokio runtime
+    // spawn expects a aeg of type : Future + Send + 'static
+    async_runtime().spawn(poll_token_generation(
+        db_key.to_string(),
+        entry_uuid.clone(),
+    ));
+}
+
+/*
+pub fn start_polling_entry_otp_fields(
+    db_key: &str,
     previous_entry_uuid: Option<&Uuid>,
     entry_uuid: &Uuid,
     otp_fields: OtpTokenTtlInfoByField,
 ) {
     // If we see this error, we may need to fix by making sure
     // stop_polling_all_entries_otp_fields before this call
-    if !entry_opt_token_store().is_stopped(entry_uuid) {
+    if !main_async_data_store().is_stopped(entry_uuid) {
         error!(
             "Already an otp poll thread is running for the entry uuid {}. No new polling started",
             &entry_uuid
@@ -205,28 +303,106 @@ pub fn start_polling_entry_otp_fields(
     }
 
     if let Some(previous_entry) = previous_entry_uuid {
-        entry_opt_token_store().remove(previous_entry);
+        main_async_data_store().remove(previous_entry);
     }
 
-    entry_opt_token_store().set(entry_uuid, otp_fields);
+    main_async_data_store().set(entry_uuid, otp_fields);
 
     // Start the polling in a thread of Tokio runtime
+    // spawn expects a aeg of type : Future + Send + 'static
     async_runtime().spawn(poll_token_generation(
         db_key.to_string(),
         entry_uuid.clone(),
     ));
 }
+*/
 
 // Called to remove updating all otp fields of all entries that are set previously
 pub fn stop_polling_all_entries_otp_fields() {
-    entry_opt_token_store().remove_all();
+    main_async_data_store().remove_all_entry_otp_polling_data();
 }
 
+// deprecate
 // Called to remove updating all otp fields of an entry
 pub fn stop_polling_entry_otp_fields(entry_uuid: &Uuid) {
-    entry_opt_token_store().remove(entry_uuid);
+    main_async_data_store().remove_entry_otp_polling_data(entry_uuid);
 }
 
+// Called to create a repeat timer that sends a periodic tick
+pub fn start_periodic_timer(period_in_milli_seconds: u64, timer_id: Option<TimerID>) -> TimerID {
+    let id = main_async_data_store().init_timer_id(timer_id);
+    async_runtime().spawn(run_periodic_timer(period_in_milli_seconds, id.clone()));
+    id
+}
+
+// Called to create a timer that sends a tick on its period expiration
+pub fn set_timeout(period_in_milli_seconds: u64, timer_id: Option<TimerID>) -> TimerID {
+    debug!(
+        "In coming set_timeout period {}, timer_id {:?}",
+        &period_in_milli_seconds, &timer_id
+    );
+    let id = main_async_data_store().init_timer_id(timer_id);
+    // Spawn the timeout 
+    async_runtime().spawn(run_specified_timeout(period_in_milli_seconds, id.clone()));
+
+    id
+}
+
+// Called to cancel a timer that is started earlier
+pub fn cancel_timer(timer_id: &TimerID) {
+    main_async_data_store().remove_timer(timer_id);
+}
+
+// Sends a tick to the listener on the timer expiration
+async fn send_timer_reply(timer_id: &TimerID) {
+    // send reply
+    if let Some(tx) = main_async_data_store().sender() {
+        let r = tx
+            .send(AsyncResponse::Tick(TickReply {
+                timer_id: timer_id.clone(),
+            }))
+            .await;
+        if r.is_err() {
+            error!("Unexpected error in sending timer id {}", &timer_id);
+        }
+    }
+}
+
+// On expiration of the timeout, tick will be sent to the caller by message
+async fn run_specified_timeout(period_in_milli_seconds: u64, timer_id: TimerID) {
+    time::sleep(time::Duration::from_millis(period_in_milli_seconds)).await;
+
+    if main_async_data_store().is_timer_cancelled(&timer_id) {
+        return;
+    }
+
+    main_async_data_store().remove_timer(&timer_id);
+
+    // send reply
+    send_timer_reply(&timer_id).await;
+}
+
+// On expiration of the timeout, tick will be sent to the caller by message and repeats
+async fn run_periodic_timer(period_in_milli_seconds: u64, timer_id: TimerID) {
+    if main_async_data_store().is_timer_cancelled(&timer_id) {
+        return;
+    }
+
+    loop {
+        time::sleep(time::Duration::from_millis(period_in_milli_seconds)).await;
+
+        if main_async_data_store().is_timer_cancelled(&timer_id) {
+            debug!("Timer with id {} is cancelled ", &timer_id);
+            break;
+        }
+
+        // send reply till this timer is cancelled from UI
+        send_timer_reply(&timer_id).await;
+    }
+}
+
+// async fn is a future
+// await call asynchronously waits for the completion of another operation and doesn’t block the current thread
 async fn poll_token_generation(db_key: String, entry_uuid: Uuid) {
     debug!("Started polling for entry_uuid {}", &entry_uuid);
 
@@ -234,11 +410,13 @@ async fn poll_token_generation(db_key: String, entry_uuid: Uuid) {
     // Lock needs to be dropped by using a block
     // Otherwise, we see the error - future is not `Send` as this value is used across an await
     {
-        let tx = entry_opt_token_store().sender.lock().unwrap();
+        let tx = main_async_data_store().sender.lock().unwrap();
         sender = (&*tx).clone();
     }
 
-    let replys = entry_opt_token_store().form_first_reply(&db_key, &entry_uuid);
+    let replys = main_async_data_store().form_first_reply(&db_key, &entry_uuid);
+
+    let replys = AsyncResponse::EntryOtpToken(replys);
 
     if let Some(ref t) = sender {
         t.send(replys).await.unwrap();
@@ -254,7 +432,7 @@ async fn poll_token_generation(db_key: String, entry_uuid: Uuid) {
 
         // time::sleep(time::Duration::from_secs(1)).await;
 
-        if entry_opt_token_store().is_stopped(&entry_uuid) {
+        if main_async_data_store().is_entry_polling_stopped(&entry_uuid) {
             debug!(
                 "Polling is stopped for entry {} and exiting the loop",
                 &entry_uuid
@@ -262,7 +440,8 @@ async fn poll_token_generation(db_key: String, entry_uuid: Uuid) {
             break;
         }
 
-        let replys = entry_opt_token_store().form_reply(&db_key, &entry_uuid);
+        let replys = main_async_data_store().form_reply(&db_key, &entry_uuid);
+        let replys = AsyncResponse::EntryOtpToken(replys);
         if let Some(ref t) = sender {
             t.send(replys).await.unwrap();
         }
@@ -276,7 +455,7 @@ static TOKIO_RUNTIME: OnceCell<Runtime> = OnceCell::new();
 pub fn start_runtime() {
     let runtime = Builder::new_multi_thread()
         //.worker_threads(4)
-        .thread_name("otp-token-ttl-update")
+        .thread_name("okp-async-service")
         .thread_stack_size(3 * 1024 * 1024)
         .enable_all()
         .build()
@@ -290,6 +469,8 @@ pub fn start_runtime() {
 }
 
 // TODO:  Need to add graceful shutdown of all channels and Runtime itself(how?)
+// One example see https://github.com/rousan/AndroidWithRust/blob/master/app/src/main/rust/bridge/runtime/mod.rs
+// Also we may need to use something similar to 'entry_opt_token_store'
 fn _shutdown_runtime() {
     if TOKIO_RUNTIME.get().is_some() {
         // We cann't make this call as async_runtime() is &, but shutdown_background requires full ownership
@@ -302,4 +483,19 @@ pub fn async_runtime() -> &'static Runtime {
     TOKIO_RUNTIME
         .get()
         .expect("Tokio runtime is not initialized")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AsyncResponse, EntryOtpTokenReply};
+
+    #[test]
+    fn test1() {
+        let e = EntryOtpTokenReply::default();
+        let m = AsyncResponse::EntryOtpToken(e);
+
+        let r = serde_json::to_string_pretty(&m);
+
+        println!("r is {}", r.unwrap());
+    }
 }

@@ -30,7 +30,7 @@ pub fn hmac_sha256_from_slice(key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
     hmac_from_slices("HMAC(SHA-256)", key, &[data])
 }
 
-pub fn hmac_sha512_from_slices(key: &[u8], data: &[&[u8]]) -> Result<Vec<u8>> {
+pub fn _hmac_sha512_from_slices(key: &[u8], data: &[&[u8]]) -> Result<Vec<u8>> {
     hmac_from_slices("HMAC(SHA-512)", key, data)
 }
 
@@ -38,7 +38,7 @@ pub fn hmac_sha512_from_slice(key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
     hmac_from_slices("HMAC(SHA-512)", key, &[data])
 }
 
-pub fn hmac_sha1_from_slices(key: &[u8], data: &[&[u8]]) -> Result<Vec<u8>> {
+pub fn _hmac_sha1_from_slices(key: &[u8], data: &[&[u8]]) -> Result<Vec<u8>> {
     hmac_from_slices("HMAC(SHA-1)", key, data)
 }
 

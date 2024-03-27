@@ -558,6 +558,7 @@ pub fn read_db_from_reader<R: Read + Seek>(
     Ok(updated_kdbx)
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows",))]
 pub fn reload<R: Read + Seek>(reader: &mut R, kdbx_file: &KdbxFile) -> Result<KdbxFile> {
     let kdbx = kdbx_file.clone();
     let mut updated_kdbx = read_db(reader, kdbx)?;

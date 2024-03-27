@@ -100,8 +100,10 @@ pub fn sha256_hash_from_slice(data: &[u8]) -> Result<Vec<u8>> {
 
 
 mod tests {
+    #[allow(unused_imports)]
     use std::{fs::{self, File}, io::{BufReader, Read}};
 
+    #[allow(dead_code)]
     fn data_file() -> File {
         // File size is 1.06 GB
         let path = "/Users/jeyasankar/Downloads/Android/android-studio-2021.2.1.16-mac_arm.dmg";

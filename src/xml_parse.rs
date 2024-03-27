@@ -1,4 +1,4 @@
-use quick_xml::escape::{self, unescape};
+use quick_xml::escape::unescape;
 use quick_xml::events::attributes::{Attribute, Attributes};
 use quick_xml::events::Event;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText};
