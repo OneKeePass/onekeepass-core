@@ -159,6 +159,10 @@ impl OtpData {
 
     pub fn from_key(encoded_secret: &str) -> Result<OtpData> {
         let space_removed = strip_spaces(encoded_secret).to_uppercase();
+        if space_removed.is_empty() {
+            return Err(Error::UnexpectedError(format!(
+                "Decoding failed as secret code entered is empty. Requires US-ASCII uppercase letters and digits"))) ;
+        }
 
         Ok(OtpData {
             decoded_secret: BASE32_NOPAD
@@ -232,21 +236,21 @@ impl OtpData {
                 }
                 "digits" => {
                     digits = value.parse::<usize>().map_err(|_| {
-                        Error::OtpUrlParseError(format!("Invalid digits value {}", value))
+                        Error::OtpUrlParseError(format!("Invalid digits value {} passed in the url", value))
                     })?;
                     verify_digits!(digits);
                 }
                 "period" => {
                     period = value.parse::<u64>().map_err(|_| {
-                        Error::OtpUrlParseError(format!("Invalid period value {}", value))
+                        Error::OtpUrlParseError(format!("Invalid period value {} passed in the url", value))
                     })?;
                     verify_period!(period);
                 }
                 "secret" => {
-                    println!("Secret is {}", value.as_ref());
+                    //debug!("Secret is {}", value.as_ref());
                     let s = value.as_ref();
                     secret = BASE32_NOPAD.decode(s.as_bytes()).map_err(|e| {
-                        Error::OtpUrlParseError(format!("Decoding '{}' failed with error {}", s, e))
+                        Error::OtpUrlParseError(format!("Invalid secret code. Decoding of '{}' in the url failed with error {}", s, e))
                     })?;
                 }
 

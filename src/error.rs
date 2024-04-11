@@ -79,9 +79,6 @@ pub enum Error {
     #[error("{0}")]
     UrlParseError(#[from] url::ParseError),
 
-    #[error("{0}")]
-    OtpUrlParseError(String),
-    
     #[cfg(any(
         target_os = "macos",
         target_os = "windows",
@@ -116,6 +113,9 @@ pub enum Error {
 
     #[error("{0}")]
     DataEncodingDecodeError(#[from] data_encoding::DecodeError),
+
+    #[error("OtpUrlParseError: {0}")]
+    OtpUrlParseError(String),
 
     #[error("OtpKeyDecodeError: {0}")]
     OtpKeyDecodeError(String),

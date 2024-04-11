@@ -45,6 +45,7 @@ impl OtpTokenReply {
 pub enum AsyncResponse {
     EntryOtpToken(EntryOtpTokenReply),
     Tick(TickReply),
+    ServiceStopped,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -68,6 +69,8 @@ type EntryOtpTx = mpsc::Sender<AsyncResponse>;
 
 pub type EntryOtpRx = mpsc::Receiver<AsyncResponse>;
 
+const TIME_ID_START: u32 = 2001;
+
 // A singleton to hold sender channel and otp tokens for all fields for each entry
 struct MainAsyncData {
     // A simple incrementing number is used as timer id for now
@@ -82,8 +85,8 @@ impl Default for MainAsyncData {
     fn default() -> Self {
         Self {
             // If the timer is created on the backend, all ids will be >= 2001
-            // 1 to 2000 are reserved for the client generated timer ids   
-            timer_id_counter: AtomicU32::new(2001),
+            // 1 to 2000 are reserved for the client generated timer ids
+            timer_id_counter: AtomicU32::new(TIME_ID_START),
             entry_ttls: Mutex::default(),
             periodic_timers: Mutex::default(),
             sender: Mutex::default(),
@@ -101,7 +104,7 @@ impl MainAsyncData {
     fn init_timer_id(&self, timer_id: Option<TimerID>) -> TimerID {
         //debug!("Start counter timer id {:?}",&self.timer_id_counter);
 
-        let id = timer_id.unwrap_or_else(|| main_async_data_store().next_timer_id());
+        let id = timer_id.unwrap_or_else(|| self.next_timer_id());
 
         //debug!("After counter timer id {:?}, key id {} ",&self.timer_id_counter, &id);
 
@@ -112,9 +115,21 @@ impl MainAsyncData {
         id
     }
 
+    fn prepare_stopping_services(&self) {
+        // All aync loops waiting on these will break from the loop and exit the async fn
+        self.remove_all_timers();
+        self.remove_all_entry_otp_polling_data();
+        self.timer_id_counter.swap(TIME_ID_START, Ordering::Relaxed);
+    }
+
     fn remove_timer(&self, timer_id: &TimerID) {
         let mut timers = self.periodic_timers.lock().unwrap();
         timers.remove(timer_id);
+    }
+
+    fn remove_all_timers(&self) {
+        let mut timers = self.periodic_timers.lock().unwrap();
+        timers.clear()
     }
 
     fn is_timer_cancelled(&self, timer_id: &TimerID) -> TimerCancelled {
@@ -129,8 +144,13 @@ impl MainAsyncData {
     }
 
     fn sender(&self) -> Option<EntryOtpTx> {
-        let t = main_async_data_store().sender.lock().unwrap();
+        let t = self.sender.lock().unwrap();
         (&*t).clone()
+    }
+
+    fn remove_sender(&self) {
+        let mut t = self.sender.lock().unwrap();
+        *t = None
     }
 
     fn is_entry_polling_stopped(&self, entry_uuid: &Uuid) -> bool {
@@ -322,7 +342,6 @@ pub fn stop_polling_all_entries_otp_fields() {
     main_async_data_store().remove_all_entry_otp_polling_data();
 }
 
-// deprecate
 // Called to remove updating all otp fields of an entry
 pub fn stop_polling_entry_otp_fields(entry_uuid: &Uuid) {
     main_async_data_store().remove_entry_otp_polling_data(entry_uuid);
@@ -342,7 +361,7 @@ pub fn set_timeout(period_in_milli_seconds: u64, timer_id: Option<TimerID>) -> T
         &period_in_milli_seconds, &timer_id
     );
     let id = main_async_data_store().init_timer_id(timer_id);
-    // Spawn the timeout 
+    // Spawn the timeout
     async_runtime().spawn(run_specified_timeout(period_in_milli_seconds, id.clone()));
 
     id
@@ -351,6 +370,39 @@ pub fn set_timeout(period_in_milli_seconds: u64, timer_id: Option<TimerID>) -> T
 // Called to cancel a timer that is started earlier
 pub fn cancel_timer(timer_id: &TimerID) {
     main_async_data_store().remove_timer(timer_id);
+}
+
+// This is used only during dev time, particularly when async services
+// are sending events to the front end via rust middle layer - see 'init_async_listeners' (db-service-ffi/src/event_dispatcher.rs)
+// This ensures that no active messages are sent to the UI layer from backend async loops while
+// metro dev server is being refreshed during dev time
+
+// Called to stop all async services
+pub fn shutdown_async_services() {
+    info!("shutdown_async_services is called");
+    main_async_data_store().prepare_stopping_services();
+    info!("Prepared to stop all sending loops...");
+
+    // In case of iOS, we should not stop receiver side aync listeners in 'init_async_listeners'
+    // and also shoud not shutdown the tokio runtime
+
+    if cfg!(target_os = "android") {
+        async_runtime().spawn(send_stop_service_message());
+        shutdown_runtime();
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+async fn send_stop_service_message() {
+    if let Some(tx) = main_async_data_store().sender() {
+        let r = tx.send(AsyncResponse::ServiceStopped).await;
+        if r.is_err() {
+            error!("Unexpected error in sending service stop message ");
+        }
+    }
+    info!("Send ServiceStopped message to the receiving side");
+    main_async_data_store().remove_sender();
 }
 
 // Sends a tick to the listener on the timer expiration
@@ -447,12 +499,63 @@ async fn poll_token_generation(db_key: String, entry_uuid: Uuid) {
         }
     }
 }
+// --------------------------------------------------------
+
+// As this is global, all access to this variable need to use 'unsafe' block
+// Otherwise we will see compile error 'this operation is unsafe and requires an unsafe function or block'
+// We may need to use Mutex to be thread safe for all access to this variable
+static mut OKP_TOKIO_RUNTIME: Option<Runtime> = None;
+
+// Assumed this is called once in a single thread
+pub fn start_runtime() {
+
+    // This is not expected except during dev time if 'start_runtime' is 
+    // called by reloading UI layer code. However, in both tauri layer and in
+    // Swift/Kotlin layer, we ensure that this fn is called once
+    if let Some(_r) = unsafe { OKP_TOKIO_RUNTIME.as_ref() } {
+        info!("OKP_TOKIO_RUNTIME is already running and going to shutdown before restarting");
+        shutdown_runtime();
+    }
+
+    let runtime = Builder::new_multi_thread()
+        //.worker_threads(4)
+        .thread_name("okp-async-service")
+        .thread_stack_size(3 * 1024 * 1024)
+        .enable_all()
+        .build()
+        .unwrap();
+
+    debug!("Core OKP_TOKIO_RUNTIME is built...");
+
+    unsafe { OKP_TOKIO_RUNTIME.replace(runtime) };
+
+    info!("Core OKP_TOKIO_RUNTIME is set...");
+}
+
+// May be called from multiple threads and this Runtime ref is shared 
+pub fn async_runtime() -> &'static Runtime {
+    unsafe { OKP_TOKIO_RUNTIME.as_ref().unwrap() }
+}
+
+// Single thread
+pub fn shutdown_runtime() {
+    if let Some(runtime) = unsafe { OKP_TOKIO_RUNTIME.take() } {
+        info!("Shutdown OKP_TOKIO_RUNTIME started");
+        runtime.shutdown_timeout(tokio::time::Duration::from_secs(1));
+        info!("Shutdown OKP_TOKIO_RUNTIME done");
+    }
+}
 
 // --------------------------------------------------------
 
+/*
 static TOKIO_RUNTIME: OnceCell<Runtime> = OnceCell::new();
 
 pub fn start_runtime() {
+
+    let rt = TOKIO_RUNTIME.get();
+    debug!("TOKIO_RUNTIME is {:?}",rt);
+
     let runtime = Builder::new_multi_thread()
         //.worker_threads(4)
         .thread_name("okp-async-service")
@@ -484,6 +587,121 @@ pub fn async_runtime() -> &'static Runtime {
         .get()
         .expect("Tokio runtime is not initialized")
 }
+
+*/
+
+//-----------------------------------------------------------------------------------------------------------
+
+// #[derive(Debug)]
+// pub struct OkpTokioRuntime {
+//     runtime:Mutex<Arc<Runtime>>,
+//     //runtime:Mutex<Option<Runtime>>,
+// }
+
+// impl OkpTokioRuntime {
+
+// }
+
+//type TokioStore = Arc<OkpTokioRuntime>;
+
+// type TokioStore = OkpTokioRuntime;
+
+// pub fn okp_async_runtime() ->  &'static TokioStore {
+//     static MAIN_TOKIO_RT_STORE: Lazy<TokioStore> = Lazy::new(|| {
+//         let runtime = Builder::new_multi_thread()
+//         //.worker_threads(4)
+//         .thread_name("okp-async-service")
+//         .thread_stack_size(3 * 1024 * 1024)
+//         .enable_all()
+//         .build()
+//         .unwrap();
+
+//         OkpTokioRuntime {
+//             runtime:Mutex::new(Arc::new(runtime)),
+//         }
+
+//     });
+//     &MAIN_TOKIO_RT_STORE
+// }
+
+// pub fn start_runtime1() {
+//     let runtime = Builder::new_multi_thread()
+//         //.worker_threads(4)
+//         .thread_name("okp-async-service")
+//         .thread_stack_size(3 * 1024 * 1024)
+//         .enable_all()
+//         .build()
+//         .unwrap();
+
+//     debug!("Core TOKIO_RUNTIME is built...");
+
+//     let r = okp_async_runtime();
+//     //r.runtime = Some(runtime);
+
+//     let mut v = r.runtime.lock().unwrap();
+
+//     //*v = Some(runtime);
+
+//     *v = Some(Arc::new(runtime));
+// }
+
+// pub fn my_runtime_1() -> Arc<Runtime>  {
+//     let r = okp_async_runtime();
+
+//     let v = r.runtime.lock().unwrap();
+
+//     v.clone()
+// }
+
+// pub fn shutdown_my_runtime() {
+//     let r = okp_async_runtime();
+//     let v = r.runtime.lock().unwrap();
+
+//     let r1 = Arc::into_inner(*v) ;
+// }
+
+// pub fn new_tokio_runtime()  {
+
+//     static MAIN_TOKIO_RT_STORE: Lazy<MainTokioRuntime> = Lazy::new(||
+//     {
+//         let runtime = Builder::new_multi_thread()
+//         //.worker_threads(4)
+//         .thread_name("okp-async-service")
+//         .thread_stack_size(3 * 1024 * 1024)
+//         .enable_all()
+//         .build()
+//         .unwrap();
+//         Arc::new(runtime)
+//     }
+//     );
+
+// }
+
+// --------------------------------------------------------
+
+// type MainTokioRuntime = Arc<Runtime>;
+
+// pub fn new_tokio_runtime()  {
+
+//     static MAIN_TOKIO_RT_STORE: Lazy<MainTokioRuntime> = Lazy::new(||
+//     {
+//         let runtime = Builder::new_multi_thread()
+//         //.worker_threads(4)
+//         .thread_name("okp-async-service")
+//         .thread_stack_size(3 * 1024 * 1024)
+//         .enable_all()
+//         .build()
+//         .unwrap();
+//         Arc::new(runtime)
+//     }
+//     );
+
+// }
+
+// pub fn async_runtime1() -> &'static Arc<Runtime> {
+//     static MAIN_TOKIO_RT_STORE: Lazy<MainTokioRuntime> = Lazy::new(Default::default);
+//     &MAIN_TOKIO_RT_STORE
+// }
 
 #[cfg(test)]
 mod tests {

@@ -2,7 +2,7 @@ mod attachment;
 mod io;
 
 use crate::db::KdbxFile;
-use crate::db_content::{standard_types_ordered_by_id, Entry, KeepassFile};
+use crate::db_content::{standard_types_ordered_by_id, Entry, KeepassFile, OtpData};
 use crate::searcher;
 use crate::util;
 use crate::{form_data, password_generator};
@@ -581,6 +581,7 @@ fn adjust_special_groups_order(k: &KeepassFile, group: &Group) -> Vec<String> {
 }
 
 // Create as group summary data for all groups
+// Returns the group tree data
 fn create_groups_summary_data(k: &KeepassFile) -> Result<GroupTree> {
     let mut grps: HashMap<String, GroupSummary> = HashMap::new();
     // All groups including special groups (e.g Recycle Bin Group) are collected
@@ -736,6 +737,11 @@ pub fn entry_form_current_otps(
 #[inline]
 pub fn form_otp_url(otp_settings: &OtpSettings) -> Result<String> {
     otp_settings.otp_url()
+}
+
+#[inline]
+pub fn is_valid_otp_url(otp_url_str:&str) -> bool {
+    OtpData::from_url(otp_url_str).is_ok()
 }
 
 // Collects all entry field names and its values (not in any particular order)

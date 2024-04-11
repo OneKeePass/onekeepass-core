@@ -229,17 +229,17 @@ impl Root {
 
     /// Gets all entries that are moved to recycle bin
     pub(crate) fn deleted_entry_uuids(&self) -> Vec<Uuid> {
-        // true is passed as we want all deleted entry uuids
+        // true is passed for 'entry_ids_wanted' as we want all deleted entry uuids
         self.deleted_uuids(true)
     }
 
     /// Gets all groups that are moved to recycle bin
     pub(crate) fn deleted_group_uuids(&self) -> Vec<Uuid> {
-        // false is passed as we want all deleted group uuids
+        // false is passed for 'entry_ids_wanted' as we want all deleted group uuids
         self.deleted_uuids(false)
     }
 
-    /// Collects all entry or group uuids that are put in recycle bin
+    /// Collects all entry (entry_ids_wanted should be true) or group uuids that are put in recycle bin
     fn deleted_uuids(&self, entry_ids_wanted: bool) -> Vec<Uuid> {
         let mut acc = InOrderIds {
             ids: vec![],

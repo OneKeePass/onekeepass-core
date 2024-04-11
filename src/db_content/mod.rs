@@ -27,7 +27,6 @@ pub use self::standard_entry_types::{
 };
 
 
-
 use chrono::NaiveDateTime;
 
 use serde::{Deserialize, Serialize};

@@ -68,7 +68,8 @@ lazy_static! {
         },
         Section {
             name: ADDITIONAL_ONE_TIME_PASSWORDS.into(),
-            field_defs: vec![],}
+            field_defs: vec![],
+        },
         ],
     };
 
@@ -112,6 +113,10 @@ lazy_static! {
                                 FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword).set_require_protection(true),
                             FieldDef::new(URL)
                         ],
+                    },
+                    Section {
+                        name: ADDITIONAL_ONE_TIME_PASSWORDS.into(),
+                        field_defs: vec![],
                     },
                     Section {
                         name: CARD_DETAILS.into(),
@@ -169,6 +174,10 @@ lazy_static! {
                             FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword).set_require_protection(true),
                         FieldDef::new(URL)
                     ],
+                },
+                Section {
+                    name: ADDITIONAL_ONE_TIME_PASSWORDS.into(),
+                    field_defs: vec![],
                 },
                 Section {
                     name: "Account Details".into(),

@@ -705,7 +705,10 @@ mod tests {
 
         let s1 = strip_spaces(s);
         println!("s1 is {}", s1);
-        assert_eq!(s1, "ba3r2J45")
+        assert_eq!(s1, "ba3r2J45");
+
+        let s2 = "";
+        assert_eq!(strip_spaces(s2).is_empty(), true);
     }
 }
 
