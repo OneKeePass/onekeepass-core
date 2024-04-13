@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use log::{debug, error, info};
 
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::mpsc;
@@ -591,117 +591,6 @@ pub fn async_runtime() -> &'static Runtime {
 */
 
 //-----------------------------------------------------------------------------------------------------------
-
-// #[derive(Debug)]
-// pub struct OkpTokioRuntime {
-//     runtime:Mutex<Arc<Runtime>>,
-//     //runtime:Mutex<Option<Runtime>>,
-// }
-
-// impl OkpTokioRuntime {
-
-// }
-
-//type TokioStore = Arc<OkpTokioRuntime>;
-
-// type TokioStore = OkpTokioRuntime;
-
-// pub fn okp_async_runtime() ->  &'static TokioStore {
-//     static MAIN_TOKIO_RT_STORE: Lazy<TokioStore> = Lazy::new(|| {
-//         let runtime = Builder::new_multi_thread()
-//         //.worker_threads(4)
-//         .thread_name("okp-async-service")
-//         .thread_stack_size(3 * 1024 * 1024)
-//         .enable_all()
-//         .build()
-//         .unwrap();
-
-//         OkpTokioRuntime {
-//             runtime:Mutex::new(Arc::new(runtime)),
-//         }
-
-//     });
-//     &MAIN_TOKIO_RT_STORE
-// }
-
-// pub fn start_runtime1() {
-//     let runtime = Builder::new_multi_thread()
-//         //.worker_threads(4)
-//         .thread_name("okp-async-service")
-//         .thread_stack_size(3 * 1024 * 1024)
-//         .enable_all()
-//         .build()
-//         .unwrap();
-
-//     debug!("Core TOKIO_RUNTIME is built...");
-
-//     let r = okp_async_runtime();
-//     //r.runtime = Some(runtime);
-
-//     let mut v = r.runtime.lock().unwrap();
-
-//     //*v = Some(runtime);
-
-//     *v = Some(Arc::new(runtime));
-// }
-
-// pub fn my_runtime_1() -> Arc<Runtime>  {
-//     let r = okp_async_runtime();
-
-//     let v = r.runtime.lock().unwrap();
-
-//     v.clone()
-// }
-
-// pub fn shutdown_my_runtime() {
-//     let r = okp_async_runtime();
-//     let v = r.runtime.lock().unwrap();
-
-//     let r1 = Arc::into_inner(*v) ;
-// }
-
-// pub fn new_tokio_runtime()  {
-
-//     static MAIN_TOKIO_RT_STORE: Lazy<MainTokioRuntime> = Lazy::new(||
-//     {
-//         let runtime = Builder::new_multi_thread()
-//         //.worker_threads(4)
-//         .thread_name("okp-async-service")
-//         .thread_stack_size(3 * 1024 * 1024)
-//         .enable_all()
-//         .build()
-//         .unwrap();
-//         Arc::new(runtime)
-//     }
-//     );
-
-// }
-
-// --------------------------------------------------------
-
-// type MainTokioRuntime = Arc<Runtime>;
-
-// pub fn new_tokio_runtime()  {
-
-//     static MAIN_TOKIO_RT_STORE: Lazy<MainTokioRuntime> = Lazy::new(||
-//     {
-//         let runtime = Builder::new_multi_thread()
-//         //.worker_threads(4)
-//         .thread_name("okp-async-service")
-//         .thread_stack_size(3 * 1024 * 1024)
-//         .enable_all()
-//         .build()
-//         .unwrap();
-//         Arc::new(runtime)
-//     }
-//     );
-
-// }
-
-// pub fn async_runtime1() -> &'static Arc<Runtime> {
-//     static MAIN_TOKIO_RT_STORE: Lazy<MainTokioRuntime> = Lazy::new(Default::default);
-//     &MAIN_TOKIO_RT_STORE
-// }
 
 #[cfg(test)]
 mod tests {

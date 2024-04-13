@@ -243,8 +243,7 @@ impl EntryFormData {
                         kvd.helper_text = fd.helper_text(); 
                         kvd.standard_field = standard_field_names.contains(&kv.key.as_str());
 
-                        // There is a possibility, this field may have a valid otp url,
-                        // still it is treated as text data type and we generate token only if 'OneTimePassword' type
+                        // We generate token only if the data type of this field is 'OneTimePassword' type
                         if fd.data_type == FieldDataType::OneTimePassword {
                             kvd.generate_otp(&entry.parsed_otp_values);
                         }

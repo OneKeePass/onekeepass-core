@@ -420,6 +420,9 @@ impl Entry {
             .collect()
     }
 
+    // Checks the whether the value of a field starts with otp url and parses if it is an valid otp url
+    // and stores in the map with the field name as key and parsed value as value 
+    // However if parsing a otp url fails, then None is set for that field in this map
     fn parse_all_otp_fields(&mut self) {
         let otp_vals: HashMap<String, OtpData> = self
             .entry_field
