@@ -686,6 +686,7 @@ pub fn get_entry_form_data_by_id(db_key: &str, entry_uuid: &Uuid) -> Result<Entr
     })
 }
 
+// deprecate?
 // Gets the current TOPT token for an entry's opt field
 pub fn entry_form_current_otp(
     db_key: &str,
@@ -709,6 +710,7 @@ pub fn entry_form_current_otp(
     })
 }
 
+// deprecate?
 pub fn entry_form_current_otps(
     db_key: &str,
     entry_uuid: &Uuid,
