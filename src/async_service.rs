@@ -280,7 +280,9 @@ pub fn init_entry_channels() -> EntryOtpRx {
     rx
 }
 
-// Called to start updating all otp fields of an entry periodically
+// Called by UI layer to start updating all otp fields of an entry periodically
+// Arg 'OtpTokenTtlInfoByField' has the period and ttl info passed from UI for each otp field that has 
+// parseable otp url - See Entry's parse_all_otp_fields fn and KeyValueData's current_opt_token field
 pub fn start_polling_entry_otp_fields(
     db_key: &str,
     entry_uuid: &Uuid,
