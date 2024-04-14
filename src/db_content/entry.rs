@@ -1,4 +1,4 @@
-use log::debug;
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -7,12 +7,15 @@ use uuid::Uuid;
 use crate::constants::custom_data_key::{
     OKP_ENTRY_TYPE, OKP_ENTRY_TYPE_DATA, OKP_ENTRY_TYPE_DATA_INDEX, OKP_ENTRY_TYPE_LIST_DATA,
 };
+
+use crate::constants::OTP_URL_PREFIX;
 use crate::constants::entry_keyvalue_key::*;
 use crate::db_content::{entry_type::*, Item};
 use crate::db_content::{AttachmentHashValue, CustomData, Times};
 use crate::util;
 
 use super::meta::MetaShare;
+use super::otp::{CurrentOtpTokenData, OtpData,};
 use super::Meta;
 
 // To carry additional entry field grouping and for easy KV data lookup
@@ -129,7 +132,8 @@ impl EntryField {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+//#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Entry {
     pub(crate) uuid: Uuid,
     //The parent group uuid to refer back the group if required
@@ -143,8 +147,10 @@ pub struct Entry {
     pub custom_data: CustomData,
     pub auto_type: AutoType,
     pub history: History,
-    #[serde(skip)]
+    //#[serde(skip)]
     pub(crate) meta_share: Arc<MetaShare>,
+    //pub(crate) parsed_otp_values: Option<HashMap<String, ParsedOtpData>>,
+    pub(crate) parsed_otp_values: Option<HashMap<String, OtpData>>,
 }
 
 impl Entry {
@@ -163,6 +169,7 @@ impl Entry {
             //history has a list of previous entries and those entries listed will have its 'history' empty
             history: History::default(),
             meta_share: Arc::default(),
+            parsed_otp_values: None,
         }
     }
 
@@ -192,6 +199,9 @@ impl Entry {
 
         // Note this entry's history entries' entry_field.entry_type is set on demand
         // That is when user selects a particular history index to display. See method history_entry_by_index
+
+        // Otp fields are to be parsed from the url
+        self.parse_all_otp_fields();
     }
 
     pub fn before_xml_writing(&mut self) {
@@ -255,6 +265,8 @@ impl Entry {
 
         self.entry_field = updated_entry.entry_field;
 
+        self.parse_all_otp_fields();
+
         // Call copy_to_custom_data after we set entry_field from the incoming updated_entry
         self.copy_to_custom_data();
         // Now we need to do this for the last added history entry
@@ -262,8 +274,19 @@ impl Entry {
         self.adjust_history_entries_entry_type_indexes();
     }
 
-    // Called when an entry is updated or a new entry inserted
-    pub fn copy_to_custom_data(&mut self) {
+    // Called to ensure the custom data values are created and otp fields are parsed when
+    // a new entry is created
+    pub(crate) fn complete_insert(&mut self,) {
+        self.parse_all_otp_fields();
+        // Call copy_to_custom_data from the incoming new entry
+        self.copy_to_custom_data();
+    }
+
+    // Called to create entry level custom data fields when an entry is updated or a new entry inserted 
+    // Currently mainly Entrytype definition info is stored
+    // We store entry type uuid if there is no change and type is not LOGIN or the changed entry type's serialized 
+    // data when custom fields or sections are added to the predefined entry type
+    pub(crate) fn copy_to_custom_data(&mut self) {
         // To be safe first we need to remove the existing entry type related keys.
         // It is expected we have either OKP_ENTRY_TYPE or OKP_ENTRY_TYPE_DATA. Not both
         self.custom_data.remove_item(OKP_ENTRY_TYPE);
@@ -324,7 +347,7 @@ impl Entry {
         }
     }
 
-    // Called after loading the db file and xml is parsed 
+    // Called after loading the db file and xml is parsed
     pub fn set_attachment_hashes(
         &mut self,
         attachment_hash_indexed: &HashMap<i32, (AttachmentHashValue, usize)>,
@@ -346,7 +369,7 @@ impl Entry {
 
     // Called after forming inner header binary data and before writing xml as bytes
     // to set the correct attachment index based on the attachment hash value
-    // The arg 'hash_index_ref' is a newly prepared mappping 
+    // The arg 'hash_index_ref' is a newly prepared mappping
     pub fn set_attachment_index_refs(
         &mut self,
         hash_index_ref: &HashMap<AttachmentHashValue, i32>,
@@ -395,6 +418,48 @@ impl Entry {
             .into_iter()
             .map(|k| (k.key.clone(), k.value.clone()))
             .collect()
+    }
+
+    // Checks the whether the value of a field starts with otp url and parses if it is an valid otp url
+    // and stores in the map with the field name as key and parsed value as value 
+    // However if parsing a otp url fails, then nothing is set for that field in this map
+    fn parse_all_otp_fields(&mut self) {
+        let otp_vals: HashMap<String, OtpData> = self
+            .entry_field
+            .get_key_values()
+            .into_iter()
+            .filter_map(|k| {
+                if k.value.starts_with(OTP_URL_PREFIX) {
+                    match OtpData::from_url(&k.value) {
+                        Ok(parsed_otp_data) => Some((k.key.clone(), parsed_otp_data)),
+                        Err(e) => {
+                            info!("OtpUrl Parsing Failed with error {}", e);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if !otp_vals.is_empty() {
+            self.parsed_otp_values = Some(otp_vals);
+        } else {
+            self.parsed_otp_values = None;
+        }
+    }
+
+    pub fn current_otp_token_data(&self, otp_field_name: &str) -> Option<CurrentOtpTokenData> {
+        // as_ref() is to get Option<&HashMap<String, OtpData>>
+        // first flatten Option<Option<&OtpData>> -> Option<&OtpData>
+        // second flatten Option<Option<CurrentOtpTokenData>> -> Option<CurrentOtpTokenData>
+        self.parsed_otp_values
+            .as_ref()
+            .map(|m| m.get(otp_field_name))
+            .flatten()
+            .map(|pd| pd.current_otp_token_data().ok())
+            .flatten()
     }
 }
 
@@ -759,8 +824,51 @@ pub struct Association {
     pub(crate) key_stroke_sequence: Option<String>,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone)]
+//#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct History {
     //History has a list of previous entries
     pub(crate) entries: Vec<Entry>,
 }
+
+/*
+fn parse_all_otp_fields(&mut self) {
+        let otp_vals: HashMap<String, ParsedOtpData> = self
+            .entry_field
+            .get_key_values()
+            .into_iter()
+            .filter_map(|k| {
+                if k.value.starts_with(OTP_URL_PREFIX) {
+                    let parsed_otp_data = match OtpData::from_url(&k.value) {
+                        Ok(pd) => ParsedOtpData::Success(pd),
+                        Err(e) => ParsedOtpData::Failure(format!(
+                            "OtpUrl Parsing Failed with error {}",
+                            e
+                        )),
+                    };
+                    Some((k.key.clone(), parsed_otp_data))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if !otp_vals.is_empty() {
+            self.parsed_otp_values = Some(otp_vals);
+        }
+    }
+
+    pub fn current_otp(&self, otp_field_name: &str) -> ParsedOtpData {
+        match self
+            .parsed_otp_values
+            .as_ref()
+            .map(|m| m.get(otp_field_name))
+            .flatten()
+            .map(|pd| pd)
+        {
+            Some(otp_data) => otp_data.clone(),
+            None => ParsedOtpData::Failure("No parsed otp data is found".into()),
+        }
+    }
+
+*/

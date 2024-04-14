@@ -54,7 +54,7 @@ impl EntryTypeV1 {
         }
     }
 
-    /// Gets all builtin standard field names from all sections if the entry type is a standard one
+    // Gets all builtin standard field names from all sections if the entry type is a standard one
     pub fn standard_field_names_by_id(&self) -> Vec<&str> {
         let v = if let Some(et) = UUID_TO_ENTRY_TYPE_MAP.get(&self.uuid) {
             et.sections
@@ -72,6 +72,8 @@ impl EntryTypeV1 {
         // We check only changes in sections of these two EntryType
         // skipping other fields like 'name', secondary_title, icon_name for now as the incoming
         // EntryType instance in EntryFormData do not have these values
+        
+        // To be equal, both sections should have same number of sections with name and same vec of FieldDefs - order matter
         self.sections != other.sections
     }
 }
@@ -83,7 +85,7 @@ impl EntryTypeV1 {
 //  e.g RmpV1 means the data format/serde algorthim used is 'Rmp' a MessagePack formated data
 //      V1 means the EntryType and all its child structs of version 1
 // EntryTypeV1 is aliased as EntryType to point to the latest EntryType used in all other modules
-// Upgrading EntryType or its constituents or change in serialize and deserialize hadnlers means, we need
+// Upgrading EntryType or its constituents or change in serialize and deserialize handlers means, we need
 // to use new version for EntryType and other child structs.
 // e.g Let us assume, we add a new field in EntryType, then we need to create EntryTypeV2 leaving EntryTypeV1 as such
 // Now EntryTypeV2 should be type aliased as EntryType and need to introduce RmpV2 and son on
@@ -208,35 +210,40 @@ impl VersionedEntryType {
         VersionedEntryType::from_encoded(data)
     }
 
+    // Called to consider only non standard fields or new custom sections in an entry type 
+    // This fn is called when there is a change in the incoming entry type's section data as the 'changed' fn is called before this
     fn modify_entry_type_before_encoding(
-        entry_type: &EntryType,
+        incoming_entry_type: &EntryType,
         custom_entry_types: &HashMap<Uuid, EntryType>,
     ) -> Option<EntryType> {
-        if let Some(s_et) = custom_entry_types
-            .get(&entry_type.uuid)
-            .or_else(|| UUID_TO_ENTRY_TYPE_MAP.get(&entry_type.uuid))
+        // predefined_et is a standard EntryType or user defined custom EntryType
+        if let Some(predefined_et) = custom_entry_types
+            .get(&incoming_entry_type.uuid)
+            .or_else(|| UUID_TO_ENTRY_TYPE_MAP.get(&incoming_entry_type.uuid))
         {
-            let mut incoming_et = entry_type.clone();
+            // An incoming entry_type may have more sections or fields than that are in the predefined entry_type
+            let mut incoming_et = incoming_entry_type.clone();
+
             // Set to some default values to reduce size
             incoming_et.name = String::default();
             incoming_et.icon_name = None;
             incoming_et.secondary_title = None;
 
-            for section in s_et.sections.iter() {
+            for predefined_et_section in predefined_et.sections.iter() {
                 // Find all fields from built-in entry type
                 // let fnames = section.field_defs.iter().map(|f|&f.name).collect::<Vec<&String>>();
                 // Find the matching section of the passed entry type
-                let s1 = incoming_et
+                let incoming_et_section_opt = incoming_et
                     .sections
                     .iter_mut()
-                    .find(|s| s.name == section.name);
-                if let Some(s2) = s1 {
+                    .find(|s| s.name == predefined_et_section.name);
+                if let Some(incoming_et_section) = incoming_et_section_opt {
                     // Remove all built-in fields from the passed one
-                    s2.field_defs
-                        .retain_mut(|f| !section.field_defs.contains(f)) // !fnames.contains(&&f.name)
+                    incoming_et_section.field_defs
+                        .retain_mut(|f| !predefined_et_section.field_defs.contains(f)) 
                 }
             }
-            // As we have removed the built-in fields, a section will be empty and drop them
+            // As we have removed the built-in fields, a section may be empty and drop them from storing
             incoming_et.sections.retain(|sec| sec.field_defs.len() != 0);
 
             Some(incoming_et)
@@ -247,29 +254,35 @@ impl VersionedEntryType {
         }
     }
 
+    // Called to merge all non standard fields in an entry type to the standard fields
     fn modify_entry_type_after_decoding(
-        entry_type: &EntryType,
+        incoming_entry_type: &EntryType,
         custom_entry_types: &HashMap<Uuid, EntryType>,
     ) -> Option<EntryType> {
-        if let Some(s_et) = custom_entry_types
-            .get(&entry_type.uuid)
-            .or_else(|| UUID_TO_ENTRY_TYPE_MAP.get(&entry_type.uuid))
+        if let Some(predefined_et) = custom_entry_types
+            .get(&incoming_entry_type.uuid)
+            .or_else(|| UUID_TO_ENTRY_TYPE_MAP.get(&incoming_entry_type.uuid))
         {
-            let mut built_in_et = s_et.clone();
-            for in_section in entry_type.sections.iter() {
+            let mut built_in_et = predefined_et.clone();
+
+            // incoming_entry_type will have sections or custom fields that are not in the predefined entry_type
+            for incoming_section in incoming_entry_type.sections.iter() {
+                // Find the built-in section that matches with incoming section
                 let built_in_section_opt = built_in_et
                     .sections
                     .iter_mut()
-                    .find(|s| s.name == in_section.name);
+                    .find(|s| s.name == incoming_section.name);
 
-                if let Some(s2) = built_in_section_opt {
-                    // The section is found in built in  and we need to merge the decoded field defs to that
-                    //s2.field_defs.append(&mut in_section.field_defs);
-                    s2.field_defs
-                        .extend(in_section.field_defs.clone().into_iter())
+                if let Some(built_in_section) = built_in_section_opt {
+                    // The section is found in built-in Entrytype and we need to merge the decoded field defs to the
+                    // existing fields of the section from the built-in (predefined_et) Entrytype
+                    // Here incoming_section will have only any non prededefined fields and they are added 
+                    // to the end of the existing field defs 
+                    built_in_section.field_defs
+                        .extend(incoming_section.field_defs.clone().into_iter())
                 } else {
-                    // section is a custom section and move that
-                    built_in_et.sections.push(in_section.clone());
+                    // section is a custom section and move that to the built_in_et (clone of predefined Entrytype)
+                    built_in_et.sections.push(incoming_section.clone());
                 }
             }
             Some(built_in_et)
@@ -277,6 +290,7 @@ impl VersionedEntryType {
         } else {
             // Should not happen. Need to return default to be safe
             // log error
+            error!("Unexpected error: The call 'modify_entry_type_after_decoding' failed for the entry type {}", &incoming_entry_type.name);
             Some((&*DEFAULT_ENTRY_TYPE).clone())
         }
     }
@@ -376,15 +390,19 @@ where
     Ok(Some(base64_str))
 }
 
-fn deserialize_from_base64_str<F>(input: &str, decoder: F) -> Result<VersionedEntryType>
+// Successful decoded binary (base64 encoded data) should be a variant of VersionedEntryType or an error is returned
+fn deserialize_from_base64_str<T,F>(input: &str, decoder: F) -> Result<T>
 where
-    F: Fn(&Vec<u8>) -> Result<VersionedEntryType>,
+    F: Fn(&Vec<u8>) -> Result<T>,
 {
-    //let buf = base64::decode(input)?;
     let buf = util::base64_decode(input)?;
     let buf = util::decompress(&buf)?;
     Ok(decoder(&buf)?)
 }
+
+// For 'rmp' serialization to work, add any new variant at the end though adding in any place may work
+// When we add a new variant, the FieldDef deserialization works with any previous version without 
+// introducing FieldDef2. If we remove any variant, it may not work
 
 #[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum FieldDataType {
@@ -395,6 +413,7 @@ pub enum FieldDataType {
     Month,
     Year,
     MonthYear,
+    OneTimePassword,
 }
 
 impl Default for FieldDataType {
@@ -472,18 +491,6 @@ impl FieldDefV1 {
 pub struct SectionV1 {
     pub(crate) name: String,
     pub(crate) field_defs: Vec<FieldDefV1>,
-}
-
-#[derive(PartialEq, Debug, Default, Clone, Serialize, Deserialize)]
-pub struct EntryTypeV2 {
-    // This is the name used to identify what fields are available as sections
-    // in the entry
-    pub(crate) name: String,
-    pub(crate) display_name: String, // for testing
-    // Each entry may have one or more sections. For now we have only "Main"
-    // Once we start introducing Customized section in UI, we will have sections
-    // instead of "Main" or in addition to "Main". Yet to decide on the design
-    pub(crate) sections: Vec<SectionV1>,
 }
 
 #[cfg(test)]

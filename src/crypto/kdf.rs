@@ -78,7 +78,7 @@ impl Kdf for Argon2Kdf {
                 //println!("Hashed output: {:?}", u8_arr_to_i8_arr(&buffer[..]));
                 Ok(buffer)
             }
-            Err(m) => Err(Error::Other(m)),
+            Err(m) => Err(Error::UnexpectedError(m)),
         }
     }
 }

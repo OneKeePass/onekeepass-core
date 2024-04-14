@@ -24,20 +24,28 @@ pub const EMPTY: &[u8] = &[];
 // Encrypted data is split into blocks of this size before prefixed with its hmac
 pub const PAYLOAD_BLOCK_SIZE: u64 = 1048576; // (1MB = 1024 * 1024), 65536  1048576
 
-pub const INTERNAL_VERSION: i32 = 1;
+/*
+    Version 2:
+        Otp changes
+ */
+pub const INTERNAL_VERSION: i32 = 2;
+
 pub const GENERATOR_NAME: &str = "OneKeyPass";
+
 pub const EMPTY_STR: &str = "";
+
+pub const OTP_URL_PREFIX: &str = "otpauth://totp";
 
 // All Custom Data keys are of pattern OKP_K*. This is used instead of some descriptive
 // string to reduce number of bytes taken by the key name entries in db and thus overall size of db
 // Any new key should have the next OKP_Kx.
-// Do not change the existing key to make sure for backward compatability
+// Do not change the existing key names and meaning to make sure for backward compatability
 pub mod custom_data_key {
     pub const OKP_INTERNAL_VERSION: &str = "OKP_K1";
 
     pub const OKP_GROUP_AS_CATEGORY: &str = "OKP_K2";
 
-    // Key for the name of the Entry type
+    // Key for the name of the Entry type and value for this is the serialized uuid
     pub const OKP_ENTRY_TYPE: &str = "OKP_K3";
 
     // The value found corresponding to this custom data key is the serialized Entry type Data
@@ -59,6 +67,13 @@ pub mod general_category_names {
     pub const ALL_ENTRIES: &str = "AllEntries";
     pub const FAVORITES: &str = "Favorites";
     pub const DELETED: &str = "Deleted";
+}
+
+#[allow(dead_code)]
+pub mod standard_in_section_names {
+    pub const LOGIN_DETAILS: &str = "Login Details";
+    pub const ADDITIONAL_ONE_TIME_PASSWORDS: &str = "Additional One-Time Passwords" ;
+    pub const CARD_DETAILS: &str = "Card Details" ;
 }
 
 #[allow(dead_code)]
@@ -127,9 +142,11 @@ pub mod entry_type_uuid {
 pub mod entry_keyvalue_key {
     pub const TITLE: &str = "Title";
     pub const NOTES: &str = "Notes";
-    pub const PASSWORD: &str = "Password";
-    pub const URL: &str = "URL";
     pub const USER_NAME: &str = "UserName";
+    pub const PASSWORD: &str = "Password";
+    pub const OTP: &str = "otp";
+    pub const URL: &str = "URL";
+
     pub const NUMBER: &str = "Number";
 }
 

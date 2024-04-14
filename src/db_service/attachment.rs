@@ -105,7 +105,7 @@ pub fn save_attachment_as_temp_file(
             .ok_or_else(|| "Invalid temp file".into())
             .map(|s| s.into())
     } else {
-        Err(Error::Other("No valid data found".into()))
+        Err(Error::UnexpectedError("No valid attachment data is found".into()))
     }
 }
 
@@ -143,7 +143,7 @@ pub fn save_attachment_to_writter<W: Write>(
         writer.write_all(&v)?;
         return Ok(());
     } else {
-        return Err(Error::Other("No valid data found".into()));
+        return Err(Error::UnexpectedError("No valid data found".into()));
     }
 }
 

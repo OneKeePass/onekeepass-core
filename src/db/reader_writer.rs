@@ -170,7 +170,7 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
             self.header_data_start_position,
             self.header_data_end_position,
         )?;
-        let cal_hash = crypto::do_sha256_hash(&[&header_data])?;
+        let cal_hash = crypto::sha256_hash_from_slice_vecs(&[&header_data])?;
         if cal_hash.to_vec() != stored_hash {
             return Err(Error::HeaderHashCheckFailed);
         }
@@ -233,7 +233,7 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
             // and the previously computed hmac_part_key
             let blk_idx_bytes = blk_idx.to_le_bytes();
             let block_key =
-                crypto::do_sha512_hash(&[&blk_idx_bytes.to_vec(), self.kdbx_file.hmac_part_key()])?;
+                crypto::sha512_hash_from_slice_vecs(&[&blk_idx_bytes.to_vec(), self.kdbx_file.hmac_part_key()])?;
 
             // Verify the stored block hmac to the calculated one
             // The data for hmac calc is blk_index + blk_size + blk_data
@@ -444,10 +444,10 @@ impl<'a, W: Read + Write + Seek> KdbxFileWriter<'a, W> {
     fn write_header_hash(&mut self) -> Result<()> {
         let header_end = self.writer.stream_position()?;
         let header_data = read_stream_data(&mut self.writer, 0, header_end)?;
-        let cal_hash = crypto::do_sha256_hash(&[&header_data])?;
+        let cal_hash = crypto::sha256_hash_from_slice_vecs(&[&header_data])?;
         self.writer.write(&cal_hash)?;
 
-        let header_hmac_hash = crypto::do_hmac_sha256(self.kdbx_file.hmac_key(), &[&header_data])?;
+        let header_hmac_hash = crypto::hmac_sha256_from_slices(self.kdbx_file.hmac_key(), &[&header_data])?;
         self.writer.write(&header_hmac_hash)?;
 
         Ok(())
@@ -546,10 +546,10 @@ impl<'a, W: Read + Write + Seek> KdbxFileWriter<'a, W> {
             // computed hmac part key
             let blk_idx_bytes = blk_idx.to_le_bytes();
             let block_key =
-                crypto::do_sha512_hash(&[&blk_idx_bytes.to_vec(), self.kdbx_file.hmac_part_key()])?;
+                crypto::sha512_hash_from_slice_vecs(&[&blk_idx_bytes.to_vec(), self.kdbx_file.hmac_part_key()])?;
 
             let blk_size_in_bytes = (data_read as u32).to_le_bytes();
-            let blk_hmac_hash = crypto::do_hmac_sha256(
+            let blk_hmac_hash = crypto::hmac_sha256_from_slices(
                 &block_key,
                 &[&blk_idx_bytes, &blk_size_in_bytes, &data_buffer],
             )?;

@@ -60,17 +60,25 @@ pub enum Error {
 
     #[error("{0}")]
     Argon2Error(String),
+
     #[error("{0}")]
     DataError(&'static str),
 
     #[error("{0}")]
     XmlParsingFailed(#[from] quick_xml::Error),
+    
     #[error("{0}")]
     XmlEscapeFailed(#[from] quick_xml::escape::EscapeError),
-    #[error("{0}")]
-    XmlParsingFailed023(#[from] quick_xml_023::Error),
-
     
+    // #[error("{0}")]
+    // XmlParsingFailed023(#[from] quick_xml_023::Error),
+
+    #[error("{0}")]
+    SystemTimeError(#[from] std::time::SystemTimeError),
+
+    #[error("{0}")]
+    UrlParseError(#[from] url::ParseError),
+
     #[cfg(any(
         target_os = "macos",
         target_os = "windows",
@@ -89,6 +97,8 @@ pub enum Error {
     #[error("{0}")]
     Utf8Error(#[from] std::str::Utf8Error),
     #[error("{0}")]
+    FromUtf8Error(#[from] std::string::FromUtf8Error),
+    #[error("{0}")]
     RegexError(#[from] ReError),
 
     #[error("{0}")]
@@ -97,8 +107,18 @@ pub enum Error {
     #[error("{0}")]
     RmpDecodeError(#[from] rmp_serde::decode::Error),
 
+    // To be removed
     #[error("{0}")]
     Base64DecodeError(#[from] base64::DecodeError),
+
+    #[error("{0}")]
+    DataEncodingDecodeError(#[from] data_encoding::DecodeError),
+
+    #[error("OtpUrlParseError: {0}")]
+    OtpUrlParseError(String),
+
+    #[error("OtpKeyDecodeError: {0}")]
+    OtpKeyDecodeError(String),
 
     #[error("CustomEntryTypeInUse")]
     CustomEntryTypeInUse,
@@ -122,9 +142,9 @@ pub enum Error {
     DuplicateKeyFileName(String),
 
     // See DataError where we can use str
-    // Other is used where we can use format!
+    // UnexpectedError is used where we can use format!
     #[error("{0}")]
-    Other(String),
+    UnexpectedError(String),
 }
 
 // Tauri main converts App error such as above as "hooks::InvokeError" using serde call and then returns to to the UI
@@ -140,7 +160,7 @@ impl From<Error> for String {
 
 impl From<&'static str> for Error {
     fn from(err: &'static str) -> Self {
-        Error::Other(err.to_string())
+        Error::UnexpectedError(err.to_string())
     }
 }
 

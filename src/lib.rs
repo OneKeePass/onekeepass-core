@@ -6,12 +6,13 @@ mod password_generator;
 mod searcher;
 mod util;
 mod xml_parse;
-mod xml_parse_023;
+//mod xml_parse_023;
 
 pub mod error;
 
 pub mod db_content;
 pub mod db_service;
+pub mod async_service;
 
 #[macro_use]
 extern crate slice_as_array;

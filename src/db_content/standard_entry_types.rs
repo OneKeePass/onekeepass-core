@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
+use crate::constants::entry_keyvalue_key::*;
 use crate::constants::entry_type_name::*;
 use crate::constants::entry_type_uuid;
+use crate::constants::standard_in_section_names::*;
 use crate::db_content::entry_type::{EntryType, FieldDataType, FieldDef, Section};
 
 use lazy_static::lazy_static;
@@ -12,7 +14,7 @@ use uuid::Uuid;
 #[macro_export]
 macro_rules! build_uuid {
     ($aname:expr) => {
-        uuid::Builder::from_slice(&$aname).unwrap().build()
+        uuid::Builder::from_slice(&$aname).unwrap().into_uuid()
     };
 }
 
@@ -45,22 +47,30 @@ lazy_static! {
 
     pub static ref DEFAULT_ENTRY_TYPE: EntryType = EntryType {
         //try **(STANDARD_TYPE_UUIDS_BY_NAME.get(LOGIN).unwrap()),
-        uuid: build_uuid!(entry_type_uuid::LOGIN),     //uuid::Builder::from_slice(&entry_type_uuid::LOGIN).unwrap().build(),
+        //uuid::Builder::from_slice(&entry_type_uuid::LOGIN).unwrap().build(),
+        uuid: build_uuid!(entry_type_uuid::LOGIN),     
         name: LOGIN.into(),
-        secondary_title: Some("UserName".into()),
+        secondary_title: Some(USER_NAME.into()),
         icon_name:None,
         sections: vec![Section {
-            name: "Login Details".into(),
+            name: LOGIN_DETAILS.into(),
             field_defs: vec![
-                FieldDef::new("UserName").required(),
-                FieldDef::new("Password")
+                FieldDef::new(USER_NAME).required(),
+                FieldDef::new(PASSWORD)
                     .required()
                     .set_require_protection(true),
-                FieldDef::new("URL"),
+                FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword).set_require_protection(true),
+                FieldDef::new(URL),
                 FieldDef::new("Additional URLs"),
                 //FieldDef::new("Date created").set_data_type(FieldDataType::Date),
             ],
-        }],
+            
+        },
+        Section {
+            name: ADDITIONAL_ONE_TIME_PASSWORDS.into(),
+            field_defs: vec![],
+        },
+        ],
     };
 
     pub static ref UUID_TO_ENTRY_TYPE_MAP: HashMap<uuid::Uuid, EntryType> = {
@@ -74,10 +84,10 @@ lazy_static! {
                 secondary_title: None,
                 icon_name:None,
                 sections: vec![Section {
-                    name: "Login Details".into(),
+                    name: LOGIN_DETAILS.into(),
                     field_defs: vec![
                         FieldDef::new("Base Station Name or SSID").required(),
-                        FieldDef::new("Password")
+                        FieldDef::new(PASSWORD)
                             .required()
                             .set_require_protection(true),
                     ],
@@ -94,7 +104,22 @@ lazy_static! {
                 icon_name:None,
                 sections: vec![
                     Section {
-                        name: "Card Details".into(),
+                        name: LOGIN_DETAILS.into(),
+                        field_defs: vec![
+                            FieldDef::new(USER_NAME).required(),
+                            FieldDef::new(PASSWORD)
+                                .required()
+                                .set_require_protection(true),
+                                FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword).set_require_protection(true),
+                            FieldDef::new(URL)
+                        ],
+                    },
+                    Section {
+                        name: ADDITIONAL_ONE_TIME_PASSWORDS.into(),
+                        field_defs: vec![],
+                    },
+                    Section {
+                        name: CARD_DETAILS.into(),
                         field_defs: vec![
                             FieldDef::new("Cardholder Name").required(),
                             FieldDef::new("Brand").required(),
@@ -140,14 +165,19 @@ lazy_static! {
             icon_name:None,
             sections: vec![
                 Section {
-                    name: "Login Details".into(),
+                    name: LOGIN_DETAILS.into(),
                     field_defs: vec![
-                        FieldDef::new("UserName").required(),
-                        FieldDef::new("Password")
+                        FieldDef::new(USER_NAME).required(),
+                        FieldDef::new(PASSWORD)
                             .required()
                             .set_require_protection(true),
-                        FieldDef::new("URL")
+                            FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword).set_require_protection(true),
+                        FieldDef::new(URL)
                     ],
+                },
+                Section {
+                    name: ADDITIONAL_ONE_TIME_PASSWORDS.into(),
+                    field_defs: vec![],
                 },
                 Section {
                     name: "Account Details".into(),

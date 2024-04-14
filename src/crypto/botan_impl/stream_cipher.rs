@@ -11,7 +11,7 @@ pub struct ProtectedContentStreamCipher {
 
 impl ProtectedContentStreamCipher {
     pub fn try_from(cipher_id: u32, inner_stream_key: &Vec<u8>) -> Result<Self> {
-        let h = crate::crypto::do_sha512_hash(&[inner_stream_key])?;
+        let h = crate::crypto::sha512_hash_from_slice_vecs(&[inner_stream_key])?;
         let key = &h[..32]; // first 32 byes
         let iv = &h[32..44]; // next  12 bytes
         if CHACHA20_STREAM == cipher_id {

@@ -1,12 +1,16 @@
 pub mod kdf;
-
 use crate::{
     constants,
     error::{Error, Result},
 };
 use serde::{Deserialize, Serialize};
 
- 
+// botan crypto is used for all platforms except for android armv7 platform
+// as botan lib compilation for 'android armv7' platform could not be done
+
+// To use 'rust_crypto_impl/mod.rs' instead of "botan_impl/mod.rs"
+// just remove target_os = "macos" so that the "else" part is enabled 
+
 cfg_if::cfg_if! {
     if #[cfg(any(target_os = "macos",
                 target_os = "windows",
@@ -24,7 +28,6 @@ cfg_if::cfg_if! {
         pub use crypto_impl::*;
     }
 }
-
 
 // Provides the encryption and decryption
 #[derive(Debug)]
@@ -64,25 +67,34 @@ impl ContentCipherId {
     }
 }
 
+#[test]
+pub fn init_log_lib_info() {
+    crate::util::init_test_logging();
+    print_crypto_lib_info();
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
-        fs,
+        fs::{self, File},
         io::{BufReader, Read},
         time::Instant,
     };
 
+    use crate::util::init_test_logging;
     use super::*;
 
-    // To see logging output during unit testing
-    pub fn init_logging() {
-        let _ = env_logger::builder()
-            // Include all events in tests
-            .filter_level(log::LevelFilter::max())
-            // Ensure events are captured by `cargo test`
-            .is_test(true)
-            // Ignore errors initializing the logger if tests race to configure it
-            .try_init();
+    #[test]
+    fn check_hmac_sha256() {
+        init_log_lib_info();
+        use super::*;
+        let key = "my secret and secure key of bytes with any size".as_bytes();
+        let data1 = "input message".as_bytes();
+        let h1 = hmac_sha256_from_slices(&key, &[&data1]).unwrap();
+
+        let r = verify_hmac_sha256(&key, &[&data1], &h1).unwrap();
+        println!("r is {}", r);
+        assert!(r);
     }
 
     #[test]
@@ -108,7 +120,7 @@ mod tests {
 
     #[test]
     fn verify_aes256_encrypt_decrypt() {
-        init_logging();
+        init_test_logging();
         let (uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
         let cipher = ContentCipher::try_from(&uuid, &enc_iv).unwrap();
 
@@ -136,8 +148,16 @@ mod tests {
         data
     }
 
+    fn data_file() -> File {
+        // File size is 1.06 GB
+        let path = "/Users/jeyasankar/Downloads/Android/android-studio-2021.2.1.16-mac_arm.dmg";
+        let file = fs::File::open(&path).unwrap();
+        file
+    }
+
     #[test]
     fn verify_aes256_file_data_encrypt_decrypt() {
+        init_log_lib_info();
         let (uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
         let cipher = ContentCipher::try_from(&uuid, &enc_iv).unwrap();
 
@@ -159,190 +179,6 @@ mod tests {
         );
 
         assert_eq!(data, decrypted);
-    }
-
-    #[test]
-    fn verify_aes256_encrypt_decrypt_botan() {
-        let (uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
-        let key = get_random_bytes::<32>();
-
-        let text = "Hello World!";
-
-        let mut cipher =
-            botan::Cipher::new("AES-256/CBC/PKCS7", botan::CipherDirection::Encrypt).unwrap();
-        cipher.set_key(&key).unwrap();
-        //cipher.start(&enc_iv).unwrap();
-
-        let encrypted = cipher.process(&enc_iv, text.as_bytes()).unwrap();
-
-        let mut cipher =
-            botan::Cipher::new("AES-256/CBC/PKCS7", botan::CipherDirection::Decrypt).unwrap();
-        cipher.set_key(&key).unwrap();
-        let decrypted = cipher.process(&enc_iv, &encrypted).unwrap();
-
-        assert_eq!(text.as_bytes(), decrypted);
-
-        // let cipher = ContentCipher::try_from(&uuid, &enc_iv).unwrap();
-        // let decrypted = cipher.decrypt(&encrypted, &key).unwrap();
-        // assert_eq!(text.as_bytes(),decrypted);
-    }
-
-    #[test]
-    fn verify_aes256_file_data_encrypt_decrypt_botan() {
-        let (uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
-        let key = get_random_bytes::<32>();
-
-        let data: Vec<u8> = read_file_data();
-
-        let mut cipher =
-            botan::Cipher::new("AES-256/CBC/PKCS7", botan::CipherDirection::Encrypt).unwrap();
-        cipher.set_key(&key).unwrap();
-
-        let timing = Instant::now();
-        let encrypted = cipher.process(&enc_iv, &data).unwrap();
-        println!(
-            "Encryption elapsed time {} seconds",
-            timing.elapsed().as_secs()
-        );
-
-        let mut cipher =
-            botan::Cipher::new("AES-256/CBC/PKCS7", botan::CipherDirection::Decrypt).unwrap();
-        cipher.set_key(&key).unwrap();
-
-        let timing = Instant::now();
-        let decrypted = cipher.process(&enc_iv, &encrypted).unwrap();
-        println!(
-            "Decryption elapsed time {} seconds",
-            timing.elapsed().as_secs()
-        );
-
-        assert_eq!(data, decrypted);
-
-        // let cipher = ContentCipher::try_from(&uuid, &enc_iv).unwrap();
-        // let timing = Instant::now();
-        // let decrypted = cipher.decrypt(&encrypted, &key).unwrap();
-        // println!("Decryption elapsed time {} seconds",timing.elapsed().as_secs());
-        // assert_eq!(data,decrypted);
-    }
-
-    #[test]
-    fn verify_chacha20_encrypt_decrypt_botan() {
-        let (uuid, enc_iv) = ContentCipherId::ChaCha20.uuid_with_iv().unwrap();
-        let key = get_random_bytes::<32>();
-
-        let text = "Hello World!";
-
-        let mut cipher = botan::Cipher::new("ChaCha20", botan::CipherDirection::Encrypt).unwrap();
-        cipher.set_key(&key).unwrap();
-
-        let encrypted = cipher.process(&enc_iv, text.as_bytes()).unwrap();
-
-        let mut cipher = botan::Cipher::new("ChaCha20", botan::CipherDirection::Decrypt).unwrap();
-        cipher.set_key(&key).unwrap();
-        let decrypted = cipher.process(&enc_iv, &encrypted).unwrap();
-
-        assert_eq!(text.as_bytes(), decrypted);
-
-        // let cipher = ContentCipher::try_from(&uuid, &enc_iv).unwrap();
-        // let decrypted = cipher.decrypt(&encrypted, &key).unwrap();
-        // assert_eq!(text.as_bytes(),decrypted);
-    }
-
-    #[test]
-    fn verify_hash256_1() {
-        use sha2::{Digest, Sha256};
-        use std::time::Instant;
-        use std::{fs, io};
-        let path = "/Users/jeyasankar/Downloads/Android/android-studio-2021.2.1.16-mac_arm.dmg";
-        let mut file = fs::File::open(&path).unwrap();
-        let mut hasher = Sha256::new();
-        println!("Started hashing ...");
-        let start = Instant::now();
-        let n = io::copy(&mut file, &mut hasher).unwrap();
-        let digest = hasher.finalize().to_vec();
-        let duration = start.elapsed();
-        println!("Completed hashing ...duration {:?}", duration);
-        assert!(
-            hex::encode(&digest)
-                == "d4e06bcc6f614cd4b261fc6034529edb205b31b0e56824490a91350c3640806a"
-        )
-    }
-
-    #[test]
-    fn verify_hash256_2() {
-        use sha2::{Digest, Sha256};
-        use std::time::{Duration, Instant};
-        use std::{fs, io};
-        let path = "/Users/jeyasankar/Downloads/Android/android-studio-2021.2.1.16-mac_arm.dmg";
-        let input = fs::File::open(path).unwrap();
-        let mut reader = BufReader::new(input);
-
-        let start = Instant::now();
-        let digest = {
-            let mut hasher = Sha256::new();
-            println!("Started hashing ...");
-            let mut buffer = [0; 1024];
-            loop {
-                let count = reader.read(&mut buffer).unwrap();
-                if count == 0 {
-                    break;
-                }
-                hasher.update(&buffer[..count]);
-            }
-            hasher.finalize().to_vec()
-        };
-
-        let duration = start.elapsed();
-        println!("Completed hashing ...duration {:?}", duration);
-        //println!("Digest hex is {}", hex::encode(&digest));
-
-        assert!(
-            hex::encode(&digest)
-                == "d4e06bcc6f614cd4b261fc6034529edb205b31b0e56824490a91350c3640806a"
-        )
-    }
-
-    #[test]
-    fn verify_hash256_3() {
-        use std::fs;
-        use std::time::Instant;
-        // hex d4e06bcc6f614cd4b261fc6034529edb205b31b0e56824490a91350c3640806a
-        let path = "/Users/jeyasankar/Downloads/Android/android-studio-2021.2.1.16-mac_arm.dmg";
-        let input = fs::File::open(path).unwrap();
-        let mut reader = BufReader::new(input);
-
-        // assert!(botan::HashFunction::new("SHA-256").is_ok());
-
-        let start = Instant::now();
-        let digest = {
-            let mut hasher = botan::HashFunction::new("SHA-256").unwrap();
-            println!("Started hashing ...");
-
-            // Reads the complete file in one go
-            // let mut buf = vec![];
-            // reader.read_to_end(&mut buf).unwrap();
-            // hasher.update(&buf).unwrap();
-            // hasher.finish().unwrap()
-
-            let mut buffer = [0; 1024];
-            loop {
-                let count = reader.read(&mut buffer).unwrap();
-                if count == 0 {
-                    break;
-                }
-                hasher.update(&buffer[..count]).unwrap();
-            }
-            hasher.finish().unwrap()
-        };
-
-        let duration = start.elapsed();
-        println!("Completed hashing ...duration {:?}", duration);
-
-        //println!("Digest hex is {}", hex::encode(&digest));
-        assert!(
-            hex::encode(&digest)
-                == "d4e06bcc6f614cd4b261fc6034529edb205b31b0e56824490a91350c3640806a"
-        )
     }
 
     // Need to add to Cargo.toml to test this

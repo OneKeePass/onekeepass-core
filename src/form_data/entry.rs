@@ -1,4 +1,5 @@
 use chrono::{DateTime, Datelike, Local, NaiveDateTime};
+use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::From;
@@ -6,13 +7,16 @@ use uuid::Uuid;
 
 use crate::constants::entry_keyvalue_key::*;
 use crate::constants::entry_type_name::CREDIT_DEBIT_CARD;
+use crate::constants::standard_in_section_names::ADDITIONAL_ONE_TIME_PASSWORDS;
 use crate::password_generator::{score_password, PasswordScore};
 use crate::util::{self, empty_str};
 
 use crate::db_content::{
-    join_tags, split_tags, BinaryKeyValue, Entry, EntryField, EntryType, FieldDataType, FieldDef,
-    KeyValue, Section, AutoType,
+    join_tags, split_tags, AutoType, BinaryKeyValue, Entry, EntryField,
+    EntryType, FieldDataType, FieldDef, KeyValue, OtpData, Section,
 };
+
+pub use crate::db_content::CurrentOtpTokenData;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct KeyValueData {
@@ -27,6 +31,8 @@ pub struct KeyValueData {
     pub select_field_options: Option<Vec<String>>,
     #[serde(skip_deserializing)]
     pub password_score: Option<PasswordScore>,
+    // Following are set on otp token generation
+    pub current_opt_token: Option<CurrentOtpTokenData>,
 }
 
 impl From<&KeyValue> for KeyValueData {
@@ -46,6 +52,7 @@ impl From<&KeyValue> for KeyValueData {
             standard_field: false,
             select_field_options: None,
             password_score,
+            current_opt_token: None,
         }
     }
 }
@@ -76,7 +83,36 @@ impl From<&KeyValueData> for FieldDef {
     }
 }
 
-//const CUSTOM_FILEDS:&str = "Custom Fields";
+impl KeyValueData {
+    fn generate_otp(&mut self, parsed_otp_values: &Option<HashMap<String, OtpData>>) {
+        if self.data_type == FieldDataType::OneTimePassword {
+            if let Some(parsed_otp_data) =
+                parsed_otp_values.as_ref().and_then(|pm| pm.get(&self.key))
+            {
+                match parsed_otp_data.current_otp_token_data() {
+                    Ok(token_data) => {
+                        self.current_opt_token = Some(token_data);
+                    }
+                    Err(e) => {
+                        info!("Generating current otp failed {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    // Called to generate an otp token if there is a parsed otp data available for this KV
+    // The data type will be overriden to be 'OneTimePassword' 
+    fn _generate_otp_on_check(&mut self, parsed_otp_values: &Option<HashMap<String, OtpData>>) {
+        if let Some(m) = parsed_otp_values.as_ref() {
+            if m.contains_key(&self.key) {
+                // We need to set data type as this field has a valid otp url
+                self.data_type = FieldDataType::OneTimePassword;
+                self.generate_otp(parsed_otp_values);
+            }
+        }
+    }
+}
 
 use lazy_static::lazy_static;
 
@@ -142,6 +178,7 @@ impl EntryFormData {
         let entry_type_name = entry.entry_field.entry_type.name.clone();
         let entry_type_uuid = entry.entry_field.entry_type.uuid.clone();
         let entry_type_icon_name = entry.entry_field.entry_type.icon_name.clone();
+
         // Let us get the all section names
         let mut section_names: Vec<String> = entry
             .entry_field
@@ -153,7 +190,11 @@ impl EntryFormData {
 
         let standard_field_names = entry.entry_field.entry_type.standard_field_names_by_id();
         // All available fields that are read from xml content
+        // Kept in a map for easy access using its name
         let mut fields = entry.entry_field.fields.clone();
+
+        // Keep track of all field names that are added to various sections
+        let mut field_names_done: Vec<String> = vec![];
 
         // These two are treated separatley in UI layer. So we extract them from the list
         let title: String = fields
@@ -166,6 +207,7 @@ impl EntryFormData {
         // All KVs per section name
         let mut section_fields: HashMap<String, Vec<KeyValueData>> = HashMap::default();
 
+        // Combines each KeyValue with its field definition
         for n in section_names.iter() {
             let section_opt = entry
                 .entry_field
@@ -179,17 +221,34 @@ impl EntryFormData {
                 // Copy the data type info to KVs
                 for fd in section.field_defs.iter() {
                     // println!("Field Def is {:?}", fd);
-                    // Remove the KV from fields for the matching name
+
+                    // Remove the KV from 'fields' for the field def matching name
                     if let Some(kv) = fields.remove(&fd.name) {
                         // Clone values from KeyValue to KeyValueData
                         let mut kvd: KeyValueData = (&kv).into();
+
+                        // Following may be requird when we change a field's protection flag 
+                        // in FieldDef from its earlier definition. 
+                        // May Need more tests to confirm no other issue. 
+                        // if kvd.protected != fd.require_protection {
+                        //     // Overriding the old protected flag read from db with new value from
+                        //     // field definition
+                        //     kvd.protected = fd.require_protection;
+                        // }
 
                         // Additionally, the following field values are found in FieldDef and
                         // kvd is populated from them
                         kvd.data_type = fd.data_type;
                         kvd.required = fd.required;
-                        kvd.helper_text = fd.helper_text(); //fd.helper_text.clone();
+                        kvd.helper_text = fd.helper_text(); 
                         kvd.standard_field = standard_field_names.contains(&kv.key.as_str());
+
+                        // We generate token only if the data type of this field is 'OneTimePassword' type
+                        if fd.data_type == FieldDataType::OneTimePassword {
+                            kvd.generate_otp(&entry.parsed_otp_values);
+                        }
+
+                        // kvd.generate_otp_on_check(&entry.parsed_otp_values);
 
                         // This is specific to CREDIT_DEBIT_CARD entry form
                         if entry_type_name == CREDIT_DEBIT_CARD {
@@ -200,11 +259,31 @@ impl EntryFormData {
                                     Some(v.iter().map(|s| s.to_string()).collect::<Vec<_>>());
                             }
                         }
+                        // Now this field is used to create KVD
+                        field_names_done.push(kv.key.clone());
 
                         kvs.push(kvd);
                     } else {
                         // The FieldDef of this entry type is not in KV. This can happen when new fields
                         // are added in standard types or when we need to use default entry type in case of deserilalizing issue
+
+                        // Need to ensure that the field name of this 'fd.name' is NOT yet
+                        // added earlier to any other section.
+
+                        // This will happen in a situation when a new field is introduced later in the satndard section with same name as
+                        // in any previously user added custom section
+
+                        // For example, let us assume we have a previously user defined section "Section1" with field name "UserName" for
+                        // this standard entry type
+                        // Now assume that this entry type does not have "Login Details".
+                        // If a section with name "Login Details"is added to this standard type that includes the
+                        // field name "UserName", then we do not want to have duplicate "UserName" fields in both "Login Details" and "Section1"
+                        // The following check ensures that this does not happen
+
+                        if field_names_done.contains(&fd.name) {
+                            continue;
+                        }
+
                         // debug!("Not found in KV - Field Def {:?}", fd);
                         let mut kvd: KeyValueData = KeyValueData::default();
                         kvd.data_type = fd.data_type;
@@ -212,6 +291,9 @@ impl EntryFormData {
                         kvd.helper_text = fd.helper_text(); //fd.helper_text.clone();
                         kvd.standard_field = standard_field_names.contains(&fd.name.as_str());
                         kvd.key = fd.name.clone();
+
+                        // Completed the combining of this field with its definition to create KVD
+                        field_names_done.push(kvd.key.clone());
 
                         kvs.push(kvd);
                     }
@@ -233,13 +315,29 @@ impl EntryFormData {
             // to convert to "Custom Fields"
             // Need to figure out what to do for languages other than 'en'
             if let Some(mut all_custom_fields_kv_data) = section_fields.remove(&*CUSTOM_FILEDS) {
-                all_custom_fields_kv_data.extend(fields.values().map(|kv| kv.into()));
+                all_custom_fields_kv_data.extend(fields.values().map(|kv| {
+                    // let mut kvd: KeyValueData = kv.into();
+                    // There is a possibility a field may have a valid totp url created in other app
+                    // In that case, we need to generate token and set its data type
+                    // kvd.generate_otp_on_check(&entry.parsed_otp_values);
+                    kv.into()
+                }));
                 section_fields.insert(CUSTOM_FILEDS.clone(), all_custom_fields_kv_data);
             } else {
                 section_names.push(CUSTOM_FILEDS.clone());
                 section_fields.insert(
                     CUSTOM_FILEDS.clone(),
-                    fields.values().map(|kv| kv.into()).collect(),
+                    fields
+                        .values()
+                        .map(|kv| {
+                            // let mut kvd: KeyValueData = kv.into();
+                            // There is a possibility a field may have a valid totp url created in other app
+                            // In that case, we need to generate token and set its data type
+                            // kvd.generate_otp_on_check(&entry.parsed_otp_values);
+                            
+                            kv.into()
+                        })
+                        .collect(),
                 );
             }
         }
@@ -263,7 +361,7 @@ impl EntryFormData {
             expires: entry.times.expires,
             expiry_time: entry.times.expiry_time,
 
-            auto_type:entry.auto_type.clone(),
+            auto_type: entry.auto_type.clone(),
 
             history_count: entry.history.entries.len() as i32,
             entry_type_name,
@@ -276,7 +374,6 @@ impl EntryFormData {
             standard_section_names,
             section_names,
             section_fields,
-            
         }
     }
 
@@ -298,11 +395,20 @@ impl EntryFormData {
         entry_field.fields.insert(TITLE.into(), title_kv);
         entry_field.fields.insert(NOTES.into(), notes_kv);
 
+        // section_names is list of all section names 
+        // Order of section and the fields order within a section are maintained for minimal
+        // Entrytype data storage
+        // See Entry's 'copy_to_custom_data' call flow where we store only the changed type information
+          
         for section_name in entry_form_data.section_names.iter() {
             // For each section name found, we find all KVs and form EntryField
             if let Some(kvds) = entry_form_data.section_fields.get(section_name) {
                 let mut fds: Vec<FieldDef> = vec![];
                 for kvd in kvds {
+                    // Here we are assuming we have unique field names for an entry
+                    // If we allow duplicate field names, we may need to check whether the kvd is already considerd or not using
+                    // entry_field.fields.contains_key(&kvd.key) and consider only the first or last value
+
                     // Each KV Data found for a section a KV is created and inserted to entry_filed.fields
                     entry_field.fields.insert(kvd.key.clone(), kvd.into());
 
@@ -314,14 +420,13 @@ impl EntryFormData {
 
                 // Drop a section if it does not have any fields
                 // Mostly this is possible if user removes all custom fields of a custom section
-                // In case of standard sections, one or more field should be there
-                if !fds.is_empty() {
+                // In case of standard sections, one or more field should be there except for the ADDITIONAL_ONE_TIME_PASSWORDS section
+                if section_name == ADDITIONAL_ONE_TIME_PASSWORDS || !fds.is_empty() {
                     entry_field.entry_type.sections.push(Section {
                         name: section_name.clone(),
                         field_defs: fds,
                     });
                 }
-                
             }
         }
 
@@ -338,12 +443,12 @@ impl EntryFormData {
         entry.tags = join_tags(&entry_form_data.tags);
         entry.times.expires = entry_form_data.expires;
         entry.times.expiry_time = entry_form_data.expiry_time;
-        
+
         entry.auto_type = entry_form_data.auto_type.clone();
 
         // Attachment references if any
         entry.binary_key_values = entry_form_data.binary_key_values.clone();
-        
+
         entry
     }
 
@@ -392,8 +497,8 @@ pub struct EntrySummary {
     pub secondary_title: Option<String>, //usually the user name
     pub icon_id: i32,
     pub history_index: Option<i32>,
-    pub modified_time:Option<i64>,
-    pub created_time:Option<i64>
+    pub modified_time: Option<i64>,
+    pub created_time: Option<i64>,
 }
 
 impl EntrySummary {
@@ -421,8 +526,8 @@ impl EntrySummary {
                 // )),
                 icon_id: he.icon_id,
                 history_index: Some(i as i32),
-                modified_time:None,
-                created_time:None,
+                modified_time: None,
+                created_time: None,
             });
         }
         summary_list
@@ -480,8 +585,8 @@ impl EntrySummary {
                 secondary_title,
                 icon_id: e.icon_id,
                 history_index: None,
-                modified_time:Some(e.times.last_modification_time.timestamp()),
-                created_time:Some(e.times.creation_time.timestamp()),
+                modified_time: Some(e.times.last_modification_time.timestamp()),
+                created_time: Some(e.times.creation_time.timestamp()),
             });
         }
         summary_list
@@ -559,7 +664,7 @@ mod tests {
     fn verify_creating_display_entry() {
         let uuid = uuid::Builder::from_slice(&entry_type_uuid::LOGIN)
             .unwrap()
-            .build();
+            .into_uuid();
         let mut entry = Entry::new_blank_entry_by_type_id(&uuid, None, None);
 
         entry.entry_field.fields.insert(

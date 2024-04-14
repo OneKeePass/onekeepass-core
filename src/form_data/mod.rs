@@ -8,8 +8,8 @@ use crate::{
     db_content::Meta,
 };
 
-pub use self::entry::*;
 pub use self::categories::*;
+pub use self::entry::*;
 
 // Following way can be used in case we want to export types from 'entry' under some
 // other module name.

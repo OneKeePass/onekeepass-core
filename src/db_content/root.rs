@@ -229,17 +229,17 @@ impl Root {
 
     /// Gets all entries that are moved to recycle bin
     pub(crate) fn deleted_entry_uuids(&self) -> Vec<Uuid> {
-        // true is passed as we want all deleted entry uuids
+        // true is passed for 'entry_ids_wanted' as we want all deleted entry uuids
         self.deleted_uuids(true)
     }
 
     /// Gets all groups that are moved to recycle bin
     pub(crate) fn deleted_group_uuids(&self) -> Vec<Uuid> {
-        // false is passed as we want all deleted group uuids
+        // false is passed for 'entry_ids_wanted' as we want all deleted group uuids
         self.deleted_uuids(false)
     }
 
-    /// Collects all entry or group uuids that are put in recycle bin
+    /// Collects all entry (entry_ids_wanted should be true) or group uuids that are put in recycle bin
     fn deleted_uuids(&self, entry_ids_wanted: bool) -> Vec<Uuid> {
         let mut acc = InOrderIds {
             ids: vec![],
@@ -288,7 +288,7 @@ impl Root {
 
     pub fn insert_group(&mut self, group: Group) -> Result<()> {
         if group.parent_group_uuid == Uuid::default() {
-            return Err(Error::Other("Valid parent group is not set".into()));
+            return Err(Error::UnexpectedError("Valid parent group is not set".into()));
         }
 
         if !self.all_groups.contains_key(&group.parent_group_uuid) {
@@ -403,7 +403,7 @@ impl Root {
 
         // Remove all sub groups
         for gid in sub_group_ids {
-            self.all_groups.remove(&gid).ok_or(Error::Other(format!(
+            self.all_groups.remove(&gid).ok_or(Error::UnexpectedError(format!(
                 "The group {} is not found in All Groups map",
                 &gid
             )))?;
@@ -547,10 +547,8 @@ impl Root {
         } else {
             return Err(Error::NotFound("Group is not valid for the entry".into()));
         }
-        entry.copy_to_custom_data();
-        // entry
-        //     .custom_data
-        //     .encode_entry_type(&entry.entry_field.entry_type);
+        entry.complete_insert();
+
         self.all_entries.insert(entry.uuid, entry);
         Ok(())
     }
