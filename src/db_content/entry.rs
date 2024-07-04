@@ -194,7 +194,7 @@ impl Entry {
     pub fn after_xml_reading(&mut self, meta: &Meta) {
         self.meta_share = Arc::clone(&meta.meta_share);
         // Create EntryType from custom data
-        let etype = self.dserilalize_to_entry_type();
+        let etype = self.deserialize_to_entry_type();
         self.entry_field.entry_type = etype;
 
         // Note this entry's history entries' entry_field.entry_type is set on demand
@@ -211,7 +211,7 @@ impl Entry {
     }
 
     // Creates the EntryType for an entry from any previously serialized entry type data
-    fn dserilalize_to_entry_type(&self) -> EntryType {
+    fn deserialize_to_entry_type(&self) -> EntryType {
         // IMPORATNT: meta_share should have been set before calling this method so that
         // custom entry types can be considered
         if let Some(b64_uuid) = self.custom_data.get_item_value(OKP_ENTRY_TYPE) {
@@ -661,7 +661,7 @@ impl Entry {
                 .remove_item(OKP_ENTRY_TYPE_DATA_INDEX);
         }
         // Now we can create entry type for this history entry
-        history_entry.entry_field.entry_type = history_entry.dserilalize_to_entry_type();
+        history_entry.entry_field.entry_type = history_entry.deserialize_to_entry_type();
     }
 
     // This ensures we do not serilaize the current Entry Type in OKP_ENTRY_TYPE_LIST_DATA
@@ -827,7 +827,7 @@ pub struct Association {
 #[derive(Debug, Default, Clone)]
 //#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct History {
-    //History has a list of previous entries
+    // History has a list of previous entries
     pub(crate) entries: Vec<Entry>,
 }
 

@@ -4,8 +4,7 @@ use std::path::Path;
 use log::debug;
 
 use super::{
-    call_kdbx_context_mut_action, main_store, KdbxContext, KdbxLoaded, KdbxSaved, NewDatabase,
-    SaveAllResponse,SaveStatus,
+    call_kdbx_context_action, call_kdbx_context_mut_action, main_store, KdbxContext, KdbxLoaded, KdbxSaved, NewDatabase, SaveAllResponse, SaveStatus
 };
 use crate::db_content::KeepassFile;
 
@@ -16,7 +15,7 @@ use crate::{to_keepassfile,main_content_action, kdbx_context_mut_action};
 
 use crate::error::{Error, Result};
 
-use crate::db::{self,write_kdbx_file,write_kdbx_file_with_backup_file, write_kdbx_content_to_file,};
+use crate::db::{self,write_kdbx_file,write_kdbx_file_with_backup_file, write_kdbx_content_to_file,KdfAlgorithm,};
 use crate::util;
 
 // TODO: Refactor create_kdbx (used mainly for desktop app) and create_and_write_to_writer to use common functionalties
@@ -159,7 +158,7 @@ pub fn save_kdbx_with_backup(
 
 // Mobile
 /// Converts all data from memory structs to kdbx database formatted data and
-/// writes the final complte db content to the supplied writer. The writer may be in memory or a file
+/// writes the final complete db content to the supplied writer. The writer may be in memory or a file
 /// Returns the result of saving in KdbxSaved struct to the client
 pub fn save_kdbx_to_writer<W: Read + Write + Seek>(
     writer: &mut W,
@@ -331,6 +330,32 @@ pub fn create_and_write_to_writer<W: Read + Write + Seek>(
 
     //Ok(new_db.database_file_name.clone())
     Ok(kdbx_loaded)
+}
+
+// iOS 
+// Called to copy the database data from memory found by the db_key to a file 
+// We are using file name instead of writer as this is an internal file and accessible by file name
+#[cfg(target_os = "ios")]
+pub fn copy_and_write_autofill_ready_db(db_key: &str,full_file_name: &str) -> Result<()> {
+    let mut kdbx_file = call_kdbx_context_action(db_key, |ctx: &KdbxContext|  {
+        Ok(ctx.kdbx_file.clone())
+    })?;
+
+    // If we plan to use PIN instead of the existing credentials for this copied db, we need to something like newdb call
+
+    // Argon2d parameters are set so that memory requirement of iOS autofill extension can be met
+    // The iOS autofill extension can not take more than 120 MB for decryption etc
+    let kdf = KdfAlgorithm::as_argon2(1, 100, 1);
+    kdbx_file.set_kdf_algorithm(kdf)?;
+
+    // Need to remove entry histories, attachments etc to make db size small
+    if let Some( ref mut kc ) =  kdbx_file.keepass_main_content {
+        kc.root.remove_all_binary_kvs_and_history_entries();
+    }
+
+    write_kdbx_content_to_file(&mut kdbx_file, full_file_name)?;
+
+    Ok(())
 }
 
 // Mobile

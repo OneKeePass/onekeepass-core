@@ -71,6 +71,19 @@ impl Default for KdfAlgorithm {
     }
 }
 
+impl KdfAlgorithm {
+    pub fn default_argon2() -> Self {
+        KdfAlgorithm::Argon2(crypto::kdf::Argon2Kdf::default())
+    }
+
+    // Creates argon2 with specific parameters values
+    // memory is passed as in mb
+    pub fn as_argon2(memory: u64,iterations:u64,parallelism: u32) -> Self {
+        let mem = memory*1024*1024;
+        KdfAlgorithm::Argon2(crypto::kdf::Argon2Kdf::from(mem,iterations,parallelism))
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub(crate) struct AttachmentSet {
     // All attachments bytes data accessible by its hash.
@@ -656,6 +669,7 @@ pub fn write_kdbx_file(kdbx_file: &mut KdbxFile, overwrite: bool) -> Result<()> 
     Ok(())
 }
 
+// iOS - Autofill
 // Desktop
 // Called to save the current database content to a given file
 pub fn write_kdbx_content_to_file(kdbx_file: &mut KdbxFile, full_file_name: &str) -> Result<()> {

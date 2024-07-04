@@ -67,6 +67,8 @@ impl PasswordGenerationOptions {
             exclude_similar_characters: self.exclude_similar_characters,
             strict: self.strict,
         };
+        // extern crate passwords returns error as static &str and this is 
+        // converted to 'crate::onekeepass_core::error::Error implementing From trait
         Ok(pg.generate_one()?)
     }
 
