@@ -63,9 +63,9 @@ impl GroupVisitor for InOrderIds {
 pub struct Root {
     pub(crate) root_uuid: Uuid,
     pub(crate) recycle_bin_uuid: Uuid,
-    //All groups data for easy lookup by uuid
+    // All groups data for easy lookup by uuid
     pub(crate) all_groups: HashMap<Uuid, Group>,
-    //All entries data for easy lookup by uuid
+    // All entries data for easy lookup by uuid
     pub(crate) all_entries: HashMap<Uuid, Entry>,
 }
 
@@ -97,6 +97,19 @@ impl Root {
     pub fn delete_history_entries(&mut self, entry_uuid: &Uuid) {
         if let Some(e) = self.entry_by_id_mut(entry_uuid) {
             e.delete_history_entries();
+        }
+    }
+
+    pub fn delete_all_history_entries(&mut self) {
+        for (_, entry) in self.all_entries.iter_mut() { 
+            entry.delete_history_entries();
+        }
+    }
+
+    pub fn remove_all_binary_kvs_and_history_entries(&mut self) {
+        for (_, entry) in self.all_entries.iter_mut() { 
+            entry.delete_history_entries();
+            entry.binary_key_values = vec![];
         }
     }
 
