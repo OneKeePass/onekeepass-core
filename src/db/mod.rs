@@ -77,10 +77,11 @@ impl KdfAlgorithm {
     }
 
     // Creates argon2 with specific parameters values
-    // memory is passed as in mb
-    pub fn as_argon2(memory: u64,iterations:u64,parallelism: u32) -> Self {
-        let mem = memory*1024*1024;
-        KdfAlgorithm::Argon2(crypto::kdf::Argon2Kdf::from(mem,iterations,parallelism))
+    // The arg 'memory' size is in bytes
+    pub fn as_argon2(memory: u64, iterations: u64, parallelism: u32) -> Self {
+        // The incoming memory bytes size needs to be converted to size in Mb
+        let mem = memory * 1024 * 1024;
+        KdfAlgorithm::Argon2(crypto::kdf::Argon2Kdf::from(mem, iterations, parallelism))
     }
 }
 
@@ -278,7 +279,8 @@ impl SecuredDatabaseKeys {
         let prefix = vec![255u8; 8];
 
         self.hmac_key = crypto::sha512_hash_from_slice_vecs(&[&prefix, &self.hmac_part_key])?;
-        self.master_key = crypto::sha256_hash_from_slice_vecs(&[master_seed, &self.transformed_key])?;
+        self.master_key =
+            crypto::sha256_hash_from_slice_vecs(&[master_seed, &self.transformed_key])?;
 
         Ok(())
     }
