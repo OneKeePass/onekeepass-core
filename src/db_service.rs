@@ -1,3 +1,6 @@
+// These are sub modules from dir db_service
+// db_service.rs is used instead of mod.rs in dir db_service
+
 mod attachment;
 mod io;
 
@@ -20,6 +23,7 @@ use log::debug;
 use uuid::Uuid;
 
 //    ========  Re-exports to use in all api users ============
+
 pub use attachment::{
     read_entry_attachment, remove_app_temp_dir_content, save_attachment_as,
     save_attachment_as_temp_file, save_attachment_to_writter, upload_entry_attachment,
@@ -47,7 +51,9 @@ pub use crate::db::{
     KeyStoreOperation, KeyStoreService, KeyStoreServiceType, NewDatabase, SecureKeyInfo,
 };
 
-pub use crate::db_content::{AllTags, EntryType, FieldDataType, Group, OtpSettings};
+pub use crate::db_content::{
+    AllTags, EntryCloneOption, EntryType, FieldDataType, Group, GroupSortCriteria, OtpSettings,
+};
 
 pub use crate::form_data::{
     CategoryDetail, CurrentOtpTokenData, DbSettings, EntryCategories, EntryCategory,
@@ -85,7 +91,6 @@ pub fn kdbx_context_statuses(db_key: &str) -> Result<KdbxContextStatus> {
         })
     })
 }
-
 pub struct KdbxContext {
     pub(crate) kdbx_file: KdbxFile,
     /// The time of the most recent reading of the database
@@ -742,7 +747,7 @@ pub fn form_otp_url(otp_settings: &OtpSettings) -> Result<String> {
 }
 
 #[inline]
-pub fn is_valid_otp_url(otp_url_str:&str) -> bool {
+pub fn is_valid_otp_url(otp_url_str: &str) -> bool {
     OtpData::from_url(otp_url_str).is_ok()
 }
 
@@ -807,15 +812,34 @@ pub fn insert_entry_from_form_data(db_key: &str, form_data: EntryFormData) -> Re
     })
 }
 
+pub fn clone_entry(db_key: &str, entry_uuid: &Uuid, entry_clone_option: &EntryCloneOption) -> Result<Uuid> {
+    main_content_mut_action!(db_key, move |k: &mut KeepassFile| {
+        k.root.clone_entry(entry_uuid, entry_clone_option)
+    })
+}
+
 pub fn update_group(db_key: &str, group: Group) -> Result<()> {
     main_content_mut_action!(db_key, |k: &mut KeepassFile| {
         Ok(k.root.update_group(group.clone()))
     })
 }
 
+// Called from UI layer to insert a newly added group
 pub fn insert_group(db_key: &str, group: Group) -> Result<()> {
     main_content_mut_action!(db_key, move |k: &mut KeepassFile| {
+        // Delegate to the fn in root
         k.root.insert_group(group.clone())
+    })
+}
+
+pub fn sort_sub_groups(
+    db_key: &str,
+    group_uuid: &Uuid,
+    criteria: &GroupSortCriteria,
+) -> Result<()> {
+    main_content_mut_action!(db_key, move |k: &mut KeepassFile| {
+        // Delegate to the fn in root
+        k.root.sort_sub_groups(group_uuid, criteria)
     })
 }
 

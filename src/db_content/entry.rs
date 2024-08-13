@@ -130,6 +130,11 @@ impl EntryField {
     pub fn find_key_value(&self, key: &str) -> Option<&KeyValue> {
         self.fields.values().find(|f| f.key == key)
     }
+
+    // finds a KeyValue from the 'fields' map and updates its 'value' field with the passed value
+    pub fn update_value(&mut self, key: &str, value:&str) {
+        self.fields.entry(key.to_string()).and_modify(|e| e.value = value.into());
+    }
 }
 
 //#[derive(Debug, Clone, Serialize, Deserialize)]

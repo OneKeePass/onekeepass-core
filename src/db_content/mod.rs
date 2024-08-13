@@ -4,15 +4,13 @@ mod entry_type;
 mod group;
 mod keepass;
 mod meta;
+mod otp;
 mod root;
 mod standard_entry_types;
-mod otp;
-
 
 pub(crate) use self::custom_data::{CustomData, Item};
 pub(crate) use self::otp::OtpData;
 
-pub use self::otp::{CurrentOtpTokenData,OtpAlgorithm,OtpSettings};
 pub use self::entry::{
     Association, AutoType, BinaryKeyValue, Entry, EntryField, History, KeyValue,
 };
@@ -20,12 +18,12 @@ pub use self::entry_type::{EntryType, FieldDataType, FieldDef, Section};
 pub use self::group::Group;
 pub use self::keepass::KeepassFile;
 pub use self::meta::Meta;
+pub use self::otp::{CurrentOtpTokenData, OtpAlgorithm, OtpSettings};
 
-pub use self::root::{ AllTags, GroupVisitor, Root};
+pub use self::root::{AllTags, EntryCloneOption, GroupSortCriteria, Root};
 pub use self::standard_entry_types::{
     standard_type_uuids_names_ordered_by_id, standard_types_ordered_by_id,
 };
-
 
 use chrono::NaiveDateTime;
 
@@ -91,6 +89,7 @@ macro_rules! verify_uuid {
         }
     };
 }
+
 pub(crate) use verify_uuid;
 
 macro_rules! move_to_recycle_bin {
