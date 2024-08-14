@@ -70,8 +70,8 @@ pub struct Icon {
     pub(crate) name: Option<String>, //KDBX 4.1
 }
 
-// Used to verify a given entry or group uuid is set to valid value and also it is
-// a key either in all_groups or all_entries map
+// Called to verify a given entry's or group's uuid is a valid value (i.e not default one) and this
+// uuid is found either in all_groups or all_entries map
 macro_rules! verify_uuid {
     ($self:ident, $uuid:expr, $collection_name:tt) => {
         if $uuid == uuid::Uuid::default() {

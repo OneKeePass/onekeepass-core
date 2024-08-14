@@ -611,6 +611,8 @@ impl Root {
         let entry = self.all_entries.get_mut(&entry_uuid).unwrap();
         let old_parent_id = entry.group_uuid;
 
+        verify_uuid!(self, old_parent_id, all_groups);
+
         if old_parent_id == new_parent_id {
             error!(
                 "The new parent group is {} and is the same as the current parent group id",
@@ -685,6 +687,9 @@ impl Root {
         let new_e_uuid = uuid::Uuid::new_v4();
         cloned_entry.uuid = new_e_uuid;
 
+        // Cloned entry's parent group uuid should be set
+        cloned_entry.group_uuid = entry_clone_option.parent_group_uuid;
+
         // Title is changed
         if let Some(title) = entry_clone_option.new_title.as_ref() {
             cloned_entry.entry_field.update_value(TITLE, title);
@@ -704,11 +709,14 @@ impl Root {
         self.all_groups
             .entry(entry_clone_option.parent_group_uuid)
             .and_modify(|g| g.entry_uuids.push(cloned_entry.uuid));
-     
-        // Add this new cloned entry to the entry lookup map
+
+        // Add this new cloned entry to the entries lookup map
         self.all_entries.insert(cloned_entry.uuid, cloned_entry);
 
-        debug!("Entry uuid {} is cloned and cloned entry uuid is {}", &entry_uuid, &new_e_uuid);
+        debug!(
+            "Entry uuid {} is cloned and cloned entry uuid is {}",
+            &entry_uuid, &new_e_uuid
+        );
 
         Ok(new_e_uuid)
     }
