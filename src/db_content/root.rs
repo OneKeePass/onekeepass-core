@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::vec;
 
+use crate::constants::entry_keyvalue_key::TITLE;
 use crate::constants::general_category_names::FAVORITES;
 use crate::db_content::{move_to_recycle_bin, verify_uuid, AttachmentHashValue, Entry, Group};
 use crate::error::{Error, Result};
@@ -15,6 +17,19 @@ pub trait GroupVisitor {
 use std::collections::HashSet;
 
 use super::{split_tags, Meta};
+
+#[derive(Debug, Deserialize)]
+pub enum GroupSortCriteria {
+    AtoZ,
+    ZtoA,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EntryCloneOption {
+    pub new_title: Option<String>,
+    pub parent_group_uuid: Uuid,
+    pub keep_histories: bool,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AllTags {
@@ -101,13 +116,13 @@ impl Root {
     }
 
     pub fn delete_all_history_entries(&mut self) {
-        for (_, entry) in self.all_entries.iter_mut() { 
+        for (_, entry) in self.all_entries.iter_mut() {
             entry.delete_history_entries();
         }
     }
 
     pub fn remove_all_binary_kvs_and_history_entries(&mut self) {
-        for (_, entry) in self.all_entries.iter_mut() { 
+        for (_, entry) in self.all_entries.iter_mut() {
             entry.delete_history_entries();
             entry.binary_key_values = vec![];
         }
@@ -299,9 +314,12 @@ impl Root {
     // TODO:
     // Should we combine 'insert_*' and 'update_*' ?
 
+    // Called from service layer to insert a newly added group (in UI layer)
     pub fn insert_group(&mut self, group: Group) -> Result<()> {
         if group.parent_group_uuid == Uuid::default() {
-            return Err(Error::UnexpectedError("Valid parent group is not set".into()));
+            return Err(Error::UnexpectedError(
+                "Valid parent group is not set".into(),
+            ));
         }
 
         if !self.all_groups.contains_key(&group.parent_group_uuid) {
@@ -316,6 +334,7 @@ impl Root {
             ));
         }
 
+        // Adds the new group to its parent
         self.all_groups
             .entry(group.parent_group_uuid.clone())
             .and_modify(|g| g.group_uuids.push(group.uuid));
@@ -343,6 +362,75 @@ impl Root {
 
             //TODO: Need to consider other fields from the incoming 'group' if required
         }
+    }
+
+    fn group_comparator(
+        &self,
+        a_group_uuid: &Uuid,
+        b_group_uuid: &Uuid,
+        criteria: &GroupSortCriteria,
+    ) -> core::cmp::Ordering {
+        if let (Some(g1), Some(g2)) = (
+            self.all_groups.get(a_group_uuid),
+            self.all_groups.get(b_group_uuid),
+        ) {
+            if let GroupSortCriteria::AtoZ = criteria {
+                g1.name.cmp(&g2.name)
+            } else {
+                g2.name.cmp(&g1.name)
+            }
+        } else {
+            // We are assuming 'all_groups' should have groups identified by a_group_uuid and b_group_uuid
+            // Expected to get Some(..) and not None values above.
+            // This clause is not expected to be called
+            log::error!("In group_comparator: The group uuid a_group_uuid {} or b_group_uuid {} or both are not found",a_group_uuid,b_group_uuid);
+            core::cmp::Ordering::Equal
+        }
+    }
+
+    pub fn sort_sub_groups(
+        &mut self,
+        group_uuid: &Uuid,
+        criteria: &GroupSortCriteria,
+    ) -> Result<()> {
+        if !self.all_groups.contains_key(group_uuid) {
+            return Err(Error::NotFound("Group is not valid one".into()));
+        }
+
+        if group_uuid == &self.recycle_bin_uuid {
+            log::debug!("Skipping the recycle bin's sub groups from sorting");
+            return Ok(());
+        }
+
+        let mut sub_group_ids: Vec<Uuid> = vec![];
+
+        if let Some(v) = self.all_groups.get(group_uuid) {
+            // Get all sub group uuids of this group
+            sub_group_ids = v.group_uuids.clone();
+
+            //debug!("Before sub_group_ids {:?} for group_uuid {} ", &sub_group_ids,&group_uuid);
+
+            // Sorts the uuids based on the criteria
+            sub_group_ids.sort_by(|a, b| self.group_comparator(a, b, criteria));
+
+            //debug!("After sorting sub_group_ids {:?} for group_uuid {} ", &sub_group_ids,&group_uuid);
+
+            // The group's child group list is updated with the sorted list
+            self.all_groups
+                .entry(group_uuid.clone())
+                .and_modify(|g| g.group_uuids = sub_group_ids.clone());
+        }
+
+        // Recursively call this sorting for each of this group's sub groups
+        for sub_group_id in sub_group_ids {
+            self.sort_sub_groups(&sub_group_id, criteria)?;
+        }
+
+        // adjust_special_groups_order should be called after this in service layer
+        // to keep the Recycle Bin in the end. See db_service::adjust_special_groups_order
+        // call in db_service::create_groups_summary_data
+
+        Ok(())
     }
 
     /// Moves a group to the recycle bin group when user deletes a group
@@ -416,10 +504,12 @@ impl Root {
 
         // Remove all sub groups
         for gid in sub_group_ids {
-            self.all_groups.remove(&gid).ok_or(Error::UnexpectedError(format!(
-                "The group {} is not found in All Groups map",
-                &gid
-            )))?;
+            self.all_groups
+                .remove(&gid)
+                .ok_or(Error::UnexpectedError(format!(
+                    "The group {} is not found in All Groups map",
+                    &gid
+                )))?;
         }
 
         // Remove the group from all_groups map
@@ -521,6 +611,8 @@ impl Root {
         let entry = self.all_entries.get_mut(&entry_uuid).unwrap();
         let old_parent_id = entry.group_uuid;
 
+        verify_uuid!(self, old_parent_id, all_groups);
+
         if old_parent_id == new_parent_id {
             error!(
                 "The new parent group is {} and is the same as the current parent group id",
@@ -576,6 +668,57 @@ impl Root {
         }
 
         Ok(())
+    }
+
+    pub fn clone_entry(
+        &mut self,
+        entry_uuid: &Uuid,
+        entry_clone_option: &EntryCloneOption,
+    ) -> Result<Uuid> {
+        // Caller needs to ensure that a valid parent group uuid is passed
+        verify_uuid!(self, entry_clone_option.parent_group_uuid, all_groups);
+
+        let Some(e) = self.all_entries.get(entry_uuid) else {
+            return Err(Error::NotFound("Entry is not found to clone".into()));
+        };
+
+        let mut cloned_entry = e.clone();
+        // A new entry uuid is required for the cloned one
+        let new_e_uuid = uuid::Uuid::new_v4();
+        cloned_entry.uuid = new_e_uuid;
+
+        // Cloned entry's parent group uuid should be set
+        cloned_entry.group_uuid = entry_clone_option.parent_group_uuid;
+
+        // Title is changed
+        if let Some(title) = entry_clone_option.new_title.as_ref() {
+            cloned_entry.entry_field.update_value(TITLE, title);
+        }
+        // Remove the source entry's histories if required
+        if !entry_clone_option.keep_histories {
+            // This should remove histories and history realted entry type custom data
+            cloned_entry.delete_history_entries();
+        }
+        // Change the times for this cloned entry
+        let n = util::now_utc();
+        cloned_entry.times.creation_time = n;
+        cloned_entry.times.last_modification_time = n;
+        cloned_entry.times.last_access_time = n;
+
+        // Need to add this new cloned entry to its parent group's list
+        self.all_groups
+            .entry(entry_clone_option.parent_group_uuid)
+            .and_modify(|g| g.entry_uuids.push(cloned_entry.uuid));
+
+        // Add this new cloned entry to the entries lookup map
+        self.all_entries.insert(cloned_entry.uuid, cloned_entry);
+
+        debug!(
+            "Entry uuid {} is cloned and cloned entry uuid is {}",
+            &entry_uuid, &new_e_uuid
+        );
+
+        Ok(new_e_uuid)
     }
 
     // Should this be moved to parent 'KeepassFile' ?
