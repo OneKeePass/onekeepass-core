@@ -1,3 +1,13 @@
+
+// The botan src used by rust botan v0.10.7 is https://github.com/randombit/botan/blob/f60608b8818c7bb8579fe797122ed6116f4134af/src
+// This is linked as git submodule in https://github.com/randombit/botan-rs/tree/0.10.7/botan-src
+
+// See https://github.com/randombit/botan/blob/f60608b8818c7bb8579fe797122ed6116f4134af/src/lib/ffi/ffi.h to see all 
+// exposed C APIs by Botan lib. Botan’s ffi module provides a C89 binding intended to be easily 
+// usable with other language’s foreign function interface (FFI) libraries
+
+// Also see https://github.com/randombit/botan/blob/f60608b8818c7bb8579fe797122ed6116f4134af/doc/api_ref/ffi.rst
+ 
 mod block_cipher;
 mod hash_functions;
 mod key_cipher;
@@ -118,5 +128,20 @@ mod tests {
         // let cipher = ContentCipher::try_from(&uuid, &enc_iv).unwrap();
         // let decrypted = cipher.decrypt(&encrypted, &key).unwrap();
         // assert_eq!(text.as_bytes(),decrypted);
+    }
+
+    #[test]
+    fn verify_phash_argon2() {
+        // See https://botan.randombit.net/handbook/api_ref/pbkdf.html#pbkdf-example
+        // https://docs.rs/botan/0.10.7/botan/fn.derive_key_from_password.html
+        
+        let out_length = 32;
+        let salt = get_random_bytes::<32>();
+        let param1 = 256 * 1024; // kiB
+        let param2 = 4 ; // iterations
+        let param3 = 2 ; // parallelism
+        let h1 = botan::derive_key_from_password("Argon2id", out_length, "ss", &salt, param1, param2, param3).unwrap();
+        let h2 = botan::derive_key_from_password("Argon2id", out_length, "ss", &salt, param1, param2, param3).unwrap();
+        assert_eq!(h1,h2);
     }
 }

@@ -1,4 +1,5 @@
 use std::io;
+use reqwest_dav::re_exports::reqwest;
 use uuid;
 
 use regex::Error as ReError;
@@ -138,8 +139,26 @@ pub enum Error {
     #[error("SecureKeyOperationError {0}")]
     SecureKeyOperationError(String),
 
-    #[error("DuplicateKeyFileName:{0}")]
+    #[error("DuplicateKeyFileName: {0}")]
     DuplicateKeyFileName(String),
+
+    #[error("RusshError: {0}")]
+    RusshError(#[from] russh::Error),
+
+    #[error("RusshKeysError: {0}")]
+    RusshKeysError(#[from] russh_keys::Error),
+
+    #[error("RusshSftpClientError: {0}")]
+    RusshSftpClientError(#[from] russh_sftp::client::error::Error),
+
+    #[error("SftpServerAuthenticationFailed: Authentication to SFTP server failed")]
+    SftpServerAuthenticationFailed,
+
+    #[error("ReqwestError: {0}")]
+    ReqwestError(#[from] reqwest::Error),
+
+    #[error("ReqwestDavError: {0}")]
+    ReqwestDavError(#[from] reqwest_dav::types::Error),
 
     // See DataError where we can use str
     // UnexpectedError is used where we can use format!

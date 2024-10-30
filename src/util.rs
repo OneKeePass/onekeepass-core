@@ -286,6 +286,7 @@ pub fn empty_str() -> String {
     EMPTY_STR.to_string()
 }
 
+// Called to get just the file name from the full path
 pub fn file_name(full_file_uri: &str) -> Option<String> {
     let p = Path::new(full_file_uri);
     p.file_name().map(|s| s.to_string_lossy().to_string())

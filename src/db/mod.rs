@@ -197,8 +197,10 @@ impl Default for SecuredDatabaseKeys {
 }
 
 impl SecuredDatabaseKeys {
+
+    // Hashes all incoming credentials data and creates an instance of SecuredDatabaseKeys
     fn from_keys(password: Option<&str>, file_key: &Option<FileKey>) -> Result<Self> {
-        let (p, f, c) = match (password, file_key) {
+        let (password_hash, key_file_data_hash, composite_key) = match (password, file_key) {
             (Some(p), Some(f)) => {
                 // Final hash is sha256(sha256(password) + keyfile_content)
                 let phash = crypto::sha256_hash_from_slice(p.as_bytes())?;
@@ -228,9 +230,9 @@ impl SecuredDatabaseKeys {
         };
 
         let sk = Self {
-            password_hash: p,
-            key_file_data_hash: f,
-            composite_key: c,
+            password_hash,
+            key_file_data_hash,
+            composite_key,
             transformed_key: vec![],
             hmac_part_key: vec![],
             hmac_key: vec![],
@@ -241,7 +243,11 @@ impl SecuredDatabaseKeys {
         Ok(sk)
     }
 
-    // IMPORTANT: Need to call this to encrypt the keys and store it in a secure store
+    // IMPORTANT: 
+    // Need to call this to encrypt the keys and store it in a secure store 
+    // This is called after opening a db successfully or after creating a new db.
+    // The stored encrypted compsoite key can be used for quick unlock of a database
+    // after decryption
     pub(crate) fn secure_keys(&mut self, db_key: &str) -> Result<()> {
         let kc = crypto::KeyCipher::new();
 
@@ -293,10 +299,10 @@ impl SecuredDatabaseKeys {
     ) -> Result<()> {
         if let KdfAlgorithm::Argon2(kdf) = &kdf_algorithm {
             let ck = self.get_composite_key(db_key)?;
-            //Then transform the composite key using KDF
+            // Then transform the composite key using KDF
             let transformed_key = kdf.transform_key(ck)?;
 
-            //Determine the HMAC and Payload Encryption/Decryption Key
+            // Determine the HMAC and Payload Encryption/Decryption Key
             self.compute_keys(&master_seed, transformed_key)?;
         } else {
             return Err(Error::SupportedOnlyArgon2dKdfAlgorithm);
@@ -304,7 +310,7 @@ impl SecuredDatabaseKeys {
         Ok(())
     }
 
-    // Gets the composite key; This decrypts the key if required
+    // Gets the previously computed composite key; This decrypts the key if required
     fn get_composite_key(&self, db_key: &str) -> Result<Vec<u8>> {
         if self.encrypted {
             self.decrypt_composite_key(db_key)

@@ -3,6 +3,7 @@
 
 mod attachment;
 mod io;
+pub mod storage;
 
 use crate::db::KdbxFile;
 use crate::db_content::{standard_types_ordered_by_id, Entry, KeepassFile, OtpData};
