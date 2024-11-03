@@ -3,6 +3,7 @@ use std::path::Path;
 
 use log::debug;
 
+use super::storage::RemoteStorageType;
 use super::{
     call_kdbx_context_action, call_kdbx_context_mut_action, main_store, KdbxContext, KdbxLoaded, KdbxSaved, NewDatabase, SaveAllResponse, SaveStatus
 };
@@ -103,6 +104,11 @@ pub fn reload_kdbx(db_key: &str) -> Result<KdbxLoaded> {
         Ok(kdbx_loaded)
     })
 }
+
+pub fn remote_read_kdbx(remote_storage_type:RemoteStorageType,password: Option<&str>,key_file_name: Option<&str>,) {
+
+}
+
 
 // Used for both desktop and mobile
 // db_file_name is full uri and used as db_key in all subsequent calls

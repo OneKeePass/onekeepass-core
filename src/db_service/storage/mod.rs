@@ -1,9 +1,10 @@
+use std::time::SystemTime;
+
 use serde::{Deserialize, Serialize};
 
+mod server_connection_config;
 pub mod sftp;
 pub mod webdav;
-mod server_connection_config;
-
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ServerDirEntry {
@@ -13,132 +14,113 @@ pub struct ServerDirEntry {
     files: Vec<String>,
 }
 
-
-
-
-/* 
-use async_trait::async_trait;
-use log::{error, info, LevelFilter};
-use russh::*;
-use russh_keys::*;
-use russh_sftp::{client::SftpSession, protocol::OpenFlags};
-use std::sync::Arc;
-use tokio::{io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt}, runtime::Builder};
-
-use crate::async_service::async_runtime;
-
-struct Client;
-
-#[async_trait]
-impl client::Handler for Client {
-    type Error = crate::error::Error;
-
-    async fn check_server_key(
-        &mut self,
-        server_public_key: &key::PublicKey,
-    ) -> Result<bool, Self::Error> {
-        info!("check_server_key: {:?}", server_public_key);
-        Ok(true)
-    }
-
-    async fn data(
-        &mut self,
-        channel: ChannelId,
-        data: &[u8],
-        _session: &mut client::Session,
-    ) -> Result<(), Self::Error> {
-        info!("data on channel {:?}: {}", channel, data.len());
-        Ok(())
-    }
+#[derive(Serialize, Deserialize, Debug)]
+pub enum RemoteStorageType {
+    Sftp,
+    Webdav,
 }
 
-impl From<russh::Error> for crate::error::Error {
-    fn from(error: russh::Error) -> Self {
-        error!("russh::Error is {}",error);
-        crate::error::Error::DbKeyNotFound
-    }
-} 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RemoteFileMetadata {
+    storage_type:RemoteStorageType,
+    // Should we add file_name here?
+    // file_name:String,
+    full_file_name:String,
+    size:Option<u64>,
+    created:Option<u64>,
+    modified:Option<u64>,
+    accessed:Option<u64>,
+}
 
-async fn connect_to_sftp() {
-    
-    let config = russh::client::Config::default();
-    let sh = Client {};
-    let mut session = russh::client::connect(Arc::new(config), ("192.168.1.4", 2022), sh)
-        .await
-        .unwrap();
-    
-    if session
-        .authenticate_password("sf-user1", "ss")
-        .await
-        .unwrap()
-    {
-        let channel = session.channel_open_session().await.unwrap();
-        channel.request_subsystem(true, "sftp").await.unwrap();
-        let sftp = SftpSession::new(channel.into_stream()).await.unwrap();
-        info!("current path: {:?}", sftp.canonicalize(".").await.unwrap());
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RemoteReadData {
+    data:Vec<u8>,
+    meta:RemoteFileMetadata,
+}
 
+#[macro_export]
+macro_rules! reply_by_async_fn {
+    ($store:ident, $fn_name:ident ($($arg1:tt:$arg_type:ty),*), $send_val:ty,$call:tt ($($arg:expr),*)) => {
+        pub(crate) async fn $fn_name(
+            tx: oneshot::Sender<$send_val>,
+            connetion_name:String,
+            $($arg1:$arg_type),*
 
-        // create dir and symlink
-        let path = "./some_kind_of_dir";
-        let symlink = "./symlink";
+        ) {
+            let connections = $store().lock().await;
 
-        sftp.create_dir(path).await.unwrap();
-        sftp.symlink(path, symlink).await.unwrap();
+            let r = if let Some(conn) = connections.get(&connetion_name) {
+                conn.$call($($arg),*).await
+            } else {
+                Err(error::Error::UnexpectedError(format!(
+                    "No previous connected session is found for the name {}",
+                    connetion_name
+                )))
+            };
 
-        info!("dir info: {:?}", sftp.metadata(path).await.unwrap());
-        info!(
-            "symlink info: {:?}",
-            sftp.symlink_metadata(path).await.unwrap()
-        );
-
-        // scanning directory
-        for entry in sftp.read_dir(".").await.unwrap() {
-            info!("file in directory: {:?}", entry.file_name());
+            let r = tx.send(r);
+            if let Err(_) = r {
+                let name = stringify!($call);
+                // Should not happen? But may happen if no receiver?
+                log::error!("The '{}' fn send channel call failed ", &name);
+            }
         }
-
-        sftp.remove_file(symlink).await.unwrap();
-        sftp.remove_dir(path).await.unwrap();
-
-        // interaction with i/o
-        let filename = "test_new.txt";
-        let mut file = sftp
-            .open_with_flags(
-                filename,
-                OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE | OpenFlags::READ,
-            )
-            .await
-            .unwrap();
-        info!("metadata by handle: {:?}", file.metadata().await.unwrap());
-
-        file.write_all(b"magic text").await.unwrap();
-        info!("flush: {:?}", file.flush().await); // or file.sync_all()
-        info!(
-            "current cursor position: {:?}",
-            file.stream_position().await
-        );
-
-        let mut str = String::new();
-
-        file.rewind().await.unwrap();
-        file.read_to_string(&mut str).await.unwrap();
-        file.rewind().await.unwrap();
-
-        info!(
-            "our magical contents: {}, after rewind: {:?}",
-            str,
-            file.stream_position().await
-        );
-
-        file.shutdown().await.unwrap();
-        sftp.remove_file(filename).await.unwrap();
-
-        // should fail because handle was closed
-        // error!("should fail: {:?}", file.read_u8().await);
-    }
+    };
 }
 
-pub fn sftp_test_call() {
-    async_runtime().spawn(connect_to_sftp());
-} 
 
-*/
+#[macro_export]
+macro_rules! receive_from_async_fn {
+    ($channel_val:ty,$p:ident::$fn_name:ident ($($arg:tt),*) ) => {{
+        let (tx, rx) = oneshot::channel::<$channel_val>();
+        //async_runtime().spawn(SftpConnection::send_connect_to_server(tx, connection_info));
+        async_runtime().spawn($p::$fn_name(tx, $($arg),*));
+        let s = rx.blocking_recv().map_err(|e| {
+            error::Error::UnexpectedError(format!(
+                "In connect_to_server receive channel error {}",
+                e
+            ))
+        });
+
+        s
+    }};
+}
+
+fn extract_file_name(remote_full_path: &str) -> Option<String> {
+    remote_full_path.split("/").last().map(|s| s.into())
+    //remote_full_path.split("/").last().map_or_else(|| "No file".into(), |s| s.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use url::Url;
+
+    use crate::db_service::storage::extract_file_name;
+    #[test]
+    fn verify_extract_file_name() {
+        let fn1 = extract_file_name("https://192.168.1.4/dav/Test-OTP1.kdbx");
+        println!("File name 1 is {:?}", &fn1);
+
+        let fn2 = extract_file_name("/dav/Test-OTP1.kdbx");
+        println!("File name 1 is {:?}", &fn2);
+
+        let url = Url::parse("https://192.168.1.4:8080/Doc:Amm/").unwrap();
+
+        let url = url.join("dav/").unwrap();  // should be "dav/" and not "dav"
+        let url = url.join("Test-OTP1.kdbx").unwrap();
+
+        println!("url is {}",&url);
+
+        let mut p = PathBuf::from("https://192.168.1.4:8080/Doc:mm");
+        p.push("dav"); 
+        p.push("Test-OTP1.kdbx");
+
+        println!("path is {:?}",&p.as_path());
+        println!("Encoded url {:?}",&urlencoding::encode(&p.as_os_str().to_str().unwrap()));
+        println!("Encoded2 url {:?}",&urlencoding::encode("https://192.168.1.4:8080/Doc:mm"));
+
+        
+    }
+}
