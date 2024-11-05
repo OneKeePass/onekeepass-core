@@ -80,6 +80,25 @@ pub fn now_utc() -> NaiveDateTime {
     now
 }
 
+// We get the secs part of SystemTime ignoring nanosecs
+pub fn system_time_to_seconds(system_time: std::time::SystemTime) -> u64 {
+    system_time
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .map_or_else(|_| 0, |d| d.as_secs())
+}
+
+// Creates the SystemTime instance from the secs ignoring nanosecs
+pub fn seconds_to_system_time(secs: u64) -> std::time::SystemTime {
+    // This also works with chrono 0.4.38 not with the earlier 0.4.24
+    // let dt = chrono::DateTime::from_timestamp(secs as i64,0).unwrap();
+    // dt.into()
+
+    // See doc https://doc.rust-lang.org/std/time/struct.SystemTime.html#associatedconstant.UNIX_EPOCH
+    // where it is mentioned to get SystemTime from a duration
+    // "using UNIX_EPOCH + duration can be used to create a SystemTime instance to represent another fixed point in time"
+    std::time::UNIX_EPOCH + std::time::Duration::new(secs, 0)
+}
+
 // See https://docs.rs/chrono/latest/chrono/format/strftime/index.html
 // for details on various format specifiers
 
@@ -637,6 +656,26 @@ mod tests {
         assert_eq!(ndt.hour(), 01); //Same
         assert_eq!(ndt.minute(), 37); //Same
         assert_eq!(ndt.second(), 08); //Same
+    }
+
+    use super::system_time_to_seconds;
+
+    #[test]
+    fn verify_system_time_secs() {
+        use std::time::SystemTime;
+        let s1 = SystemTime::now();
+        //println!("S1 is  {:?}",&s1);
+
+        let secs = system_time_to_seconds(s1);
+        //println!("Secs {}",&secs);
+
+        let s2 = super::seconds_to_system_time(secs);
+        //println!("S2 is  {:?}",&s2);
+
+        assert_eq!(
+            s1.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
+            s1.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
+        );
     }
 
     #[test]

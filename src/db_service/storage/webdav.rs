@@ -13,11 +13,11 @@ use crate::{
 };
 
 pub use super::server_connection_config::WebdavConnectionConfig;
-use super::{RemoteFileMetadata, RemoteReadData, RemoteStorageType, ServerDirEntry};
+use super::{string_tuple3, RemoteFileMetadata, RemoteReadData, RemoteStorageType, ServerDirEntry};
 
 macro_rules! reply_by_webdav_async_fn {
-    ($fn_name:ident ($($arg1:tt:$arg_type:ty),*), $send_val:ty,$call:tt ($($arg:expr),*)) => {
-        reply_by_async_fn!(webdav_connections_store,$fn_name ($($arg1:$arg_type),*), $send_val,$call ($($arg),*));
+    ($fn_name:ident ($($arg1:tt:$arg_type:ty),*),$call:tt ($($arg:expr),*), $send_val:ty) => {
+        reply_by_async_fn!(webdav_connections_store,$fn_name ($($arg1:$arg_type),*),$call ($($arg),*),$send_val);
     };
 }
 
@@ -34,8 +34,7 @@ fn webdav_connections_store() -> &'static WebdavConnections {
 
 pub fn connect_to_server(connection_info: WebdavConnectionConfig) -> Result<ServerDirEntry> {
     receive_from_async_fn!(
-        Result<ServerDirEntry>,
-        WebdavConnection::send_connect_to_server(connection_info)
+        WebdavConnection::send_connect_to_server(connection_info),ServerDirEntry
     )?
 }
 
@@ -51,9 +50,13 @@ pub fn list_sub_dir(
     );
 
     receive_from_async_fn!(
-        Result<ServerDirEntry>,
-        WebdavConnection::send_list_sub_dir(cn, pd, sd)
+        WebdavConnection::send_list_sub_dir(cn, pd, sd),ServerDirEntry
     )?
+}
+
+pub fn read(connection_name: &str, parent_dir: &str, file_name: &str) -> Result<RemoteReadData> {
+    let (cn, pd, file) = string_tuple3(&[connection_name, parent_dir, file_name]);
+    receive_from_async_fn!(WebdavConnection::send_read(cn, pd, file), RemoteReadData)?
 }
 
 impl WebdavConnection {
@@ -212,7 +215,9 @@ impl WebdavConnection {
         }
     }
 
-    reply_by_webdav_async_fn!(send_list_sub_dir (parent_dir:String,sub_dir:String),Result<ServerDirEntry>, list_sub_dir (&parent_dir,&sub_dir));
+    reply_by_webdav_async_fn!(send_list_sub_dir(parent_dir:String,sub_dir:String), list_sub_dir (&parent_dir,&sub_dir),ServerDirEntry);
+
+    reply_by_webdav_async_fn!(send_read(parent_dir:String,file_name:String),read(&parent_dir,&file_name),RemoteReadData);
 }
 
 /*

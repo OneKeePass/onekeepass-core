@@ -7,29 +7,68 @@ use russh::{
 };
 use russh_keys::*;
 use russh_sftp::client::SftpSession;
-use std::{collections::HashMap, sync::Arc, time::SystemTime};
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::oneshot;
 
 use crate::{
     async_service::async_runtime,
     error::{self, Error, Result},
-    receive_from_async_fn, reply_by_async_fn,
+    receive_from_async_fn, reply_by_async_fn, util::system_time_to_seconds,
 };
 
 pub use super::server_connection_config::SftpConnectionConfig;
-use super::{RemoteFileMetadata, RemoteReadData, RemoteStorageType, ServerDirEntry};
-
-fn system_time_to_seconds(system_time: SystemTime) -> u64 {
-    system_time
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map_or_else(|_| 0, |d| d.as_secs())
-}
+use super::{
+    string_tuple3, RemoteFileMetadata, RemoteReadData, RemoteStorageType,
+    ServerDirEntry,
+};
 
 macro_rules! reply_by_sftp_async_fn {
-    ($fn_name:ident ($($arg1:tt:$arg_type:ty),*), $send_val:ty,$call:tt ($($arg:expr),*)) => {
-        reply_by_async_fn!(sftp_connections_store,$fn_name ($($arg1:$arg_type),*), $send_val,$call ($($arg),*));
+    ($fn_name:ident ($($arg1:tt:$arg_type:ty),*),$call:tt ($($arg:expr),*),$channel_ret_val:ty) => {
+        reply_by_async_fn!(sftp_connections_store,$fn_name ($($arg1:$arg_type),*),$call ($($arg),*),$channel_ret_val);
     };
 }
+
+/////// exposed functions
+
+pub fn connect_to_server(connection_info: SftpConnectionConfig) -> Result<ServerDirEntry> {
+    receive_from_async_fn!(
+        SftpConnection::send_connect_to_server(connection_info),
+        ServerDirEntry
+    )?
+}
+
+pub fn list_sub_dir(
+    connection_name: &str,
+    parent_dir: &str,
+    sub_dir: &str,
+) -> Result<ServerDirEntry> {
+    let (cn, pd, sd) = string_tuple3(&[connection_name, parent_dir, sub_dir]);
+    receive_from_async_fn!(
+        SftpConnection::send_list_sub_dir(cn, pd, sd),
+        ServerDirEntry
+    )?
+}
+
+pub fn read(connection_name: &str, parent_dir: &str, file_name: &str) -> Result<RemoteReadData> {
+    let (cn, pd, file) = string_tuple3(&[connection_name, parent_dir, file_name]);
+    receive_from_async_fn!(SftpConnection::send_read(cn, pd, file), RemoteReadData)?
+}
+
+pub fn metadata(
+    connection_name: &str,
+    parent_dir: &str,
+    file_name: &str,
+) -> Result<RemoteFileMetadata> {
+    let (cn, pd, file) = string_tuple3(&[connection_name, parent_dir, file_name]);
+    receive_from_async_fn!(
+        SftpConnection::send_metadata(cn, pd, file),
+        RemoteFileMetadata
+    )?
+}
+
+pub fn write() {}
+
+//////////
 
 struct Client;
 
@@ -66,41 +105,6 @@ fn sftp_connections_store() -> &'static SftpConnections {
     static SFTP_CONNECTIONS_STORE: Lazy<SftpConnections> = Lazy::new(Default::default);
     &SFTP_CONNECTIONS_STORE
 }
-
-pub fn connect_to_server(connection_info: SftpConnectionConfig) -> Result<ServerDirEntry> {
-    receive_from_async_fn!(
-        Result<ServerDirEntry>,
-        SftpConnection::send_connect_to_server(connection_info)
-    )?
-}
-
-pub fn list_sub_dir(
-    connetion_name: &str,
-    parent_dir: &str,
-    sub_dir: &str,
-) -> Result<ServerDirEntry> {
-    let (cn, pd, sd) = (
-        connetion_name.to_string(),
-        parent_dir.to_string(),
-        sub_dir.to_string(),
-    );
-
-    receive_from_async_fn!(
-        Result<ServerDirEntry>,
-        SftpConnection::send_list_sub_dir(cn, pd, sd)
-    )?
-}
-
-pub fn read(parent_dir: &str, file_name: &str) {
-
-    // Read the original content from remote server as bytes data and form reader
-
-    // Copy as local file?
-
-    // Call read kdbx with this reader. This will decrypts and parses and stores to kdbxcontext
-}
-
-pub fn write() {}
 
 impl SftpConnection {
     pub(crate) async fn connect_to_server(
@@ -155,6 +159,18 @@ impl SftpConnection {
             Ok(SftpConnection { client_handle })
         } else {
             Err(Error::SftpServerAuthenticationFailed)
+        }
+    }
+
+    // Called to send the result of async call back to the sync call
+    pub(crate) async fn send_connect_to_server(
+        tx: oneshot::Sender<Result<ServerDirEntry>>,
+        connection_info: SftpConnectionConfig,
+    ) {
+        let dir_listing = SftpConnection::connect_to_server(connection_info).await;
+        let r = tx.send(dir_listing);
+        if let Err(_) = r {
+            log::error!("In connect_to_server send channel failed ");
         }
     }
 
@@ -256,123 +272,42 @@ impl SftpConnection {
         })
     }
 
-    pub(crate) async fn send_connect_to_server(
-        tx: oneshot::Sender<Result<ServerDirEntry>>,
-        connection_info: SftpConnectionConfig,
-    ) {
-        let dir_listing = SftpConnection::connect_to_server(connection_info).await;
-        let r = tx.send(dir_listing);
-        if let Err(_) = r {
-            log::error!("In connect_to_server send channel failed ");
-        }
-    }
+    async fn metadata(&self, parent_dir: &str, file_name: &str) -> Result<RemoteFileMetadata> {
+        let sftp = self.create_sftp_session().await?;
+        let full_path = [parent_dir, file_name].join("/");
+        let md = sftp.metadata(&full_path).await?; // Callling metadata makes another server call
 
-    // Remove this as this is repalced with send_list_sub_dir
-    // reply_by_sftp_async_fn!(send_list_dir (parent_dir:String),Result<ServerDirEntry>, list_dir (&parent_dir));
+        // Copied from sftp.read implementation so that we can get metadata from file instance
+        // let mut file = sftp.open(&full_path).await?;
+        // let mut contents = Vec::new();
+        // tokio::io::AsyncReadExt::read_to_end(&mut file, &mut contents).await?;
+        // let md = file.metadata().await?;
 
-    reply_by_sftp_async_fn!(send_list_sub_dir (parent_dir:String,sub_dir:String),Result<ServerDirEntry>, list_sub_dir (&parent_dir,&sub_dir));
+        let accessed = md
+            .accessed()
+            .map_or_else(|_| None, |t| Some(system_time_to_seconds(t)));
+        let modified = md
+            .modified()
+            .map_or_else(|_| None, |t| Some(system_time_to_seconds(t)));
 
-}
-
-
-/*
-
-// Remove this
-pub fn list_dir(connetion_name: &str, parent_dir: &str) -> Result<ServerDirEntry> {
-    let (cn, pd) = (connetion_name.to_string(), parent_dir.to_string());
-    receive_from_async_fn!(
-        Result<ServerDirEntry>,
-        SftpConnection::send_list_dir(cn, pd)
-    )?
-}
-
-pub fn connect_to_server(connection_info: SftpConnectionConfig) -> Result<ServerDirEntry> {
-
-
-    let (tx, rx) = oneshot::channel::<Result<ServerDirEntry>>();
-    async_runtime().spawn(SftpConnection::send_connect_to_server(tx, connection_info));
-
-    let s = rx.blocking_recv().map_err(|e| {
-        error::Error::UnexpectedError(format!("In connect_to_server receive channel error {}", e))
-    })?;
-
-    s
-}
-
-// reply_by_async_fn!(sftp_connections_store, send_list_dir (parent_dir:String),Result<ServerDirEntry>, list_dir (&parent_dir));
-
-// Remove this
-pub fn list_dir(connetion_name: &str, parent_dir: &str) -> Result<ServerDirEntry> {
-    let (cn, pd) = (connetion_name.to_string(), parent_dir.to_string());
-    let (tx, rx) = oneshot::channel::<Result<ServerDirEntry>>();
-    async_runtime().spawn(SftpConnection::send_list_dir(tx, cn, pd));
-    rx.blocking_recv().map_err(|e| {
-        error::Error::UnexpectedError(format!("In list_dir receive channel error {}", e))
-    })?
-}
-
-pub fn list_sub_dir(
-    connetion_name: &str,
-    parent_dir: &str,
-    sub_dir: &str,
-) -> Result<ServerDirEntry> {
-    let (cn, pd, sd) = (
-        connetion_name.to_string(),
-        parent_dir.to_string(),
-        sub_dir.to_string(),
-    );
-    let (tx, rx) = oneshot::channel::<Result<ServerDirEntry>>();
-    async_runtime().spawn(SftpConnection::send_list_sub_dir(tx, cn, pd, sd));
-    rx.blocking_recv().map_err(|e| {
-        error::Error::UnexpectedError(format!("In list_sub_dir receive channel error {}", e))
-    })?
-}
-
-pub(crate) async fn send_list_dir1(
-        tx: oneshot::Sender<Result<ServerDirEntry>>,
-        connetion_name: String,
-        parent_dir: String,
-    ) {
-        let connections = sftp_connections_store().lock().await;
-
-        let r = if let Some(conn) = connections.get(&connetion_name) {
-            conn.list_dir(&parent_dir).await
-        } else {
-            Err(error::Error::UnexpectedError(format!(
-                "No previous connected sftp session is found for the name {}",
-                &connetion_name
-            )))
+        let rmd = RemoteFileMetadata {
+            storage_type: RemoteStorageType::Sftp,
+            full_file_name: full_path,
+            size: md.size,
+            accessed,
+            modified,
+            created: None,
         };
-
-        let r = tx.send(r);
-        if let Err(_) = r {
-            // Should not happen? But may happen if no receiver?
-            log::error!("The 'send_list_dir' fn send channel call failed ");
-        }
+        Ok(rmd)
     }
 
-pub(crate) async fn send_list_sub_dir(
-        tx: oneshot::Sender<Result<ServerDirEntry>>,
-        connetion_name: String,
-        parent_dir: String,
-        sub_dir: String,
-    ) {
-        let connections = sftp_connections_store().lock().await;
+    ////  All instance level send_* calls
 
-        let r = if let Some(conn) = connections.get(&connetion_name) {
-            conn.list_sub_dir(&parent_dir, &sub_dir).await
-        } else {
-            Err(error::Error::UnexpectedError(format!(
-                "No previous connected sftp session is found for the name {}",
-                &connetion_name
-            )))
-        };
+    // Creats a fn with signature
+    // pub(crate) async fn send_list_sub_dir(tx: oneshot::Sender<Result<ServerDirEntry>>, connection_name: String, parent_dir: String, sub_dir: String)
+    reply_by_sftp_async_fn!(send_list_sub_dir (parent_dir:String,sub_dir:String), list_sub_dir (&parent_dir,&sub_dir), ServerDirEntry);
 
-        let r = tx.send(r);
-        if let Err(_) = r {
-            // Should not happen? But may happen if no receiver?
-            log::error!("The 'send_list_sub_dir' fn send channel call failed ");
-        }
-    }
+    reply_by_sftp_async_fn!(send_read(parent_dir:String,file_name:String),read(&parent_dir,&file_name),RemoteReadData);
 
- */
+    reply_by_sftp_async_fn!(send_metadata (parent_dir:String,fiile_name:String), metadata (&parent_dir,&fiile_name), RemoteFileMetadata);
+}

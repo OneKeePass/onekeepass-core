@@ -1,23 +1,28 @@
+use std::fs::OpenOptions;
 use std::io::{Cursor, Read, Seek, Write};
 use std::path::Path;
 
 use log::debug;
 
-use super::storage::RemoteStorageType;
+use super::storage::{sftp, webdav, RemoteReadData, RemoteStorageToRead, RemoteStorageType};
 use super::{
-    call_kdbx_context_action, call_kdbx_context_mut_action, main_store, KdbxContext, KdbxLoaded, KdbxSaved, NewDatabase, SaveAllResponse, SaveStatus
+    call_kdbx_context_action, call_kdbx_context_mut_action, main_store, KdbxContext, KdbxLoaded,
+    KdbxSaved, NewDatabase, SaveAllResponse, SaveStatus,
 };
 use crate::db_content::KeepassFile;
 
 use crate::db_service::call_main_content_action;
 
-// macros 
-use crate::{to_keepassfile,main_content_action, kdbx_context_mut_action};
+// macros
+use crate::{kdbx_context_mut_action, main_content_action, to_keepassfile};
 
 use crate::error::{Error, Result};
 
-use crate::db::{self,write_kdbx_file,write_kdbx_file_with_backup_file, write_kdbx_content_to_file,KdfAlgorithm,};
-use crate::util;
+use crate::db::{
+    self, write_kdbx_content_to_file, write_kdbx_file, write_kdbx_file_with_backup_file,
+    KdfAlgorithm,
+};
+use crate::util::{self, seconds_to_system_time};
 
 // TODO: Refactor create_kdbx (used mainly for desktop app) and create_and_write_to_writer to use common functionalties
 // Called to create a new KDBX database and perists the file
@@ -105,10 +110,59 @@ pub fn reload_kdbx(db_key: &str) -> Result<KdbxLoaded> {
     })
 }
 
-pub fn remote_read_kdbx(remote_storage_type:RemoteStorageType,password: Option<&str>,key_file_name: Option<&str>,) {
+pub fn remote_read_kdbx<F>(
+    remote_storage_to_read: RemoteStorageToRead,
+    password: Option<&str>,
+    key_file_name: Option<&str>,
+    gen_local_file_name_fn:F,
+) -> Result<KdbxLoaded> 
+where
+F: FnOnce(&str) -> String,
+{
+    let (RemoteReadData { data, meta }, file_name) = match &remote_storage_to_read {
+        RemoteStorageToRead::Sftp {
+            connection_name,
+            parent_dir,
+            file_name,
+        } => (
+            sftp::read(connection_name, parent_dir, file_name)?,
+            file_name,
+        ),
+        RemoteStorageToRead::Webdav {
+            connection_name,
+            parent_dir,
+            file_name,
+        } => (
+            webdav::read(connection_name, parent_dir, file_name)?,
+            file_name,
+        ),
+    };
 
+    let local_file_name = gen_local_file_name_fn(&meta.prefixed_full_file_name());
+
+    let mut local_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(&local_file_name)?;
+
+    local_file.write_all(&data)?;
+
+    if let Some(secs) = meta.modified {
+        local_file.set_modified(seconds_to_system_time(secs))?;
+    }
+
+    // ensure that we are at the begining of the file
+    local_file.rewind()?;
+
+    read_kdbx(
+        &mut local_file,
+        &meta.prefixed_full_file_name(),
+        password,
+        key_file_name,
+        Some(&file_name),
+    )
 }
-
 
 // Used for both desktop and mobile
 // db_file_name is full uri and used as db_key in all subsequent calls
@@ -338,14 +392,13 @@ pub fn create_and_write_to_writer<W: Read + Write + Seek>(
     Ok(kdbx_loaded)
 }
 
-// iOS 
-// Called to copy the database data from memory found by the db_key to a file 
+// iOS
+// Called to copy the database data from memory found by the db_key to a file
 // We are using file name instead of writer as this is an internal file and accessible by file name
 #[cfg(target_os = "ios")]
-pub fn copy_and_write_autofill_ready_db(db_key: &str,full_file_name: &str) -> Result<()> {
-    let mut kdbx_file = call_kdbx_context_action(db_key, |ctx: &KdbxContext|  {
-        Ok(ctx.kdbx_file.clone())
-    })?;
+pub fn copy_and_write_autofill_ready_db(db_key: &str, full_file_name: &str) -> Result<()> {
+    let mut kdbx_file =
+        call_kdbx_context_action(db_key, |ctx: &KdbxContext| Ok(ctx.kdbx_file.clone()))?;
 
     // If we plan to use PIN instead of the existing credentials for this copied db, we need to something like newdb call
 
@@ -355,7 +408,7 @@ pub fn copy_and_write_autofill_ready_db(db_key: &str,full_file_name: &str) -> Re
     kdbx_file.set_kdf_algorithm(kdf)?;
 
     // Need to remove entry histories, attachments etc to make db size small
-    if let Some( ref mut kc ) =  kdbx_file.keepass_main_content {
+    if let Some(ref mut kc) = kdbx_file.keepass_main_content {
         kc.root.remove_all_binary_kvs_and_history_entries();
     }
 
@@ -403,4 +456,3 @@ pub fn export_as_xml(db_key: &str, xml_file_name: &str) -> Result<()> {
         db::export_as_xml(&mut ctx.kdbx_file, Some(xml_file_name))
     })
 }
-
