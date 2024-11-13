@@ -7,6 +7,7 @@ use russh::{
 };
 use russh_keys::*;
 use russh_sftp::client::SftpSession;
+use uuid::Uuid;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::oneshot;
 
@@ -18,8 +19,7 @@ use crate::{
 
 pub use super::server_connection_config::SftpConnectionConfig;
 use super::{
-    string_tuple3, RemoteFileMetadata, RemoteReadData, RemoteStorageType,
-    ServerDirEntry,
+    server_connection_config::ConnectionConfigs, string_tuple3, ConnectStatus, RemoteFileMetadata, RemoteReadData, RemoteStorageType, ServerDirEntry
 };
 
 macro_rules! reply_by_sftp_async_fn {
@@ -30,36 +30,39 @@ macro_rules! reply_by_sftp_async_fn {
 
 /////// exposed functions
 
-pub fn connect_to_server(connection_info: SftpConnectionConfig) -> Result<ServerDirEntry> {
+pub fn connect_and_retrieve_root_dir(connection_info: SftpConnectionConfig) -> Result<ConnectStatus> {
+    // IMPORTANT Remove this
+    ConnectionConfigs::test_read_config();
+    
     receive_from_async_fn!(
-        SftpConnection::send_connect_to_server(connection_info),
-        ServerDirEntry
+        SftpConnection::send_connect_and_retrieve_root_dir(connection_info),
+        ConnectStatus
     )?
 }
 
 pub fn list_sub_dir(
-    connection_name: &str,
+    connection_id: &str,
     parent_dir: &str,
     sub_dir: &str,
 ) -> Result<ServerDirEntry> {
-    let (cn, pd, sd) = string_tuple3(&[connection_name, parent_dir, sub_dir]);
+    let (cn, pd, sd) = string_tuple3(&[connection_id, parent_dir, sub_dir]);
     receive_from_async_fn!(
         SftpConnection::send_list_sub_dir(cn, pd, sd),
         ServerDirEntry
     )?
 }
 
-pub fn read(connection_name: &str, parent_dir: &str, file_name: &str) -> Result<RemoteReadData> {
-    let (cn, pd, file) = string_tuple3(&[connection_name, parent_dir, file_name]);
+pub fn read(connection_id: &str, parent_dir: &str, file_name: &str) -> Result<RemoteReadData> {
+    let (cn, pd, file) = string_tuple3(&[connection_id, parent_dir, file_name]);
     receive_from_async_fn!(SftpConnection::send_read(cn, pd, file), RemoteReadData)?
 }
 
 pub fn metadata(
-    connection_name: &str,
+    connection_id: &str,
     parent_dir: &str,
     file_name: &str,
 ) -> Result<RemoteFileMetadata> {
-    let (cn, pd, file) = string_tuple3(&[connection_name, parent_dir, file_name]);
+    let (cn, pd, file) = string_tuple3(&[connection_id, parent_dir, file_name]);
     receive_from_async_fn!(
         SftpConnection::send_metadata(cn, pd, file),
         RemoteFileMetadata
@@ -96,6 +99,7 @@ impl client::Handler for Client {
 }
 
 struct SftpConnection {
+    connection_id:Uuid,
     client_handle: Handle<Client>,
 }
 
@@ -107,27 +111,37 @@ fn sftp_connections_store() -> &'static SftpConnections {
 }
 
 impl SftpConnection {
-    pub(crate) async fn connect_to_server(
+    // Called when user creates the config first time or when user selects a previously 
+    // connected SFTP connection
+    pub(crate) async fn connect_and_retrieve_root_dir(
         connection_info: SftpConnectionConfig,
-    ) -> Result<ServerDirEntry> {
-        let name = connection_info.name.clone();
-        let start_dir = connection_info
+    ) -> Result<ConnectStatus> {
+        let sftp_confg = ConnectionConfigs::generate_config_id_on_check(connection_info);
+        let name =  sftp_confg.connection_id.to_string() ;// connection_info.connection_id.to_string();
+        let start_dir = sftp_confg
             .start_dir
             .clone()
             .map_or_else(|| "/".to_string(), |s| s);
 
-        let sftp_connection = Self::connect(connection_info).await?;
+        let sftp_connection = Self::connect(&sftp_confg).await?;
         let dirs = sftp_connection.list_dir(&start_dir).await;
 
         // Store it for future reference
         let mut connections = sftp_connections_store().lock().await;
         connections.insert(name, sftp_connection);
 
-        dirs
+        let conn_status = ConnectStatus {connection_id:sftp_confg.connection_id,dir_entries:Some(dirs?)};
+
+        // Need to add to the configs list
+        ConnectionConfigs::add_sftp_config(sftp_confg)?;
+
+        Ok(conn_status)
     }
 
-    async fn connect(connection_info: SftpConnectionConfig) -> Result<SftpConnection> {
+    async fn connect(connection_info: &SftpConnectionConfig) -> Result<SftpConnection> {
+        
         let SftpConnectionConfig {
+            connection_id,
             name,
             host,
             port,
@@ -140,7 +154,7 @@ impl SftpConnection {
         let config = russh::client::Config::default();
         let sh = Client {};
         let mut client_handle =
-            russh::client::connect(Arc::new(config), (host.to_owned(), port), sh).await?;
+            russh::client::connect(Arc::new(config), (host.clone(), port.clone()), sh).await?;
 
         let session_authenticated = if let Some(p) = private_key {
             // Note load_secret_key calls the fn decode_secret_key(&secret, password)
@@ -156,21 +170,21 @@ impl SftpConnection {
         };
 
         if session_authenticated {
-            Ok(SftpConnection { client_handle })
+            Ok(SftpConnection {connection_id: *connection_id, client_handle })
         } else {
             Err(Error::SftpServerAuthenticationFailed)
         }
     }
 
     // Called to send the result of async call back to the sync call
-    pub(crate) async fn send_connect_to_server(
-        tx: oneshot::Sender<Result<ServerDirEntry>>,
+    pub(crate) async fn send_connect_and_retrieve_root_dir(
+        tx: oneshot::Sender<Result<ConnectStatus>>,
         connection_info: SftpConnectionConfig,
     ) {
-        let dir_listing = SftpConnection::connect_to_server(connection_info).await;
+        let dir_listing = SftpConnection::connect_and_retrieve_root_dir(connection_info).await;
         let r = tx.send(dir_listing);
         if let Err(_) = r {
-            log::error!("In connect_to_server send channel failed ");
+            log::error!("In connect_and_retrieve_root_dir send channel failed ");
         }
     }
 
@@ -258,6 +272,7 @@ impl SftpConnection {
             .map_or_else(|_| None, |t| Some(system_time_to_seconds(t)));
 
         let rmd = RemoteFileMetadata {
+            connection_id:self.connection_id,
             storage_type: RemoteStorageType::Sftp,
             full_file_name: full_path,
             size: md.size,
@@ -291,6 +306,7 @@ impl SftpConnection {
             .map_or_else(|_| None, |t| Some(system_time_to_seconds(t)));
 
         let rmd = RemoteFileMetadata {
+            connection_id:self.connection_id,
             storage_type: RemoteStorageType::Sftp,
             full_file_name: full_path,
             size: md.size,
@@ -304,7 +320,7 @@ impl SftpConnection {
     ////  All instance level send_* calls
 
     // Creats a fn with signature
-    // pub(crate) async fn send_list_sub_dir(tx: oneshot::Sender<Result<ServerDirEntry>>, connection_name: String, parent_dir: String, sub_dir: String)
+    // pub(crate) async fn send_list_sub_dir(tx: oneshot::Sender<Result<ServerDirEntry>>, connection_id: String, parent_dir: String, sub_dir: String)
     reply_by_sftp_async_fn!(send_list_sub_dir (parent_dir:String,sub_dir:String), list_sub_dir (&parent_dir,&sub_dir), ServerDirEntry);
 
     reply_by_sftp_async_fn!(send_read(parent_dir:String,file_name:String),read(&parent_dir,&file_name),RemoteReadData);

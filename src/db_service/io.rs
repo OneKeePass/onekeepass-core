@@ -121,19 +121,19 @@ F: FnOnce(&str) -> String,
 {
     let (RemoteReadData { data, meta }, file_name) = match &remote_storage_to_read {
         RemoteStorageToRead::Sftp {
-            connection_name,
+            connection_id,
             parent_dir,
             file_name,
         } => (
-            sftp::read(connection_name, parent_dir, file_name)?,
+            sftp::read(connection_id, parent_dir, file_name)?,
             file_name,
         ),
         RemoteStorageToRead::Webdav {
-            connection_name,
+            connection_id,
             parent_dir,
             file_name,
         } => (
-            webdav::read(connection_name, parent_dir, file_name)?,
+            webdav::read(connection_id, parent_dir, file_name)?,
             file_name,
         ),
     };

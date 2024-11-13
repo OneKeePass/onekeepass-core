@@ -46,7 +46,10 @@ pub use io::*;
 pub use crate::error::{self, Error, Result};
 
 pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions, PasswordScore};
-pub use crate::util::{file_name, formatted_key, parse_attachment_hash, string_to_simple_hash};
+
+// See lib.rs where util module is reexported as service_util
+// another option is rename 'util' module as 'service_util' to avoid confilts with other crates 'util' module
+pub use crate::service_util;
 
 pub use crate::db::{
     KeyStoreOperation, KeyStoreService, KeyStoreServiceType, NewDatabase, SecureKeyInfo,

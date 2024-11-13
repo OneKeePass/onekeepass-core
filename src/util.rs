@@ -80,6 +80,27 @@ pub fn now_utc() -> NaiveDateTime {
     now
 }
 
+// Returns the number of non-leap seconds since January 1, 1970 0:00:00 UTC
+#[inline]
+pub fn now_utc_seconds() -> i64 {
+    now_utc().and_utc().timestamp()
+}
+
+// Formats the now utc time
+#[allow(dead_code)]
+pub fn format_utc_now(format_str: Option<&str>) -> String {
+    let now:NaiveDateTime = now_utc(); // 2024-11-05 20:01:42
+    let fmt_str = if let Some(s) = format_str {
+        s
+    } else {
+        // "%d %b %Y %H:%M:%S" This will print 05 Nov 2024
+
+        // Formatted string is of form 2024-11-05 20:05:18
+        "%Y-%m-%d %H:%M:%S"
+    };
+    now.format(fmt_str).to_string()
+}
+
 // We get the secs part of SystemTime ignoring nanosecs
 pub fn system_time_to_seconds(system_time: std::time::SystemTime) -> u64 {
     system_time
@@ -530,6 +551,17 @@ mod tests {
         //println!("New Dt2 {:?}", n2);
 
         assert_eq!(dt == parsed_dt, true);
+    }
+
+    #[test]
+    fn verify1() {
+        //DateTime::<Utc>
+        //NaiveDateTime::new(date, time)
+
+        let d1 = now_utc(); // 2024-11-05 20:01:42
+        let s1 = d1.format("%d %b %Y %H:%M:%S").to_string();
+        let s1 = d1.format("%Y-%m-%d %H:%M:%S").to_string();
+        println!("d1 is {}", &s1);
     }
 
     #[test]

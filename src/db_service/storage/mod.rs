@@ -1,15 +1,24 @@
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 mod server_connection_config;
 pub mod sftp;
 pub mod webdav;
 
-#[derive(Serialize, Deserialize, Debug)]
+pub use server_connection_config::ConnectionConfigs as RemoteConnectionConfigs;
+
+#[derive(Serialize, Deserialize)]
 pub struct ServerDirEntry {
     // e.g "/" , "/dav"
     parent_dir: String,
     sub_dirs: Vec<String>,
     files: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ConnectStatus {
+    pub connection_id:Uuid,
+    pub dir_entries:Option<ServerDirEntry>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -18,16 +27,16 @@ pub enum RemoteStorageType {
     Webdav,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum RemoteStorageToRead {
     Sftp {
-        connection_name: String,
+        connection_id: String,
         parent_dir: String,
         file_name: String,
     },
     Webdav {
-        connection_name: String,
+        connection_id: String,
         parent_dir: String,
         file_name: String,
     },
@@ -35,6 +44,7 @@ pub enum RemoteStorageToRead {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RemoteFileMetadata {
+    connection_id:Uuid,
     storage_type: RemoteStorageType,
     // Should we add file_name here?
     //file_name:String,

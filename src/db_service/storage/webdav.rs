@@ -5,6 +5,7 @@ use once_cell::sync::Lazy;
 use reqwest_dav::{list_cmd::ListEntity, Auth, Client, ClientBuilder, Depth};
 use tokio::sync::oneshot;
 use url::Url;
+use uuid::Uuid;
 
 use crate::{
     async_service::async_runtime,
@@ -190,6 +191,7 @@ impl WebdavConnection {
         let full_file_name = url.as_str().to_string();
 
         let rmd = RemoteFileMetadata {
+            connection_id:Uuid::default(),
             storage_type: RemoteStorageType::Webdav,
             full_file_name,
             size,
