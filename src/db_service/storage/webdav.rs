@@ -3,23 +3,74 @@ use std::{collections::HashMap, sync::Arc};
 use log::info;
 use once_cell::sync::Lazy;
 use reqwest_dav::{list_cmd::ListEntity, Auth, Client, ClientBuilder, Depth};
+use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use url::Url;
 use uuid::Uuid;
 
 use crate::{
     async_service::async_runtime,
+    db_service::storage::ConnectStatus,
     error::{self, Result},
-    receive_from_async_fn, reply_by_async_fn,
+    parse_operation_fields_if, receive_from_async_fn, reply_by_async_fn,
 };
 
 pub use super::server_connection_config::WebdavConnectionConfig;
-use super::{string_tuple3, RemoteFileMetadata, RemoteReadData, RemoteStorageType, ServerDirEntry};
+use super::{
+    calls::RemoteStorageOperation,
+    server_connection_config::{
+        ConnectionConfigs, RemoteStorageTypeConfig, RemoteStorageTypeConfigs,
+    },
+    string_tuple3, RemoteFileMetadata, RemoteReadData, RemoteStorageType, ServerDirEntry,
+};
 
 macro_rules! reply_by_webdav_async_fn {
     ($fn_name:ident ($($arg1:tt:$arg_type:ty),*),$call:tt ($($arg:expr),*), $send_val:ty) => {
         reply_by_async_fn!(webdav_connections_store,$fn_name ($($arg1:$arg_type),*),$call ($($arg),*),$send_val);
     };
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Webdav {
+    connection_info: Option<WebdavConnectionConfig>,
+    connection_id: Option<String>,
+    parent_dir: Option<String>,
+    sub_dir: Option<String>,
+    file_name: Option<String>,
+}
+
+impl RemoteStorageOperation for Webdav {
+    fn connect_and_retrieve_root_dir(&self) -> Result<ConnectStatus> {
+        #[allow(unused_parens)]
+        let (connection_info) = parse_operation_fields_if!(self, connection_info);
+        let c = connection_info.clone();
+        receive_from_async_fn!(
+            WebdavConnection::send_connect_and_retrieve_root_dir(c),
+            ConnectStatus
+        )?
+    }
+
+    fn list_sub_dir(&self) -> Result<ServerDirEntry> {
+        let (connection_id, parent_dir, sub_dir) =
+            parse_operation_fields_if!(self, connection_id, parent_dir, sub_dir);
+        list_sub_dir(connection_id, parent_dir, sub_dir)
+    }
+
+    fn remote_storage_configs(&self) -> RemoteStorageTypeConfigs {
+        ConnectionConfigs::remote_storage_configs(RemoteStorageType::Webdav)
+    }
+
+    fn update_config(&self) -> Result<()> {
+        #[allow(unused_parens)]
+        let (connection_info) = parse_operation_fields_if!(self, connection_info);
+        ConnectionConfigs::update_config(RemoteStorageTypeConfig::Webdav(connection_info.clone()))
+    }
+
+    fn delete_config(&self) -> Result<()> {
+        #[allow(unused_parens)]
+        let (connection_info) = parse_operation_fields_if!(self, connection_info);
+        ConnectionConfigs::delete_config(RemoteStorageTypeConfig::Webdav(connection_info.clone()))
+    }
 }
 
 struct WebdavConnection {
@@ -33,9 +84,12 @@ fn webdav_connections_store() -> &'static WebdavConnections {
     &WEBDAV_CONNECTIONS_STORE
 }
 
-pub fn connect_to_server(connection_info: WebdavConnectionConfig) -> Result<ServerDirEntry> {
+pub fn connect_and_retrieve_root_dir(
+    connection_info: WebdavConnectionConfig,
+) -> Result<ConnectStatus> {
     receive_from_async_fn!(
-        WebdavConnection::send_connect_to_server(connection_info),ServerDirEntry
+        WebdavConnection::send_connect_and_retrieve_root_dir(connection_info),
+        ConnectStatus
     )?
 }
 
@@ -51,7 +105,8 @@ pub fn list_sub_dir(
     );
 
     receive_from_async_fn!(
-        WebdavConnection::send_list_sub_dir(cn, pd, sd),ServerDirEntry
+        WebdavConnection::send_list_sub_dir(cn, pd, sd),
+        ServerDirEntry
     )?
 }
 
@@ -61,9 +116,12 @@ pub fn read(connection_name: &str, parent_dir: &str, file_name: &str) -> Result<
 }
 
 impl WebdavConnection {
-    pub(crate) async fn connect_to_server(
-        connection_info: WebdavConnectionConfig,
-    ) -> Result<ServerDirEntry> {
+    pub(crate) async fn connect_and_retrieve_root_dir(
+        mut connection_info: WebdavConnectionConfig,
+    ) -> Result<ConnectStatus> {
+        connection_info.connection_id =
+            ConnectionConfigs::generate_config_id_on_check(connection_info.connection_id); // ConnectionConfigs::generate_config_id_on_check(connection_info);
+
         let agent = reqwest_dav::re_exports::reqwest::ClientBuilder::new()
             .danger_accept_invalid_certs(connection_info.allow_untrusted_cert)
             .build()?;
@@ -85,12 +143,18 @@ impl WebdavConnection {
 
         let dirs = webdav_connection.list_dir(".").await?;
 
+        let store_key = connection_info.connection_id.to_string();
         // Store it for future reference
         let mut connections = webdav_connections_store().lock().await;
         info!("Inserting webdav connection for {}", &connection_info.name);
-        connections.insert(connection_info.name, webdav_connection);
+        connections.insert(store_key, webdav_connection);
 
-        Ok(dirs)
+        let conn_status = ConnectStatus {
+            connection_id: connection_info.connection_id,
+            dir_entries: Some(dirs),
+        };
+
+        Ok(conn_status)
     }
 
     // Caller needs to pass the relative path as parent_dir
@@ -191,7 +255,7 @@ impl WebdavConnection {
         let full_file_name = url.as_str().to_string();
 
         let rmd = RemoteFileMetadata {
-            connection_id:Uuid::default(),
+            connection_id: Uuid::default(),
             storage_type: RemoteStorageType::Webdav,
             full_file_name,
             size,
@@ -206,11 +270,11 @@ impl WebdavConnection {
         })
     }
 
-    async fn send_connect_to_server(
-        tx: oneshot::Sender<Result<ServerDirEntry>>,
+    async fn send_connect_and_retrieve_root_dir(
+        tx: oneshot::Sender<Result<ConnectStatus>>,
         connection_info: WebdavConnectionConfig,
     ) {
-        let dir_listing = WebdavConnection::connect_to_server(connection_info).await;
+        let dir_listing = WebdavConnection::connect_and_retrieve_root_dir(connection_info).await;
         let r = tx.send(dir_listing);
         if let Err(_) = r {
             log::error!("In connect_to_server send channel failed ");

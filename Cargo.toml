@@ -50,6 +50,8 @@ serde_json = "1.0.81"
 rmp-serde = "1.1.0" 
 cfg-if = "1.0"
 
+enum_dispatch = "0.3.13"
+
 quick-xml = "0.30.0"
 ## Removed quick_xml_023 use 
 ## quick_xml_023 = { package = "quick-xml", version = "0.23.0" }

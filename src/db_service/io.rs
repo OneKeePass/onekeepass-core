@@ -4,10 +4,9 @@ use std::path::Path;
 
 use log::debug;
 
-use super::storage::{sftp, webdav, RemoteReadData, RemoteStorageToRead, RemoteStorageType};
 use super::{
-    call_kdbx_context_action, call_kdbx_context_mut_action, main_store, KdbxContext, KdbxLoaded,
-    KdbxSaved, NewDatabase, SaveAllResponse, SaveStatus,
+    call_kdbx_context_mut_action, main_store, KdbxContext, KdbxLoaded, KdbxSaved, NewDatabase,
+    SaveAllResponse, SaveStatus,
 };
 use crate::db_content::KeepassFile;
 
@@ -110,59 +109,59 @@ pub fn reload_kdbx(db_key: &str) -> Result<KdbxLoaded> {
     })
 }
 
-pub fn remote_read_kdbx<F>(
-    remote_storage_to_read: RemoteStorageToRead,
-    password: Option<&str>,
-    key_file_name: Option<&str>,
-    gen_local_file_name_fn:F,
-) -> Result<KdbxLoaded> 
-where
-F: FnOnce(&str) -> String,
-{
-    let (RemoteReadData { data, meta }, file_name) = match &remote_storage_to_read {
-        RemoteStorageToRead::Sftp {
-            connection_id,
-            parent_dir,
-            file_name,
-        } => (
-            sftp::read(connection_id, parent_dir, file_name)?,
-            file_name,
-        ),
-        RemoteStorageToRead::Webdav {
-            connection_id,
-            parent_dir,
-            file_name,
-        } => (
-            webdav::read(connection_id, parent_dir, file_name)?,
-            file_name,
-        ),
-    };
+// pub fn remote_read_kdbx<F>(
+//     remote_storage_to_read: RemoteStorageToRead,
+//     password: Option<&str>,
+//     key_file_name: Option<&str>,
+//     gen_local_file_name_fn:F,
+// ) -> Result<KdbxLoaded>
+// where
+// F: FnOnce(&str) -> String,
+// {
+//     let (RemoteReadData { data, meta }, file_name) = match &remote_storage_to_read {
+//         RemoteStorageToRead::Sftp {
+//             connection_id,
+//             parent_dir,
+//             file_name,
+//         } => (
+//             sftp::read(connection_id, parent_dir, file_name)?,
+//             file_name,
+//         ),
+//         RemoteStorageToRead::Webdav {
+//             connection_id,
+//             parent_dir,
+//             file_name,
+//         } => (
+//             webdav::read(connection_id, parent_dir, file_name)?,
+//             file_name,
+//         ),
+//     };
 
-    let local_file_name = gen_local_file_name_fn(&meta.prefixed_full_file_name());
+//     let local_file_name = gen_local_file_name_fn(&meta.prefixed_full_file_name());
 
-    let mut local_file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .open(&local_file_name)?;
+//     let mut local_file = OpenOptions::new()
+//         .read(true)
+//         .write(true)
+//         .create(true)
+//         .open(&local_file_name)?;
 
-    local_file.write_all(&data)?;
+//     local_file.write_all(&data)?;
 
-    if let Some(secs) = meta.modified {
-        local_file.set_modified(seconds_to_system_time(secs))?;
-    }
+//     if let Some(secs) = meta.modified {
+//         local_file.set_modified(seconds_to_system_time(secs))?;
+//     }
 
-    // ensure that we are at the begining of the file
-    local_file.rewind()?;
+//     // ensure that we are at the begining of the file
+//     local_file.rewind()?;
 
-    read_kdbx(
-        &mut local_file,
-        &meta.prefixed_full_file_name(),
-        password,
-        key_file_name,
-        Some(&file_name),
-    )
-}
+//     read_kdbx(
+//         &mut local_file,
+//         &meta.prefixed_full_file_name(),
+//         password,
+//         key_file_name,
+//         Some(&file_name),
+//     )
+// }
 
 // Used for both desktop and mobile
 // db_file_name is full uri and used as db_key in all subsequent calls
