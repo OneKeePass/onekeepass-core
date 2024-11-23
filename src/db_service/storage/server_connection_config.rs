@@ -55,14 +55,18 @@ impl ConnectionConfigReaderWriterStore {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "type")]
+#[serde(tag = "type",content = "content")]
+#[non_exhaustive]
 pub enum RemoteStorageTypeConfig {
     Sftp(SftpConnectionConfig),
     Webdav(WebdavConnectionConfig),
 }
 
+// Adjacently tagged enum 
+// will result a json something like {:type Sftp, :content [..]}
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "type")]
+#[serde(tag = "type",content = "content")]
+#[non_exhaustive]
 pub enum RemoteStorageTypeConfigs {
     Sftp(Vec<SftpConnectionConfig>),
     Webdav(Vec<WebdavConnectionConfig>),
@@ -80,7 +84,11 @@ pub struct SftpConnectionConfig {
     pub host: String,
     pub port: u16,
     // required for authenticate_publickey when we use private key
-    pub private_key: Option<String>,
+    // This is the full file path
+    pub private_key_full_file_name: Option<String>,
+    // Just the file name part mainly for UI use
+    pub private_key_file_name: Option<String>,
+    // 
     pub user_name: String,
     // required for authenticate_password when we use password
     pub password: Option<String>,

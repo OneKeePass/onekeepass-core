@@ -14,7 +14,7 @@ use crate::error::Result;
 pub trait RemoteStorageOperation {
     fn connect_and_retrieve_root_dir(&self) -> Result<ConnectStatus>;
     fn list_sub_dir(&self) -> Result<ServerDirEntry>;
-    fn remote_storage_configs(&self) -> RemoteStorageTypeConfigs;
+    fn remote_storage_configs(&self) -> Result<RemoteStorageTypeConfigs>;
     fn update_config(&self,) -> Result<()>;
     fn delete_config(&self,) -> Result<()>;
 }
@@ -33,7 +33,7 @@ pub trait RemoteStorageOperation {
 
 
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "type")]
+#[serde(tag = "type")] 
 #[enum_dispatch::enum_dispatch]
 pub enum RemoteStorageOperationType {
     Sftp(Sftp),

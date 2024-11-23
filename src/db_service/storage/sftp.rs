@@ -67,8 +67,8 @@ impl RemoteStorageOperation for Sftp {
         //list_sub_dir(connection_id, parent_dir, sub_dir)
     }
 
-    fn remote_storage_configs(&self) -> RemoteStorageTypeConfigs {
-        ConnectionConfigs::remote_storage_configs(RemoteStorageType::Sftp)
+    fn remote_storage_configs(&self) -> Result<RemoteStorageTypeConfigs> {
+        Ok(ConnectionConfigs::remote_storage_configs(RemoteStorageType::Sftp))
     }
 
     fn update_config(&self) -> Result<()> {
@@ -164,13 +164,13 @@ impl SftpConnection {
     async fn connect(connection_info: &SftpConnectionConfig) -> Result<SftpConnection> {
         let SftpConnectionConfig {
             connection_id,
-            name,
             host,
             port,
-            private_key,
+            private_key_full_file_name,
             user_name,
             password,
-            start_dir,
+            // Omits the remaining fields
+            .. 
         } = connection_info;
 
         let config = russh::client::Config::default();
@@ -178,7 +178,7 @@ impl SftpConnection {
         let mut client_handle =
             russh::client::connect(Arc::new(config), (host.clone(), port.clone()), sh).await?;
 
-        let session_authenticated = if let Some(p) = private_key {
+        let session_authenticated = if let Some(p) = private_key_full_file_name {
             // Note load_secret_key calls the fn decode_secret_key(&secret, password)
             // where secret is a String that has the text of the private key
             let key = load_secret_key(p, password.as_ref().map(|x| x.as_str()))?;

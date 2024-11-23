@@ -52,7 +52,8 @@ pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions,
 pub use crate::service_util;
 
 pub use crate::db::{
-    KeyStoreOperation, KeyStoreService, KeyStoreServiceType, NewDatabase, SecureKeyInfo,
+    calculate_db_file_checksum, KeyStoreOperation, KeyStoreService, KeyStoreServiceType,
+    NewDatabase, SecureKeyInfo,
 };
 
 pub use crate::db_content::{
@@ -287,6 +288,13 @@ pub fn all_kdbx_cache_keys() -> Result<Vec<String>> {
         vec.push(k.clone());
     }
     Ok(vec)
+}
+
+// Gets the previously calculated checksum for a db found under the db_key
+pub fn db_checksum_hash(db_key: &str) -> Result<Vec<u8>> {
+    call_kdbx_context_action(db_key, |ctx: &KdbxContext| {
+        Ok(ctx.kdbx_file.checksum_hash().clone())
+    })
 }
 
 pub fn close_all_databases() -> Result<()> {
@@ -816,7 +824,11 @@ pub fn insert_entry_from_form_data(db_key: &str, form_data: EntryFormData) -> Re
     })
 }
 
-pub fn clone_entry(db_key: &str, entry_uuid: &Uuid, entry_clone_option: &EntryCloneOption) -> Result<Uuid> {
+pub fn clone_entry(
+    db_key: &str,
+    entry_uuid: &Uuid,
+    entry_clone_option: &EntryCloneOption,
+) -> Result<Uuid> {
     main_content_mut_action!(db_key, move |k: &mut KeepassFile| {
         k.root.clone_entry(entry_uuid, entry_clone_option)
     })

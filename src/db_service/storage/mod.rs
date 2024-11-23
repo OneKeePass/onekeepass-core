@@ -29,6 +29,7 @@ pub struct ConnectStatus {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[non_exhaustive]
 pub enum RemoteStorageType {
     Sftp,
     Webdav,

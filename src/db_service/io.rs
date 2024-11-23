@@ -1,4 +1,3 @@
-use std::fs::OpenOptions;
 use std::io::{Cursor, Read, Seek, Write};
 use std::path::Path;
 
@@ -19,9 +18,8 @@ use crate::error::{Error, Result};
 
 use crate::db::{
     self, write_kdbx_content_to_file, write_kdbx_file, write_kdbx_file_with_backup_file,
-    KdfAlgorithm,
 };
-use crate::util::{self, seconds_to_system_time};
+use crate::util::{self};
 
 // TODO: Refactor create_kdbx (used mainly for desktop app) and create_and_write_to_writer to use common functionalties
 // Called to create a new KDBX database and perists the file
@@ -383,7 +381,7 @@ pub fn create_and_write_to_writer<W: Read + Write + Seek>(
     // See above block comment. The drop(main_store()) is not working;Also there is no method 'unclock' in Mutex yet;
     save_kdbx_to_writer(&mut buf, &new_db.database_file_name)?; //new_db.database_file_name is the db_key
     buf.rewind()?;
-    calculate_db_file_checksum(&new_db.database_file_name, &mut buf)?;
+    calculate_and_set_db_file_checksum(&new_db.database_file_name, &mut buf)?;
     buf.rewind()?; //do we require this
     std::io::copy(&mut buf, writer)?;
 
@@ -425,13 +423,14 @@ pub fn verify_db_file_checksum<R: Read + Seek>(db_key: &str, reader: &mut R) -> 
 }
 
 // Mobile
-pub fn calculate_db_file_checksum<R: Read + Seek>(db_key: &str, reader: &mut R) -> Result<()> {
+pub fn calculate_and_set_db_file_checksum<R: Read + Seek>(db_key: &str, reader: &mut R) -> Result<()> {
     call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
         ctx.kdbx_file.checksum_hash = db::calculate_db_file_checksum(reader)?;
         Ok(())
     })
 }
 
+// Used in desktop
 pub fn read_and_verify_db_file(db_key: &str) -> Result<()> {
     call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
         db::read_and_verify_db_file(&mut ctx.kdbx_file)

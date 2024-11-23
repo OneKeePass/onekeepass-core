@@ -56,8 +56,8 @@ impl RemoteStorageOperation for Webdav {
         list_sub_dir(connection_id, parent_dir, sub_dir)
     }
 
-    fn remote_storage_configs(&self) -> RemoteStorageTypeConfigs {
-        ConnectionConfigs::remote_storage_configs(RemoteStorageType::Webdav)
+    fn remote_storage_configs(&self) -> Result<RemoteStorageTypeConfigs> {
+        Ok(ConnectionConfigs::remote_storage_configs(RemoteStorageType::Webdav))
     }
 
     fn update_config(&self) -> Result<()> {
