@@ -1,3 +1,5 @@
+
+
 // Called to create an async function ('send_*') that in turn calls the corresponding
 // internal async fn and send the result back in the passed oneshot send channel
 // See 'receive_from_async_fn' macros where we create the oneshot channel and call the 'send_*' aync fn in a 'spawn' call
@@ -20,6 +22,9 @@ macro_rules! reply_by_async_fn {
             $($arg1:$arg_type),*
 
         ) {
+
+            log::debug!("In send async fn {} ", stringify!($fn_name));
+
             let connections = $store().lock().await;
 
             let r = if let Some(conn) = connections.get(&connetion_name) {
@@ -52,6 +57,9 @@ macro_rules! reply_by_async_fn {
 macro_rules! receive_from_async_fn {
     ($path:ident::$aync_fn_name:ident ($($arg:tt),*),$channel_ret_val:ty) => {{
         let (tx, rx) = oneshot::channel::<Result<$channel_ret_val>>();
+        
+        //log::debug!("One shot channel is created for aync_fn_name {} with args {} ", &stringify!($aync_fn_name),stringify!(($($arg),*)));
+        
         async_runtime().spawn($path::$aync_fn_name(tx, $($arg),*));
         let s = rx.blocking_recv().map_err(|e| {
             let name = stringify!($aync_fn_name);

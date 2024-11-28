@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use log::info;
+use log::{debug, info};
 use once_cell::sync::Lazy;
 use russh::{
     client::{self, Handle},
@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use crate::{
     async_service::async_runtime,
+    db_service::callback_service::CallbackServiceProvider,
     error::{self, Error, Result},
     parse_operation_fields_if, receive_from_async_fn, reply_by_async_fn,
     util::system_time_to_seconds,
@@ -33,6 +34,10 @@ macro_rules! reply_by_sftp_async_fn {
     ($fn_name:ident ($($arg1:tt:$arg_type:ty),*),$call:tt ($($arg:expr),*),$channel_ret_val:ty) => {
         reply_by_async_fn!(sftp_connections_store,$fn_name ($($arg1:$arg_type),*),$call ($($arg),*),$channel_ret_val);
     };
+}
+
+pub trait CommonCallbackService1 {
+    fn sftp_private_key_file_full_path(&self, file_name: &str) -> std::path::PathBuf;
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -56,19 +61,42 @@ impl RemoteStorageOperation for Sftp {
         )?
     }
 
+    fn connect_by_id(&self) -> Result<RemoteStorageTypeConfig> {
+        #[allow(unused_parens)]
+        let (connection_id) = parse_operation_fields_if!(self, connection_id);
+
+        let c_id = connection_id.clone();
+
+        // Call the async fn in a 'spawn' and wait for the result - Result<Result<RemoteStorageTypeConfig>>)
+        let rc = receive_from_async_fn!(
+            SftpConnection::send_connect_by_id(c_id),
+            RemoteStorageTypeConfig
+        )?;
+
+        rc
+
+    }
+
     fn list_sub_dir(&self) -> Result<ServerDirEntry> {
         let (connection_id, parent_dir, sub_dir) =
             parse_operation_fields_if!(self, connection_id, parent_dir, sub_dir);
+
+        debug!(
+            "The list_sub_dir fn is called with args {}, {}, {}",
+            connection_id, parent_dir, sub_dir
+        );
+
         let (cn, pd, sd) = string_tuple3(&[connection_id, parent_dir, sub_dir]);
         receive_from_async_fn!(
             SftpConnection::send_list_sub_dir(cn, pd, sd),
             ServerDirEntry
         )?
-        //list_sub_dir(connection_id, parent_dir, sub_dir)
     }
 
     fn remote_storage_configs(&self) -> Result<RemoteStorageTypeConfigs> {
-        Ok(ConnectionConfigs::remote_storage_configs(RemoteStorageType::Sftp))
+        Ok(ConnectionConfigs::remote_storage_configs(
+            RemoteStorageType::Sftp,
+        ))
     }
 
     fn update_config(&self) -> Result<()> {
@@ -161,16 +189,59 @@ impl SftpConnection {
         Ok(conn_status)
     }
 
-    async fn connect(connection_info: &SftpConnectionConfig) -> Result<SftpConnection> {
+    // Gets the connection config with this id and use that to connect the sftp server if required  and stores
+    // that connection for the future use
+    async fn connect_by_id(connection_id: &str) -> Result<RemoteStorageTypeConfig> {
+        let mut connections = sftp_connections_store().lock().await;
+
+        let u_id = uuid::Uuid::parse_str(connection_id)?;
+
+        let rc = ConnectionConfigs::find_remote_storage_config(&u_id, RemoteStorageType::Sftp)
+            .ok_or_else(|| {
+                Error::DataError("Previously saved SFTP Connection config is not found in configs for this id")
+            })?;
+
+        if let Some(c) = connections.get(connection_id) {
+            if !c.client_handle.is_closed() {
+                debug!("SFTP connection is already done and no new connection is created for this id");
+                return Ok(rc);
+            }
+        }
+
+        debug!("Previous connection is not available and will make new connection");
+
+        let RemoteStorageTypeConfig::Sftp(ref connection_info) = rc else {
+            // Should not happen
+            return Err(Error::DataError(
+                "SFTP Connection config is expected and not returned from configs",
+            ));
+        };
+
+        let sftp_connection = Self::connect(connection_info).await?;
+
+        // Store it for future reference
+        connections.insert(connection_id.to_string(), sftp_connection);
+
+        debug!("Created connection is stored in memory");
+
+        Ok(rc)
+    }
+
+    pub(crate) async fn connect(connection_info: &SftpConnectionConfig) -> Result<SftpConnection> {
+        debug!(
+            "Sftp::connect Received connection_info {:?}",
+            connection_info
+        );
+
         let SftpConnectionConfig {
             connection_id,
             host,
             port,
-            private_key_full_file_name,
+            private_key_file_name,
             user_name,
             password,
             // Omits the remaining fields
-            .. 
+            ..
         } = connection_info;
 
         let config = russh::client::Config::default();
@@ -178,10 +249,15 @@ impl SftpConnection {
         let mut client_handle =
             russh::client::connect(Arc::new(config), (host.clone(), port.clone()), sh).await?;
 
-        let session_authenticated = if let Some(p) = private_key_full_file_name {
+        let session_authenticated = if let Some(file_name) = private_key_file_name {
+            let full_file_path = CallbackServiceProvider::common_callback_service()
+                .sftp_private_key_file_full_path(file_name);
+
+            debug!("Private key full path is {:?}", &full_file_path);
+
             // Note load_secret_key calls the fn decode_secret_key(&secret, password)
             // where secret is a String that has the text of the private key
-            let key = load_secret_key(p, password.as_ref().map(|x| x.as_str()))?;
+            let key = load_secret_key(full_file_path, password.as_ref().map(|x| x.as_str()))?;
             client_handle
                 .authenticate_publickey(user_name, Arc::new(key))
                 .await?
@@ -341,7 +417,20 @@ impl SftpConnection {
         let dir_listing = SftpConnection::connect_and_retrieve_root_dir(connection_info).await;
         let r = tx.send(dir_listing);
         if let Err(_) = r {
-            log::error!("In connect_and_retrieve_root_dir send channel failed ");
+            log::error!("In send_connect_and_retrieve_root_dir send channel failed ");
+        }
+    }
+
+    pub(crate) async fn send_connect_by_id(
+        tx: oneshot::Sender<Result<RemoteStorageTypeConfig>>,
+        connection_id: String,
+    ) {
+        debug!("In send_connect_by_id");
+
+        let conn_r = SftpConnection::connect_by_id(&connection_id).await;
+        let r = tx.send(conn_r);
+        if let Err(_) = r {
+            log::error!("In send_connect_by_id send channel failed ");
         }
     }
 
@@ -349,12 +438,78 @@ impl SftpConnection {
     // pub(crate) async fn send_list_sub_dir(tx: oneshot::Sender<Result<ServerDirEntry>>, connection_id: String, parent_dir: String, sub_dir: String)
     reply_by_sftp_async_fn!(send_list_sub_dir (parent_dir:String,sub_dir:String), list_sub_dir (&parent_dir,&sub_dir), ServerDirEntry);
 
-    reply_by_sftp_async_fn!(send_read(parent_dir:String,file_name:String),read(&parent_dir,&file_name),RemoteReadData);
+    //reply_by_sftp_async_fn!(send_read(parent_dir:String,file_name:String),read(&parent_dir,&file_name),RemoteReadData);
 
-    reply_by_sftp_async_fn!(send_metadata (parent_dir:String,fiile_name:String), metadata (&parent_dir,&fiile_name), RemoteFileMetadata);
+    //reply_by_sftp_async_fn!(send_metadata (parent_dir:String,fiile_name:String), metadata (&parent_dir,&fiile_name), RemoteFileMetadata);
 }
 
 /*
+
+async fn connect_by_id(connection_id: &str) -> Result<RemoteStorageTypeConfig> {
+        let mut rc:RemoteStorageTypeConfig;
+        {
+            let connections = sftp_connections_store().lock().await;
+
+            // if let Some(c) = connections.get(connection_id) {
+            //     if !c.client_handle.is_closed() {
+            //         debug!("SFTP connection is already done and no new connection is created");
+            //         return Ok(());
+            //     }
+            // }
+
+            // Gets the connection config and use that to connect the sftp server if required  and stores
+            // that connection for the future use
+
+            let u_id = uuid::Uuid::parse_str(connection_id)?;
+
+            rc = ConnectionConfigs::find_remote_storage_config(&u_id, RemoteStorageType::Sftp)
+                .ok_or_else(|| {
+                    Error::DataError(
+                        "Previously saved SFTP Connection config is not found in configs",
+                    )
+                })?;
+
+            if let Some(c) = connections.get(connection_id) {
+                if !c.client_handle.is_closed() {
+                    debug!("SFTP connection is already done and no new connection is created");
+                    return Ok(rc);
+                }
+            }
+        }
+
+        {
+            debug!("Previous connection is not available and will make new connection");
+
+            let RemoteStorageTypeConfig::Sftp(connection_info) = rc.clone() else {
+                // Should not happen
+                return Err(Error::DataError(
+                    "SFTP Connection config is expected and not returned from configs",
+                ));
+            };
+
+            let sftp_connection = Self::connect(&connection_info).await?;
+
+            // Store it for future reference
+            let mut connections = sftp_connections_store().lock().await;
+            connections.insert(connection_id.to_string(), sftp_connection);
+
+            debug!("Created connection is stored in memory");
+
+            Ok(rc)
+        }
+    }
+
+
+async fn connect_by_id(connection_id:&str) -> Result<()> {
+        let connections = sftp_connections_store().lock().await;
+
+        if let Some(c) = connections.get(connection_id) {
+            if !c.client_handle.is_closed() {
+
+            }
+        }
+        Ok(())
+    }
 
 pub fn connect_and_retrieve_root_dir(
     connection_info: SftpConnectionConfig,

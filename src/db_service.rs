@@ -3,7 +3,10 @@
 
 mod attachment;
 mod io;
+
+// Moduels storage and callback_service are used for now only in mobile apss
 pub mod storage;
+pub mod callback_service;
 
 use crate::db::KdbxFile;
 use crate::db_content::{standard_types_ordered_by_id, Entry, KeepassFile, OtpData};

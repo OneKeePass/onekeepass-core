@@ -49,23 +49,23 @@ impl ConnectionConfigReaderWriterStore {
             .expect("Error: ConnectionConfigReaderWriterStore is not initialzed")
     }
 
-    fn is_initialized() -> bool {
-        CONFIG_READER_WRITER_INSTANCE.get().is_some()
-    }
+    // fn is_initialized() -> bool {
+    //     CONFIG_READER_WRITER_INSTANCE.get().is_some()
+    // }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "type",content = "content")]
+#[derive(Serialize, Deserialize, Debug,Clone)]
+#[serde(tag = "type", content = "content")]
 #[non_exhaustive]
 pub enum RemoteStorageTypeConfig {
     Sftp(SftpConnectionConfig),
     Webdav(WebdavConnectionConfig),
 }
 
-// Adjacently tagged enum 
+// Adjacently tagged enum
 // will result a json something like {:type Sftp, :content [..]}
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "type",content = "content")]
+#[serde(tag = "type", content = "content")]
 #[non_exhaustive]
 pub enum RemoteStorageTypeConfigs {
     Sftp(Vec<SftpConnectionConfig>),
@@ -80,7 +80,7 @@ trait ConnectionId {
 pub struct SftpConnectionConfig {
     pub connection_id: Uuid,
     // user selected name for this connection
-    pub name: String,
+    pub name: Option<String>,
     pub host: String,
     pub port: u16,
     // required for authenticate_publickey when we use private key
@@ -88,7 +88,7 @@ pub struct SftpConnectionConfig {
     pub private_key_full_file_name: Option<String>,
     // Just the file name part mainly for UI use
     pub private_key_file_name: Option<String>,
-    // 
+    //
     pub user_name: String,
     // required for authenticate_password when we use password
     pub password: Option<String>,
@@ -146,7 +146,6 @@ fn config_store() -> &'static ConfigStore {
 }
 
 impl ConnectionConfigs {
-    
     // pub fn set_config_reader_writer(reader_writer: ConnectionConfigReaderWriterType) {
     //     Crw::init(reader_writer);
     // }
@@ -168,6 +167,25 @@ impl ConnectionConfigs {
             RemoteStorageType::Webdav => {
                 RemoteStorageTypeConfigs::Webdav(configs.webdav_connections.clone())
             }
+        }
+    }
+
+    pub(crate) fn find_remote_storage_config(
+        connection_id: &Uuid,
+        request: RemoteStorageType,
+    ) -> Option<RemoteStorageTypeConfig> {
+        let configs = config_store().lock().unwrap();
+        match request {
+            RemoteStorageType::Sftp => {
+                let configs = &configs.sftp_connections;
+                let found = configs.iter().find(|v| v.connection_id() == connection_id);
+                found.map(|f| RemoteStorageTypeConfig::Sftp(f.clone()))
+            }
+            RemoteStorageType::Webdav => configs
+                .webdav_connections
+                .iter()
+                .find(|v| v.connection_id() == connection_id)
+                .map(|f| RemoteStorageTypeConfig::Webdav(f.clone())),
         }
     }
 

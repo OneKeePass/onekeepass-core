@@ -4,6 +4,7 @@ mod server_connection_config;
 pub mod sftp;
 pub mod webdav;
 
+
 pub use server_connection_config::{
     read_configs, set_config_reader_writer, ConnectionConfigReaderWriter,
     ConnectionConfigReaderWriterType,
@@ -127,6 +128,44 @@ mod tests {
         );
     }
 }
+
+/*
+struct s1{}
+
+impl CommonCallbackService for s1 {
+    fn sftp_private_key_file_full_path(&self,file_name:&str) -> PathBuf {
+        PathBuf::new()
+    }
+}
+
+// fn test1<T:CommonCallbackService+ ?Sized, F>(a:String, b:Option<F>) where F:Fn(T) -> String {
+
+//     if let Some(f) = b {
+//         let c = s1{};
+//         let b = f(c);
+//         //let b = c.sftp_private_key_file_full_path("");
+//         //let s = f(<dyn CommonCallbackService>::s1{});
+//     }
+// }
+
+
+// This works
+fn test1<T:CommonCallbackService+ ?Sized>(a:String, b:Option<&T>)  {
+
+    if let Some(f) = b {
+        let b = f.sftp_private_key_file_full_path("");
+        
+    }
+}
+
+fn test2(a:String, b:Option<&dyn CommonCallbackService>)  {
+
+    if let Some(f) = b {
+        let b = f.sftp_private_key_file_full_path("");
+        
+    }
+}
+*/
 
 /*
 #[derive(Serialize, Deserialize)]

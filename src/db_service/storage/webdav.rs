@@ -71,6 +71,10 @@ impl RemoteStorageOperation for Webdav {
         let (connection_info) = parse_operation_fields_if!(self, connection_info);
         ConnectionConfigs::delete_config(RemoteStorageTypeConfig::Webdav(connection_info.clone()))
     }
+    
+    fn connect_by_id(&self) -> Result<RemoteStorageTypeConfig> {
+        todo!()
+    }
 }
 
 struct WebdavConnection {

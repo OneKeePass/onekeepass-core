@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    server_connection_config::RemoteStorageTypeConfigs, sftp::Sftp, webdav::Webdav, ConnectStatus, ServerDirEntry
+    server_connection_config::{RemoteStorageTypeConfig, RemoteStorageTypeConfigs}, sftp::Sftp, webdav::Webdav, ConnectStatus, ServerDirEntry
 };
 use crate::error::Result;
 
@@ -13,6 +13,7 @@ use crate::error::Result;
 #[enum_dispatch::enum_dispatch(RemoteStorageOperationType)]
 pub trait RemoteStorageOperation {
     fn connect_and_retrieve_root_dir(&self) -> Result<ConnectStatus>;
+    fn connect_by_id(&self) -> Result<RemoteStorageTypeConfig>;
     fn list_sub_dir(&self) -> Result<ServerDirEntry>;
     fn remote_storage_configs(&self) -> Result<RemoteStorageTypeConfigs>;
     fn update_config(&self,) -> Result<()>;
