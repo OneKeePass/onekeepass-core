@@ -75,6 +75,14 @@ impl RemoteStorageOperation for Webdav {
     fn connect_by_id(&self) -> Result<RemoteStorageTypeConfig> {
         todo!()
     }
+    
+    fn list_dir(&self) -> Result<ServerDirEntry> {
+        todo!()
+    }
+    
+    fn connect_by_id_and_retrieve_root_dir(&self) -> Result<ConnectStatus> {
+        todo!()
+    }
 }
 
 struct WebdavConnection {
@@ -144,6 +152,9 @@ impl WebdavConnection {
 
         info!("Client is created...{:?}", &client);
         let webdav_connection = WebdavConnection { client };
+
+        // Keep the start dir for the UI side to use for root dir listing with an existing connection
+        connection_info.start_dir = Some(".".to_string());
 
         let dirs = webdav_connection.list_dir(".").await?;
 

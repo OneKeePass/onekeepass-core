@@ -12,9 +12,16 @@ use crate::error::Result;
 
 #[enum_dispatch::enum_dispatch(RemoteStorageOperationType)]
 pub trait RemoteStorageOperation {
+    // requires connection_info
     fn connect_and_retrieve_root_dir(&self) -> Result<ConnectStatus>;
+    // requires connect_id
+    fn connect_by_id_and_retrieve_root_dir(&self) -> Result<ConnectStatus>;
+    // requires connect_id
     fn connect_by_id(&self) -> Result<RemoteStorageTypeConfig>;
-    fn list_sub_dir(&self) -> Result<ServerDirEntry>;
+    // requires connect_id, parent dir and used mainly to list content of root dir
+    fn list_dir(&self) -> Result<ServerDirEntry>;     
+    // requires connect_id, parent dir and sub dir
+    fn list_sub_dir(&self) -> Result<ServerDirEntry>; 
     fn remote_storage_configs(&self) -> Result<RemoteStorageTypeConfigs>;
     fn update_config(&self,) -> Result<()>;
     fn delete_config(&self,) -> Result<()>;

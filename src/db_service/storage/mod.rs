@@ -72,6 +72,10 @@ fn string_tuple3(a: &[&str]) -> (String, String, String) {
     (a[0].to_string(), a[1].to_string(), a[2].to_string())
 }
 
+fn string_tuple2(a: &[&str]) -> (String, String) {
+    (a[0].to_string(), a[1].to_string())
+}
+
 // fn _tuple2<T>(a: &[T]) -> (&T, &T) {
 //     (&a[0], &a[1])
 // }

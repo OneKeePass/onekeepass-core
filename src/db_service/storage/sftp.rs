@@ -26,8 +26,8 @@ use super::{
     server_connection_config::{
         ConnectionConfigs, RemoteStorageTypeConfig, RemoteStorageTypeConfigs,
     },
-    string_tuple3, ConnectStatus, RemoteFileMetadata, RemoteReadData, RemoteStorageType,
-    ServerDirEntry,
+    string_tuple2, string_tuple3, ConnectStatus, RemoteFileMetadata, RemoteReadData,
+    RemoteStorageType, ServerDirEntry,
 };
 
 macro_rules! reply_by_sftp_async_fn {
@@ -61,6 +61,19 @@ impl RemoteStorageOperation for Sftp {
         )?
     }
 
+    fn connect_by_id_and_retrieve_root_dir(&self) -> Result<ConnectStatus> {
+        #[allow(unused_parens)]
+        let (connection_id) = parse_operation_fields_if!(self, connection_id);
+
+        let c_id = connection_id.clone();
+
+        // Call the async fn in a 'spawn' and wait for the result - Result<Result<RemoteStorageTypeConfig>>)
+        receive_from_async_fn!(
+            SftpConnection::send_connect_by_id_and_retrieve_root_dir(c_id),
+            ConnectStatus
+        )?
+    }
+
     fn connect_by_id(&self) -> Result<RemoteStorageTypeConfig> {
         #[allow(unused_parens)]
         let (connection_id) = parse_operation_fields_if!(self, connection_id);
@@ -74,7 +87,16 @@ impl RemoteStorageOperation for Sftp {
         )?;
 
         rc
+    }
 
+    // Contents of root dir
+    fn list_dir(&self) -> Result<ServerDirEntry> {
+        // connection_id should be a valid connection that is completed in an earlier call
+        let (connection_id, parent_dir) =
+            parse_operation_fields_if!(self, connection_id, parent_dir);
+
+        let (cn, pd) = string_tuple2(&[connection_id, parent_dir]);
+        receive_from_async_fn!(SftpConnection::send_list_dir(cn, pd), ServerDirEntry)?
     }
 
     fn list_sub_dir(&self) -> Result<ServerDirEntry> {
@@ -156,8 +178,7 @@ fn sftp_connections_store() -> &'static SftpConnections {
 }
 
 impl SftpConnection {
-    // Called when user creates the config first time or when user selects a previously
-    // connected SFTP connection
+    // Called when user creates the config first time or when user updates the config
     pub(crate) async fn connect_and_retrieve_root_dir(
         mut connection_info: SftpConnectionConfig,
     ) -> Result<ConnectStatus> {
@@ -172,6 +193,9 @@ impl SftpConnection {
         let sftp_connection = Self::connect(&connection_info).await?;
         let dirs = sftp_connection.list_dir(&start_dir).await;
 
+        // For now we set the start_dir
+        connection_info.start_dir = Some(start_dir);
+
         let store_key = connection_info.connection_id.to_string(); // connection_info.connection_id.to_string();
 
         // Store it for future reference
@@ -184,7 +208,36 @@ impl SftpConnection {
         };
 
         // Need to add to the configs list
+        // TODO: Need to update if the existing config is changed
         ConnectionConfigs::add_config(RemoteStorageTypeConfig::Sftp(connection_info))?;
+
+        Ok(conn_status)
+    }
+
+    // Called to create a new remote connection using the connection id and on successful connection 
+    // the root dir entries are returned
+    async fn connect_by_id_and_retrieve_root_dir(connection_id: &str) -> Result<ConnectStatus> {
+        // Makes connection to the remote storage and stores the connection in the local static map
+        // Note sftp_connections_store().lock() called in this call
+        let _r = Self::connect_by_id(connection_id).await?;
+
+        // Previous lock call should have been unlocked by this time. Otherwise deadlock will happen
+        let connections = sftp_connections_store().lock().await;
+
+        // A successful connection should be available
+        let sftp_connection = connections.get(connection_id).ok_or_else(|| {
+            Error::DataError(
+                "Previously saved SFTP Connection config is not found in configs for this id",
+            )
+        })?;
+
+        let dirs = sftp_connection.list_dir("/").await?;
+
+        let u_id = uuid::Uuid::parse_str(connection_id)?;
+        let conn_status = ConnectStatus {
+            connection_id: u_id,
+            dir_entries: Some(dirs),
+        };
 
         Ok(conn_status)
     }
@@ -198,12 +251,16 @@ impl SftpConnection {
 
         let rc = ConnectionConfigs::find_remote_storage_config(&u_id, RemoteStorageType::Sftp)
             .ok_or_else(|| {
-                Error::DataError("Previously saved SFTP Connection config is not found in configs for this id")
+                Error::DataError(
+                    "Previously saved SFTP Connection config is not found in configs for this id",
+                )
             })?;
 
         if let Some(c) = connections.get(connection_id) {
             if !c.client_handle.is_closed() {
-                debug!("SFTP connection is already done and no new connection is created for this id");
+                debug!(
+                    "SFTP connection is already done and no new connection is created for this id"
+                );
                 return Ok(rc);
             }
         }
@@ -421,6 +478,17 @@ impl SftpConnection {
         }
     }
 
+    pub(crate) async fn send_connect_by_id_and_retrieve_root_dir(
+        tx: oneshot::Sender<Result<ConnectStatus>>,
+        connection_id: String,
+    ) {
+        let dir_listing = SftpConnection::connect_by_id_and_retrieve_root_dir(&connection_id).await;
+        let r = tx.send(dir_listing);
+        if let Err(_) = r {
+            log::error!("In send_connect_by_id_and_retrieve_root_dir send channel failed ");
+        }
+    }
+
     pub(crate) async fn send_connect_by_id(
         tx: oneshot::Sender<Result<RemoteStorageTypeConfig>>,
         connection_id: String,
@@ -435,6 +503,9 @@ impl SftpConnection {
     }
 
     // Creats a fn with signature
+
+    reply_by_sftp_async_fn!(send_list_dir (parent_dir:String), list_dir (&parent_dir), ServerDirEntry);
+
     // pub(crate) async fn send_list_sub_dir(tx: oneshot::Sender<Result<ServerDirEntry>>, connection_id: String, parent_dir: String, sub_dir: String)
     reply_by_sftp_async_fn!(send_list_sub_dir (parent_dir:String,sub_dir:String), list_sub_dir (&parent_dir,&sub_dir), ServerDirEntry);
 

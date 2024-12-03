@@ -92,7 +92,7 @@ pub struct SftpConnectionConfig {
     pub user_name: String,
     // required for authenticate_password when we use password
     pub password: Option<String>,
-    // All files and sub dirs in this will be shown
+    // All files and sub dirs from this will be shown as root
     pub start_dir: Option<String>,
 }
 
@@ -112,6 +112,8 @@ pub struct WebdavConnectionConfig {
     pub user_name: String,
     pub password: String,
     pub allow_untrusted_cert: bool,
+     // All files and sub dirs from this will be shown as root
+    pub start_dir: Option<String>,
 }
 
 impl ConnectionId for WebdavConnectionConfig {
@@ -252,7 +254,7 @@ impl ConnectionConfigs {
 
     fn internal_add_config<T: ConnectionId>(configs: &mut Vec<T>, m_config: T) {
         let found = configs
-            .iter()
+            .iter() // .iter_mut() for mut call
             .find(|v| v.connection_id() == m_config.connection_id());
         if found.is_none() {
             debug!(
