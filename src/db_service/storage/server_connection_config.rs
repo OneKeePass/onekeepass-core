@@ -54,7 +54,7 @@ impl ConnectionConfigReaderWriterStore {
     // }
 }
 
-#[derive(Serialize, Deserialize, Debug,Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type", content = "content")]
 #[non_exhaustive]
 pub enum RemoteStorageTypeConfig {
@@ -112,7 +112,7 @@ pub struct WebdavConnectionConfig {
     pub user_name: String,
     pub password: String,
     pub allow_untrusted_cert: bool,
-     // All files and sub dirs from this will be shown as root
+    // All files and sub dirs from this will be shown as root
     pub start_dir: Option<String>,
 }
 
@@ -212,17 +212,20 @@ impl ConnectionConfigs {
         Ok(())
     }
 
-    pub(crate) fn delete_config(request: RemoteStorageTypeConfig) -> Result<()> {
+    pub(crate) fn delete_config_by_id(
+        remote_type: RemoteStorageType,
+        connection_id: &Uuid,
+    ) -> Result<()> {
         {
             let mut configs = config_store().lock().unwrap();
-            match request {
-                RemoteStorageTypeConfig::Sftp(config) => {
+            match remote_type {
+                RemoteStorageType::Sftp => {
                     let conns = &mut configs.sftp_connections;
-                    Self::interal_delete_config(&config.connection_id, conns);
+                    Self::interal_delete_config(connection_id, conns);
                 }
-                RemoteStorageTypeConfig::Webdav(config) => {
+                RemoteStorageType::Webdav => {
                     let conns = &mut configs.webdav_connections;
-                    Self::interal_delete_config(&config.connection_id, conns);
+                    Self::interal_delete_config(connection_id, conns);
                 }
             }
         }
@@ -326,6 +329,26 @@ impl ConnectionConfigs {
 }
 
 /*
+
+pub(crate) fn delete_config(request: RemoteStorageTypeConfig) -> Result<()> {
+        {
+            let mut configs = config_store().lock().unwrap();
+            match request {
+                RemoteStorageTypeConfig::Sftp(config) => {
+                    let conns = &mut configs.sftp_connections;
+                    Self::interal_delete_config(&config.connection_id, conns);
+                }
+                RemoteStorageTypeConfig::Webdav(config) => {
+                    let conns = &mut configs.webdav_connections;
+                    Self::interal_delete_config(&config.connection_id, conns);
+                }
+            }
+        }
+
+        Self::write_config()?;
+
+        Ok(())
+    }
 
 pub(crate) fn add_config(request: RemoteStorageTypeConfig) -> Result<()> {
         // Need to be in a block so that the config_store().lock() is released before next lock call

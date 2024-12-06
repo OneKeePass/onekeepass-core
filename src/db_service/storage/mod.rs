@@ -76,6 +76,10 @@ fn string_tuple2(a: &[&str]) -> (String, String) {
     (a[0].to_string(), a[1].to_string())
 }
 
+fn filter_entry(name: &str) -> bool {
+    !name.is_empty() && !name.starts_with("._") && !name.starts_with(".DS_Store")
+}
+
 // fn _tuple2<T>(a: &[T]) -> (&T, &T) {
 //     (&a[0], &a[1])
 // }

@@ -1,5 +1,9 @@
 use std::{path::PathBuf, sync::{Arc, OnceLock}};
 
+use crate::error::Result;
+
+use super::storage::RemoteStorageType;
+
 
 // This module is used by fns in this crate to use any callback servcices
 // implemented in the calling crate (e.g db-service-ffi)
@@ -11,7 +15,9 @@ pub struct CallbackServiceProvider {
 } 
 
 pub trait CommonCallbackService: Send + Sync {
-    fn sftp_private_key_file_full_path(&self,file_name:&str) -> PathBuf;
+    fn sftp_private_key_file_full_path(&self,connection_id:&str,file_name:&str) -> PathBuf;
+    fn sftp_copy_from_temp_key_file(&self,connection_id:&str,file_name:&str) -> Result<()>;
+    fn remote_storage_config_deleted(&self,remote_type:RemoteStorageType,connection_id:&str,) -> Result<()>;
 }
 
 static CALLBACK_PROVIDER: OnceLock<CallbackServiceProvider> = OnceLock::new();

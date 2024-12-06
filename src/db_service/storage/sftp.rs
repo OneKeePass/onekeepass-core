@@ -23,6 +23,7 @@ use crate::{
 pub use super::server_connection_config::SftpConnectionConfig;
 use super::{
     calls::RemoteStorageOperation,
+    filter_entry,
     server_connection_config::{
         ConnectionConfigs, RemoteStorageTypeConfig, RemoteStorageTypeConfigs,
     },
@@ -129,8 +130,15 @@ impl RemoteStorageOperation for Sftp {
 
     fn delete_config(&self) -> Result<()> {
         #[allow(unused_parens)]
-        let (connection_info) = parse_operation_fields_if!(self, connection_info);
-        ConnectionConfigs::delete_config(RemoteStorageTypeConfig::Sftp(connection_info.clone()))
+        let (connection_id) = parse_operation_fields_if!(self, connection_id);
+
+        let u_id = uuid::Uuid::parse_str(connection_id)?;
+
+        let r = ConnectionConfigs::delete_config_by_id(RemoteStorageType::Sftp, &u_id);
+        CallbackServiceProvider::common_callback_service()
+            .remote_storage_config_deleted(RemoteStorageType::Sftp, connection_id)?;
+
+        r
     }
 }
 
@@ -191,12 +199,22 @@ impl SftpConnection {
             .map_or_else(|| "/".to_string(), |s| s);
 
         let sftp_connection = Self::connect(&connection_info).await?;
-        let dirs = sftp_connection.list_dir(&start_dir).await;
+
+        // private_key_file_name should have a valid file name if we use a private key for auth
+        if let Some(ref file_name) = connection_info.private_key_file_name {
+            // Need to copy the key file from temp location to permanent location
+            CallbackServiceProvider::common_callback_service().sftp_copy_from_temp_key_file(
+                &connection_info.connection_id.to_string(),
+                file_name,
+            )?;
+        }
+
+        let dirs = sftp_connection.list_dir(&start_dir).await?;
 
         // For now we set the start_dir
         connection_info.start_dir = Some(start_dir);
 
-        let store_key = connection_info.connection_id.to_string(); // connection_info.connection_id.to_string();
+        let store_key = connection_info.connection_id.to_string();
 
         // Store it for future reference
         let mut connections = sftp_connections_store().lock().await;
@@ -204,7 +222,7 @@ impl SftpConnection {
 
         let conn_status = ConnectStatus {
             connection_id: connection_info.connection_id,
-            dir_entries: Some(dirs?),
+            dir_entries: Some(dirs),
         };
 
         // Need to add to the configs list
@@ -214,7 +232,7 @@ impl SftpConnection {
         Ok(conn_status)
     }
 
-    // Called to create a new remote connection using the connection id and on successful connection 
+    // Called to create a new remote connection using the connection id and on successful connection
     // the root dir entries are returned
     async fn connect_by_id_and_retrieve_root_dir(connection_id: &str) -> Result<ConnectStatus> {
         // Makes connection to the remote storage and stores the connection in the local static map
@@ -249,7 +267,7 @@ impl SftpConnection {
 
         let u_id = uuid::Uuid::parse_str(connection_id)?;
 
-        let rc = ConnectionConfigs::find_remote_storage_config(&u_id, RemoteStorageType::Sftp)
+        let mut rc = ConnectionConfigs::find_remote_storage_config(&u_id, RemoteStorageType::Sftp)
             .ok_or_else(|| {
                 Error::DataError(
                     "Previously saved SFTP Connection config is not found in configs for this id",
@@ -267,12 +285,21 @@ impl SftpConnection {
 
         debug!("Previous connection is not available and will make new connection");
 
-        let RemoteStorageTypeConfig::Sftp(ref connection_info) = rc else {
+        let RemoteStorageTypeConfig::Sftp(ref mut connection_info) = rc else {
             // Should not happen
             return Err(Error::DataError(
                 "SFTP Connection config is expected and not returned from configs",
             ));
         };
+
+        // Need to ensure the full path points to the local key file path correctly to use
+        // in the following 'Self::connect' call
+        if let Some(ref file_name) = connection_info.private_key_file_name {
+            let p = CallbackServiceProvider::common_callback_service()
+                .sftp_private_key_file_full_path(connection_id, file_name);
+            connection_info.private_key_full_file_name =
+                Some(p.as_path().to_string_lossy().to_string());
+        }
 
         let sftp_connection = Self::connect(connection_info).await?;
 
@@ -294,6 +321,7 @@ impl SftpConnection {
             connection_id,
             host,
             port,
+            private_key_full_file_name,
             private_key_file_name,
             user_name,
             password,
@@ -306,9 +334,8 @@ impl SftpConnection {
         let mut client_handle =
             russh::client::connect(Arc::new(config), (host.clone(), port.clone()), sh).await?;
 
-        let session_authenticated = if let Some(file_name) = private_key_file_name {
-            let full_file_path = CallbackServiceProvider::common_callback_service()
-                .sftp_private_key_file_full_path(file_name);
+        let session_authenticated = if let Some(full_file_path) = private_key_full_file_name {
+            // let full_file_path = CallbackServiceProvider::common_callback_service().sftp_private_key_file_full_path(file_name);
 
             debug!("Private key full path is {:?}", &full_file_path);
 
@@ -342,10 +369,15 @@ impl SftpConnection {
         let mut sub_dirs: Vec<String> = vec![];
         let mut files: Vec<String> = vec![];
         for e in dir_info {
+            let name = e.file_name();
             if e.file_type().is_dir() {
-                sub_dirs.push(e.file_name());
+                if filter_entry(&name) {
+                    sub_dirs.push(e.file_name());
+                }
             } else {
-                files.push(e.file_name());
+                if filter_entry(&name) {
+                    files.push(name);
+                }
             }
         }
         // Should this be called explicitly  or is it closed by RawSftpSession's drop
@@ -360,33 +392,40 @@ impl SftpConnection {
     }
 
     async fn list_sub_dir(&self, parent_dir: &str, sub_dir: &str) -> Result<ServerDirEntry> {
-        // Should this be stored in 'SftpConnection' and reused?
-        let sftp = self.create_sftp_session().await?;
 
-        // For now we use this simple join of root and sub dir using sep "/"
         let full_dir = [parent_dir, sub_dir].join("/");
 
-        let dir_info = sftp.read_dir(&full_dir).await?;
+        self.list_dir(&full_dir).await
 
-        let mut sub_dirs: Vec<String> = vec![];
-        let mut files: Vec<String> = vec![];
 
-        for e in dir_info {
-            if e.file_type().is_dir() {
-                sub_dirs.push(e.file_name());
-            } else {
-                files.push(e.file_name());
-            }
-        }
-        // Should this be called explicitly  or is it closed by RawSftpSession's drop
-        // If we store in SftpConnection, we should not call close()
-        sftp.close().await?;
 
-        Ok(ServerDirEntry {
-            parent_dir: full_dir.into(),
-            sub_dirs,
-            files,
-        })
+        // // Should this be stored in 'SftpConnection' and reused?
+        // let sftp = self.create_sftp_session().await?;
+
+        // // For now we use this simple join of root and sub dir using sep "/"
+        // let full_dir = [parent_dir, sub_dir].join("/");
+
+        // let dir_info = sftp.read_dir(&full_dir).await?;
+
+        // let mut sub_dirs: Vec<String> = vec![];
+        // let mut files: Vec<String> = vec![];
+
+        // for e in dir_info {
+        //     if e.file_type().is_dir() {
+        //         sub_dirs.push(e.file_name());
+        //     } else {
+        //         files.push(e.file_name());
+        //     }
+        // }
+        // // Should this be called explicitly  or is it closed by RawSftpSession's drop
+        // // If we store in SftpConnection, we should not call close()
+        // sftp.close().await?;
+
+        // Ok(ServerDirEntry {
+        //     parent_dir: full_dir.into(),
+        //     sub_dirs,
+        //     files,
+        // })
     }
 
     async fn create_sftp_session(&self) -> Result<SftpSession> {
