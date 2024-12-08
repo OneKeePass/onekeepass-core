@@ -618,6 +618,7 @@ pub fn calculate_db_file_checksum<R: Read + Seek>(reader: &mut R) -> Result<Vec<
     Ok(cs?.to_vec())
 }
 
+// Desktop version
 // Reads the db file and check whether the file content is modified externally
 pub fn read_and_verify_db_file(kdbx_file: &mut KdbxFile) -> Result<()> {
     let mut db_file_read = OpenOptions::new()
@@ -626,6 +627,7 @@ pub fn read_and_verify_db_file(kdbx_file: &mut KdbxFile) -> Result<()> {
     verify_db_file_checksum(kdbx_file, &mut db_file_read)
 }
 
+// Mobile version
 // Reads data from the reader formed from the db file to compute the checksum and compares
 // with the previously calculated one
 pub fn verify_db_file_checksum<R: Read + Seek>(

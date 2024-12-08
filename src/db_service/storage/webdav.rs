@@ -17,9 +17,12 @@ use crate::{
 
 pub use super::server_connection_config::WebdavConnectionConfig;
 use super::{
-    calls::RemoteStorageOperation, filter_entry, server_connection_config::{
+    calls::RemoteStorageOperation,
+    filter_entry,
+    server_connection_config::{
         ConnectionConfigs, RemoteStorageTypeConfig, RemoteStorageTypeConfigs,
-    }, string_tuple3, RemoteFileMetadata, RemoteReadData, RemoteStorageType, ServerDirEntry
+    },
+    string_tuple3, RemoteFileMetadata, RemoteReadData, RemoteStorageType, ServerDirEntry,
 };
 
 macro_rules! reply_by_webdav_async_fn {
@@ -28,13 +31,30 @@ macro_rules! reply_by_webdav_async_fn {
     };
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct Webdav {
     connection_info: Option<WebdavConnectionConfig>,
     connection_id: Option<String>,
     parent_dir: Option<String>,
     sub_dir: Option<String>,
-    file_name: Option<String>,
+    file_path: Option<String>,
+    pub(crate) file_name: Option<String>,
+}
+
+impl Webdav {
+    pub(crate) fn from_parsed_db_key(connection_id: &str, file_path_part: &str) -> Webdav {
+        let mut webdav = Webdav::default();
+        webdav.file_path = Some(file_path_part.to_string());
+        if let Some(parts) = file_path_part.rsplit_once("/") {
+            debug!("Webdav Parst of file_path_part are {:?}", &parts);
+
+            let v = if parts.0.is_empty() { "/" } else { parts.0 };
+            webdav.parent_dir = Some(v.to_string());
+            webdav.connection_id = Some(connection_id.to_string());
+            webdav.file_name = Some(parts.1.to_string());
+        }
+        webdav
+    }
 }
 
 impl RemoteStorageOperation for Webdav {
@@ -87,6 +107,24 @@ impl RemoteStorageOperation for Webdav {
         )?
     }
 
+    fn read(&self) -> Result<RemoteReadData> {
+        let (connection_id, parent_dir, file_name) =
+            parse_operation_fields_if!(self, connection_id, parent_dir, file_name);
+
+        let (cn, pd, name) = string_tuple3(&[connection_id, parent_dir, file_name]);
+        receive_from_async_fn!(WebdavConnection::send_read(cn, pd, name), RemoteReadData)?
+    }
+
+    fn write_file(&self,data: Arc<Vec<u8>>) -> Result<RemoteFileMetadata> {
+        let (connection_id,file_path) = parse_operation_fields_if!(self, connection_id,file_path);
+        let file_path = file_path.to_string();
+        let c_id = connection_id.clone();
+        receive_from_async_fn!(
+            WebdavConnection::send_write_file(c_id, file_path, data),
+            RemoteFileMetadata
+        )?
+    }
+
     fn remote_storage_configs(&self) -> Result<RemoteStorageTypeConfigs> {
         Ok(ConnectionConfigs::remote_storage_configs(
             RemoteStorageType::Webdav,
@@ -111,12 +149,16 @@ impl RemoteStorageOperation for Webdav {
         r
     }
 
-    // fn connect_by_id(&self) -> Result<RemoteStorageTypeConfig> {
-    //     todo!()
-    // }
-
     fn list_dir(&self) -> Result<ServerDirEntry> {
         todo!()
+    }
+
+    fn file_name(&self) -> Option<&str> {
+        self.file_name.as_ref().map(|x| x.as_str())
+    }
+
+    fn file_path(&self) -> Option<&str> {
+        self.file_path.as_ref().map(|x| x.as_str())
     }
 }
 
@@ -268,7 +310,6 @@ impl WebdavConnection {
     // Caller needs to pass the relative path as parent_dir
     // e.g "." "/dav" "/dav/databases" etc and these parent dir should exists. Oterwiese an error with 404 code raised
     async fn list_dir(&self, parent_dir: &str) -> Result<ServerDirEntry> {
-
         // A vec of all parts of this parent dir path
         // e.g "dav/db1" -> ["dav" "db1"]
         let paren_dir_parts = parent_dir
@@ -295,10 +336,10 @@ impl WebdavConnection {
                         .filter(|s| filter_entry(s))
                         .collect::<Vec<_>>();
 
-                    // There is folder entry corresponding to the passed  'parent_dir' 
+                    // There is folder entry corresponding to the passed  'parent_dir'
                     // when dot files are excluded and we need to exclude that
                     // e.g "dav/db1/.DS_Store"  ["dav" "db1" ".DS_Store"] -> after filtering ["dav" "db1"]
-                    // and this needs to be excluded 
+                    // and this needs to be excluded
 
                     if !(&paren_dir_parts == list_file_parts) {
                         if let Some(last_comp) = list_file_parts.last() {
@@ -319,7 +360,7 @@ impl WebdavConnection {
 
                     // There is folder entry corresponding to the passed  'parent_dir'
                     // and we need to exclude that
-                    // e.g "dav/db1" -> ["dav" "db1"] 
+                    // e.g "dav/db1" -> ["dav" "db1"]
                     if !(&paren_dir_parts == list_file_parts) {
                         if let Some(last_comp) = list_file_parts.last() {
                             sub_dirs.push(last_comp.to_string());
@@ -340,42 +381,23 @@ impl WebdavConnection {
         // Assuming parent_dir is the relative dir without host info
         // For now we use this simple join of parent_dir and sub dir using sep "/"
         let full_dir = [parent_dir, sub_dir].join("/");
-
         self.list_dir(&full_dir).await
-
-        // let dir_info = self.client.list(&full_dir, Depth::Number(1)).await?;
-
-        // let mut sub_dirs: Vec<String> = vec![];
-        // let mut files: Vec<String> = vec![];
-        // for e in dir_info {
-        //     match e {
-        //         ListEntity::File(f) => {
-        //             info!("List entry is a file and meta is {:?} ", f);
-        //             let n = f.href.split_once("/").map_or_else(|| ".", |v| v.1);
-        //             files.push(n.to_string());
-        //         }
-        //         ListEntity::Folder(f) => {
-        //             info!("List entry is a folder and meta is {:?} ", f);
-        //             let n = f.href.split_once("/").map_or_else(|| ".", |v| v.1);
-        //             sub_dirs.push(n.to_string());
-        //         }
-        //     }
-        // }
-
-        // Ok(ServerDirEntry {
-        //     parent_dir: parent_dir.into(),
-        //     sub_dirs,
-        //     files,
-        // })
     }
 
     async fn read(&self, parent_dir: &str, file_name: &str) -> Result<RemoteReadData> {
         // In webdav, this is a relative path. E.g /parent_dir/file_name
         let full_path = [parent_dir, file_name].join("/");
 
+        debug!(
+            "Webdav call is  going to read using file path {} ",
+            &full_path
+        );
+
         let response = self.client.get(&full_path).await?;
         // Copies the full file content to memory
         let contents: Vec<u8> = response.bytes().await?.into();
+
+        debug!("Webdav content read and size is {}", contents.len());
 
         // Need to use Depth::Number(0) to get the file info as Depth of "0" applies only to the resource
         let (size, modified) = if let Some(list_entity) = self
@@ -422,6 +444,60 @@ impl WebdavConnection {
         })
     }
 
+    async fn write_file(&self, file_path: &str, data: Arc<Vec<u8>>) -> Result<RemoteFileMetadata> {
+        // let inner_data = Vec::from(data.as_slice());
+        // self.client.put(file_path, inner_data).await?;
+
+        // Need to create a new Vec<u8> data as  &[u8] from data.as_slice() did not
+        // work with error: `data` does not live long enough, `data` dropped here while still borrowed
+        let inner_data = data.to_vec();
+        self.client.put(file_path, inner_data).await?;
+
+        let rmd = self.create_remote_file_metadata(file_path).await?;
+
+        Ok(rmd)
+    }
+
+    async fn create_remote_file_metadata(&self, file_path: &str) -> Result<RemoteFileMetadata> {
+        // Need to use Depth::Number(0) to get the file info as Depth of "0" applies only to the resource
+        let (size, modified) = if let Some(list_entity) =
+            self.client.list(file_path, Depth::Number(0)).await?.first()
+        {
+            match list_entity {
+                ListEntity::File(f) => (
+                    Some(f.content_length as u64),
+                    // last_modified is DateTime<Utc>
+                    Some(f.last_modified.timestamp() as u64),
+                ),
+                _ => (None, None),
+            }
+        } else {
+            (None, None)
+        };
+
+        // Should we make full file name by combining the relative path 'full_path' with host str of self.client.host
+        // see the implementation of self.client.start_request where the combined url is formed
+        let url = Url::parse(&format!(
+            "{}/{}",
+            &self.client.host.trim_end_matches("/"),
+            file_path.trim_start_matches("/") // removes the starting one or more "/"
+        ))?;
+
+        let full_file_name = url.as_str().to_string();
+
+        let rmd = RemoteFileMetadata {
+            connection_id: Uuid::default(),
+            storage_type: RemoteStorageType::Webdav,
+            full_file_name,
+            size,
+            accessed: None,
+            modified,
+            created: None,
+        };
+
+        Ok(rmd)
+    }
+
     async fn send_connect_and_retrieve_root_dir(
         tx: oneshot::Sender<Result<ConnectStatus>>,
         connection_info: WebdavConnectionConfig,
@@ -461,6 +537,8 @@ impl WebdavConnection {
     reply_by_webdav_async_fn!(send_list_sub_dir(parent_dir:String,sub_dir:String), list_sub_dir (&parent_dir,&sub_dir),ServerDirEntry);
 
     reply_by_webdav_async_fn!(send_read(parent_dir:String,file_name:String),read(&parent_dir,&file_name),RemoteReadData);
+
+    reply_by_webdav_async_fn!(send_write_file(file_path:String,data:Arc<Vec<u8>>), write_file(&file_path, data), RemoteFileMetadata);
 }
 
 /*

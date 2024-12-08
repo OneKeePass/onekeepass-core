@@ -15,6 +15,12 @@ pub use calls::{RemoteStorageOperation, RemoteStorageOperationType};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub struct ParsedDbKey<'a> {
+    pub rs_type_name: &'a str,
+    pub connection_id: &'a str,
+    pub file_path_part: &'a str,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct ServerDirEntry {
     // e.g "/" , "/dav"

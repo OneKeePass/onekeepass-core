@@ -41,13 +41,32 @@ pub trait CommonCallbackService1 {
     fn sftp_private_key_file_full_path(&self, file_name: &str) -> std::path::PathBuf;
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct Sftp {
     connection_info: Option<SftpConnectionConfig>,
     connection_id: Option<String>,
     parent_dir: Option<String>,
     sub_dir: Option<String>,
+    file_path: Option<String>,
     file_name: Option<String>,
+}
+
+impl Sftp {
+    pub(crate) fn from_parsed_db_key(connection_id: &str, file_path_part: &str) -> Sftp {
+        let mut sftp = Sftp::default();
+
+        sftp.file_path = Some(file_path_part.to_string());
+
+        if let Some(parts) = file_path_part.rsplit_once("/") {
+            debug!("Sftp Parst of file_path_part are {:?}", &parts);
+
+            let v = if parts.0.is_empty() { "/" } else { parts.0 };
+            sftp.parent_dir = Some(v.to_string());
+            sftp.connection_id = Some(connection_id.to_string());
+            sftp.file_name = Some(parts.1.to_string());
+        }
+        sftp
+    }
 }
 
 impl RemoteStorageOperation for Sftp {
@@ -116,6 +135,24 @@ impl RemoteStorageOperation for Sftp {
         )?
     }
 
+    fn read(&self) -> Result<RemoteReadData> {
+        let (connection_id, parent_dir, file_name) =
+            parse_operation_fields_if!(self, connection_id, parent_dir, file_name);
+
+        let (cn, pd, name) = string_tuple3(&[connection_id, parent_dir, file_name]);
+        receive_from_async_fn!(SftpConnection::send_read(cn, pd, name), RemoteReadData)?
+    }
+
+    fn write_file(&self, data: Arc<Vec<u8>>) -> Result<RemoteFileMetadata> {
+        let (connection_id, file_path) = parse_operation_fields_if!(self, connection_id, file_path);
+        let file_path = file_path.to_string();
+        let c_id = connection_id.clone();
+        receive_from_async_fn!(
+            SftpConnection::send_write_file(c_id, file_path, data),
+            RemoteFileMetadata
+        )?
+    }
+
     fn remote_storage_configs(&self) -> Result<RemoteStorageTypeConfigs> {
         Ok(ConnectionConfigs::remote_storage_configs(
             RemoteStorageType::Sftp,
@@ -139,6 +176,14 @@ impl RemoteStorageOperation for Sftp {
             .remote_storage_config_deleted(RemoteStorageType::Sftp, connection_id)?;
 
         r
+    }
+    
+    fn file_name(&self) -> Option<&str> {
+        self.file_name.as_ref().map(|x| x.as_str())
+    }
+    
+    fn file_path(&self) -> Option<&str> {
+        self.file_path.as_ref().map(|x| x.as_str())
     }
 }
 
@@ -392,40 +437,8 @@ impl SftpConnection {
     }
 
     async fn list_sub_dir(&self, parent_dir: &str, sub_dir: &str) -> Result<ServerDirEntry> {
-
         let full_dir = [parent_dir, sub_dir].join("/");
-
         self.list_dir(&full_dir).await
-
-
-
-        // // Should this be stored in 'SftpConnection' and reused?
-        // let sftp = self.create_sftp_session().await?;
-
-        // // For now we use this simple join of root and sub dir using sep "/"
-        // let full_dir = [parent_dir, sub_dir].join("/");
-
-        // let dir_info = sftp.read_dir(&full_dir).await?;
-
-        // let mut sub_dirs: Vec<String> = vec![];
-        // let mut files: Vec<String> = vec![];
-
-        // for e in dir_info {
-        //     if e.file_type().is_dir() {
-        //         sub_dirs.push(e.file_name());
-        //     } else {
-        //         files.push(e.file_name());
-        //     }
-        // }
-        // // Should this be called explicitly  or is it closed by RawSftpSession's drop
-        // // If we store in SftpConnection, we should not call close()
-        // sftp.close().await?;
-
-        // Ok(ServerDirEntry {
-        //     parent_dir: full_dir.into(),
-        //     sub_dirs,
-        //     files,
-        // })
     }
 
     async fn create_sftp_session(&self) -> Result<SftpSession> {
@@ -436,15 +449,74 @@ impl SftpConnection {
     }
 
     async fn read(&self, parent_dir: &str, file_name: &str) -> Result<RemoteReadData> {
-        let sftp = self.create_sftp_session().await?;
+        let sftp_session = self.create_sftp_session().await?;
         let full_path = [parent_dir, file_name].join("/");
 
-        // Copies the full file content to memory
-        let contents = sftp.read(&full_path).await?;
-        let md = sftp.metadata(&full_path).await?; // Callling metadata makes another server call
+        debug!("Sftp going to read file path {} ", &full_path);
 
-        // Copied from sftp.read implementation so that we can get metadata from file instance
-        // let mut file = sftp.open(&full_path).await?;
+        // Copies the full file content to memory
+        let contents = sftp_session.read(&full_path).await?;
+
+        debug!("Sftp content read and size is {}", contents.len());
+
+        // let md = sftp_session.metadata(&full_path).await?; // Callling metadata makes another server call
+
+        // // Copied from sftp.read implementation so that we can get metadata from file instance
+        // // let mut file = sftp.open(&full_path).await?;
+        // // let mut contents = Vec::new();
+        // // tokio::io::AsyncReadExt::read_to_end(&mut file, &mut contents).await?;
+        // // let md = file.metadata().await?;
+
+        // let accessed = md
+        //     .accessed()
+        //     .map_or_else(|_| None, |t| Some(system_time_to_seconds(t)));
+        // let modified = md
+        //     .modified()
+        //     .map_or_else(|_| None, |t| Some(system_time_to_seconds(t)));
+
+        // let rmd = RemoteFileMetadata {
+        //     connection_id: self.connection_id,
+        //     storage_type: RemoteStorageType::Sftp,
+        //     full_file_name: full_path,
+        //     size: md.size,
+        //     accessed,
+        //     modified,
+        //     created: None,
+        // };
+
+        let rmd = self
+            .create_remote_file_metadata(sftp_session, &full_path)
+            .await?;
+
+        Ok(RemoteReadData {
+            data: contents,
+            meta: rmd,
+        })
+    }
+
+    async fn write_file(&self, file_path: &str, data: Arc<Vec<u8>>) -> Result<RemoteFileMetadata> {
+        let sftp_session = self.create_sftp_session().await?;
+
+        debug!("Sftp going to write file path {} ", &file_path);
+
+        sftp_session.write(file_path, data.as_slice()).await?;
+
+        let md = self
+            .create_remote_file_metadata(sftp_session, file_path)
+            .await?;
+
+        Ok(md)
+    }
+
+    async fn create_remote_file_metadata(
+        &self,
+        sftp_session: SftpSession,
+        file_path: &str,
+    ) -> Result<RemoteFileMetadata> {
+        let md = sftp_session.metadata(file_path).await?; // Callling metadata makes another server call
+
+        // Copied from sftp_session.read implementation so that we can get metadata from file instance
+        // let mut file = sftp_session.open(&full_path).await?;
         // let mut contents = Vec::new();
         // tokio::io::AsyncReadExt::read_to_end(&mut file, &mut contents).await?;
         // let md = file.metadata().await?;
@@ -459,23 +531,24 @@ impl SftpConnection {
         let rmd = RemoteFileMetadata {
             connection_id: self.connection_id,
             storage_type: RemoteStorageType::Sftp,
-            full_file_name: full_path,
+            full_file_name: file_path.to_string(),
             size: md.size,
             accessed,
             modified,
             created: None,
         };
 
-        Ok(RemoteReadData {
-            data: contents,
-            meta: rmd,
-        })
+        Ok(rmd)
     }
 
-    async fn metadata(&self, parent_dir: &str, file_name: &str) -> Result<RemoteFileMetadata> {
-        let sftp = self.create_sftp_session().await?;
+    async fn _file_metadata(
+        &self,
+        parent_dir: &str,
+        file_name: &str,
+    ) -> Result<RemoteFileMetadata> {
+        let sftp_session = self.create_sftp_session().await?;
         let full_path = [parent_dir, file_name].join("/");
-        let md = sftp.metadata(&full_path).await?; // Callling metadata makes another server call
+        let md = sftp_session.metadata(&full_path).await?; // Callling metadata makes another server call
 
         // Copied from sftp.read implementation so that we can get metadata from file instance
         // let mut file = sftp.open(&full_path).await?;
@@ -548,7 +621,9 @@ impl SftpConnection {
     // pub(crate) async fn send_list_sub_dir(tx: oneshot::Sender<Result<ServerDirEntry>>, connection_id: String, parent_dir: String, sub_dir: String)
     reply_by_sftp_async_fn!(send_list_sub_dir (parent_dir:String,sub_dir:String), list_sub_dir (&parent_dir,&sub_dir), ServerDirEntry);
 
-    //reply_by_sftp_async_fn!(send_read(parent_dir:String,file_name:String),read(&parent_dir,&file_name),RemoteReadData);
+    reply_by_sftp_async_fn!(send_read(parent_dir:String,file_name:String),read(&parent_dir,&file_name),RemoteReadData);
+
+    reply_by_sftp_async_fn!(send_write_file(file_path:String,data:Arc<Vec<u8>>), write_file(&file_path, data), RemoteFileMetadata);
 
     //reply_by_sftp_async_fn!(send_metadata (parent_dir:String,fiile_name:String), metadata (&parent_dir,&fiile_name), RemoteFileMetadata);
 }
