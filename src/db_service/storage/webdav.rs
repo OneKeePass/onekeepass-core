@@ -125,6 +125,16 @@ impl RemoteStorageOperation for Webdav {
         )?
     }
 
+    fn file_metadata(&self) -> Result<RemoteFileMetadata> {
+        let (connection_id, file_path) = parse_operation_fields_if!(self, connection_id, file_path);
+        let file_path = file_path.to_string();
+        let c_id = connection_id.clone();
+        receive_from_async_fn!(
+            WebdavConnection::send_file_metadta(c_id, file_path),
+            RemoteFileMetadata
+        )?
+    }
+
     fn remote_storage_configs(&self) -> Result<RemoteStorageTypeConfigs> {
         Ok(ConnectionConfigs::remote_storage_configs(
             RemoteStorageType::Webdav,
@@ -386,19 +396,20 @@ impl WebdavConnection {
 
     async fn read(&self, parent_dir: &str, file_name: &str) -> Result<RemoteReadData> {
         // In webdav, this is a relative path. E.g /parent_dir/file_name
-        let full_path = [parent_dir, file_name].join("/");
+        let file_path = [parent_dir, file_name].join("/");
 
         debug!(
             "Webdav call is  going to read using file path {} ",
-            &full_path
+            &file_path
         );
 
-        let response = self.client.get(&full_path).await?;
+        let response = self.client.get(&file_path).await?;
         // Copies the full file content to memory
         let contents: Vec<u8> = response.bytes().await?.into();
 
         debug!("Webdav content read and size is {}", contents.len());
 
+        /* 
         // Need to use Depth::Number(0) to get the file info as Depth of "0" applies only to the resource
         let (size, modified) = if let Some(list_entity) = self
             .client
@@ -438,10 +449,22 @@ impl WebdavConnection {
             created: None,
         };
 
+        */
+
+        let rmd = self.file_metadata(&file_path).await?;
+
         Ok(RemoteReadData {
             data: contents,
             meta: rmd,
         })
+    }
+
+    async fn file_metadata(
+        &self,
+        file_path: &str,
+    ) -> Result<RemoteFileMetadata> { 
+
+        self.create_remote_file_metadata(file_path).await
     }
 
     async fn write_file(&self, file_path: &str, data: Arc<Vec<u8>>) -> Result<RemoteFileMetadata> {
@@ -477,13 +500,15 @@ impl WebdavConnection {
 
         // Should we make full file name by combining the relative path 'full_path' with host str of self.client.host
         // see the implementation of self.client.start_request where the combined url is formed
-        let url = Url::parse(&format!(
-            "{}/{}",
-            &self.client.host.trim_end_matches("/"),
-            file_path.trim_start_matches("/") // removes the starting one or more "/"
-        ))?;
+        // let url = Url::parse(&format!(
+        //     "{}/{}",
+        //     &self.client.host.trim_end_matches("/"),
+        //     file_path.trim_start_matches("/") // removes the starting one or more "/"
+        // ))?;
 
-        let full_file_name = url.as_str().to_string();
+        // let full_file_name = url.as_str().to_string();
+
+        let full_file_name = file_path.to_string();
 
         let rmd = RemoteFileMetadata {
             connection_id: Uuid::default(),
@@ -539,6 +564,8 @@ impl WebdavConnection {
     reply_by_webdav_async_fn!(send_read(parent_dir:String,file_name:String),read(&parent_dir,&file_name),RemoteReadData);
 
     reply_by_webdav_async_fn!(send_write_file(file_path:String,data:Arc<Vec<u8>>), write_file(&file_path, data), RemoteFileMetadata);
+
+    reply_by_webdav_async_fn!(send_file_metadta(file_path:String), file_metadata(&file_path), RemoteFileMetadata);
 }
 
 /*

@@ -27,6 +27,7 @@ pub trait RemoteStorageOperation {
 
     fn read(&self) -> Result<RemoteReadData>;
     fn write_file(&self,data:Arc<Vec<u8>>) -> Result<RemoteFileMetadata>;
+    fn file_metadata (&self) -> Result<RemoteFileMetadata>;
 
     fn remote_storage_configs(&self) -> Result<RemoteStorageTypeConfigs>;
     fn update_config(&self) -> Result<()>;
@@ -35,6 +36,7 @@ pub trait RemoteStorageOperation {
     fn file_name(&self) -> Option<&str>;
 
     fn file_path(&self) -> Option<&str>;
+
 }
 
 // Sftp inside the enum variant 'Sftp(Sftp)' is the struct that implements the trait 'RemoteStorageOperation'

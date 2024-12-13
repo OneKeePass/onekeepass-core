@@ -153,6 +153,16 @@ impl RemoteStorageOperation for Sftp {
         )?
     }
 
+    fn file_metadata(&self) -> Result<RemoteFileMetadata> {
+        let (connection_id, file_path) = parse_operation_fields_if!(self, connection_id, file_path);
+        let file_path = file_path.to_string();
+        let c_id = connection_id.clone();
+        receive_from_async_fn!(
+            SftpConnection::send_file_metadta(c_id, file_path),
+            RemoteFileMetadata
+        )?
+    }
+
     fn remote_storage_configs(&self) -> Result<RemoteStorageTypeConfigs> {
         Ok(ConnectionConfigs::remote_storage_configs(
             RemoteStorageType::Sftp,
@@ -541,38 +551,12 @@ impl SftpConnection {
         Ok(rmd)
     }
 
-    async fn _file_metadata(
+    async fn file_metadata(
         &self,
-        parent_dir: &str,
-        file_name: &str,
+        file_path:&str,
     ) -> Result<RemoteFileMetadata> {
         let sftp_session = self.create_sftp_session().await?;
-        let full_path = [parent_dir, file_name].join("/");
-        let md = sftp_session.metadata(&full_path).await?; // Callling metadata makes another server call
-
-        // Copied from sftp.read implementation so that we can get metadata from file instance
-        // let mut file = sftp.open(&full_path).await?;
-        // let mut contents = Vec::new();
-        // tokio::io::AsyncReadExt::read_to_end(&mut file, &mut contents).await?;
-        // let md = file.metadata().await?;
-
-        let accessed = md
-            .accessed()
-            .map_or_else(|_| None, |t| Some(system_time_to_seconds(t)));
-        let modified = md
-            .modified()
-            .map_or_else(|_| None, |t| Some(system_time_to_seconds(t)));
-
-        let rmd = RemoteFileMetadata {
-            connection_id: self.connection_id,
-            storage_type: RemoteStorageType::Sftp,
-            full_file_name: full_path,
-            size: md.size,
-            accessed,
-            modified,
-            created: None,
-        };
-        Ok(rmd)
+        self.create_remote_file_metadata(sftp_session, file_path).await
     }
 
     // All instance level send_* calls
@@ -624,6 +608,8 @@ impl SftpConnection {
     reply_by_sftp_async_fn!(send_read(parent_dir:String,file_name:String),read(&parent_dir,&file_name),RemoteReadData);
 
     reply_by_sftp_async_fn!(send_write_file(file_path:String,data:Arc<Vec<u8>>), write_file(&file_path, data), RemoteFileMetadata);
+
+    reply_by_sftp_async_fn!(send_file_metadta(file_path:String), file_metadata(&file_path), RemoteFileMetadata);
 
     //reply_by_sftp_async_fn!(send_metadata (parent_dir:String,fiile_name:String), metadata (&parent_dir,&fiile_name), RemoteFileMetadata);
 }

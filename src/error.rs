@@ -160,10 +160,18 @@ pub enum Error {
     #[error("ReqwestDavError: {0}")]
     ReqwestDavError(#[from] reqwest_dav::types::Error),
 
+    #[error("NoRemoteStorageConnection")]
+    NoRemoteStorageConnection,
+
     // See DataError where we can use str
     // UnexpectedError is used where we can use format!
     #[error("{0}")]
     UnexpectedError(String),
+
+    // Used in a situation where we can't provide any solution for this kind of errors
+    #[error("UnRecoverableError: {0}")]
+    UnRecoverableError(String),
+
 }
 
 // Tauri main converts App error such as above as "hooks::InvokeError" using serde call and then returns to to the UI

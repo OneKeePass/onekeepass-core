@@ -323,7 +323,16 @@ pub fn close_kdbx(db_key: &str) -> Result<()> {
 // Mobile
 // Called to rename the db key used and the database_file_name as we know
 // the full db file name and db_key are used interchangeably
+
+// See db_service::ios::save_as_kdbx for desktop version where db_key is the 
+// actual file to which content is written. Here we are channging map key
+
+//TODO: Combine these two
+
 pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
+    // Need to copy the encrytion key for the new name from the existing one
+    KeyStoreOperation::copy_key(old_db_key, new_db_key)?;
+
     let kdbx_loaded = call_kdbx_context_mut_action(old_db_key, |ctx: &mut KdbxContext| {
         ctx.kdbx_file.set_database_file_name(new_db_key);
 
@@ -335,10 +344,14 @@ pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
         })
     })?;
 
+    // As the db_file_name is changed, we need to reset the db key to this new name
     let mut store = main_store().lock().unwrap();
     if let Some(v) = store.remove(old_db_key) {
         store.insert(new_db_key.into(), v);
     }
+
+    // Remove the old encryption key for the old db_key
+    KeyStoreOperation::delete_key(old_db_key)?;
 
     Ok(kdbx_loaded)
 }
