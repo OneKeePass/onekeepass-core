@@ -43,8 +43,21 @@ pub enum Error {
 
     #[error("Header corrupted")] //#[error("Header Hash Check Failed")]
     HeaderHashCheckFailed,
+
+    #[cfg(any(target_os = "ios",target_os = "android"))]
+    #[error("InvalidCredentials: Invalid credentials were provided, please try again")]
+    HeaderHmacHashCheckFailed,
+
+    #[cfg(any(target_os = "macos",target_os = "windows",target_os = "linux"))]
     #[error("Invalid credentials were provided, please try again")]
     HeaderHmacHashCheckFailed,
+
+    // #[cfg(any(target_os = "ios",target_os = "android"))] 
+    // Using cfg will only work when this error variant is used behind ios and android target
+    // For now, we cannot use the cfg as used in the db_service_ffi crate ( expects macos target?)
+    #[error("BiometricCredentialsAuthenticationFailed")]
+    BiometricCredentialsAuthenticationFailed,
+
     #[error("BlockHashCheckFailed")]
     BlockHashCheckFailed,
 

@@ -19,7 +19,9 @@ pub struct ParsedDbKey<'a> {
     pub rs_type_name: &'a str,
     pub connection_id: &'a str,
     pub file_path_part: &'a str,
+    pub file_name: &'a str,
 }
+
 
 #[derive(Serialize, Deserialize)]
 pub struct ServerDirEntry {

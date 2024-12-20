@@ -696,13 +696,13 @@ mod tests {
     fn verify_system_time_secs() {
         use std::time::SystemTime;
         let s1 = SystemTime::now();
-        //println!("S1 is  {:?}",&s1);
+        println!("S1 is  {:?}",&s1);
 
         let secs = system_time_to_seconds(s1);
-        //println!("Secs {}",&secs);
+        println!("Secs {}",&secs);
 
         let s2 = super::seconds_to_system_time(secs);
-        //println!("S2 is  {:?}",&s2);
+        println!("S2 is  {:?}",&s2);
 
         assert_eq!(
             s1.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
