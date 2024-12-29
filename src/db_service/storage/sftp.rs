@@ -153,6 +153,16 @@ impl RemoteStorageOperation for Sftp {
         )?
     }
 
+    fn create_file(&self,data:Arc<Vec<u8>>) -> Result<RemoteFileMetadata> {
+        let (connection_id, file_path) = parse_operation_fields_if!(self, connection_id, file_path);
+        let file_path = file_path.to_string();
+        let c_id = connection_id.clone();
+        receive_from_async_fn!(
+            SftpConnection::send_create_file(c_id, file_path, data),
+            RemoteFileMetadata
+        )?
+    }
+
     fn file_metadata(&self) -> Result<RemoteFileMetadata> {
         let (connection_id, file_path) = parse_operation_fields_if!(self, connection_id, file_path);
         let file_path = file_path.to_string();
@@ -195,6 +205,8 @@ impl RemoteStorageOperation for Sftp {
     fn file_path(&self) -> Option<&str> {
         self.file_path.as_ref().map(|x| x.as_str())
     }
+
+    
 }
 
 //  Exposed functions
@@ -518,6 +530,25 @@ impl SftpConnection {
         Ok(md)
     }
 
+    async fn create_file(&self, file_path: &str, data: Arc<Vec<u8>>) -> Result<RemoteFileMetadata> {
+        let sftp_session = self.create_sftp_session().await?;
+
+        // debug!("Sftp going to create file path {} ", &file_path);
+        
+        // First we need to create a new file on the sftp storage before writing
+        sftp_session.create(file_path).await?;
+
+        // debug!("Sftp going to write file path {} ", &file_path);
+
+        sftp_session.write(file_path, data.as_slice()).await?;
+
+        let md = self
+            .create_remote_file_metadata(sftp_session, file_path)
+            .await?;
+
+        Ok(md)
+    }
+
     async fn create_remote_file_metadata(
         &self,
         sftp_session: SftpSession,
@@ -608,6 +639,8 @@ impl SftpConnection {
     reply_by_sftp_async_fn!(send_read(parent_dir:String,file_name:String),read(&parent_dir,&file_name),RemoteReadData);
 
     reply_by_sftp_async_fn!(send_write_file(file_path:String,data:Arc<Vec<u8>>), write_file(&file_path, data), RemoteFileMetadata);
+
+    reply_by_sftp_async_fn!(send_create_file(file_path:String,data:Arc<Vec<u8>>), create_file(&file_path, data), RemoteFileMetadata);
 
     reply_by_sftp_async_fn!(send_file_metadta(file_path:String), file_metadata(&file_path), RemoteFileMetadata);
 

@@ -27,8 +27,10 @@ pub trait RemoteStorageOperation {
 
     fn read(&self) -> Result<RemoteReadData>;
     fn write_file(&self,data:Arc<Vec<u8>>) -> Result<RemoteFileMetadata>;
+    fn create_file(&self,data:Arc<Vec<u8>>) -> Result<RemoteFileMetadata>;
     fn file_metadata (&self) -> Result<RemoteFileMetadata>;
 
+    // Gets a list of connection configuartaions for Sftp or Webdav
     fn remote_storage_configs(&self) -> Result<RemoteStorageTypeConfigs>;
     fn update_config(&self) -> Result<()>;
     fn delete_config(&self) -> Result<()> ;

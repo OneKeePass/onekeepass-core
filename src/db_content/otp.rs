@@ -4,9 +4,10 @@ use std::{
 };
 
 use crate::{
-    constants::OTP_URL_PREFIX, crypto::{
-        hmac_sha1_from_slice, hmac_sha256_from_slice, hmac_sha512_from_slice,
-    }, error::{Error, Result}, util::strip_spaces
+    constants::OTP_URL_PREFIX,
+    crypto::{hmac_sha1_from_slice, hmac_sha256_from_slice, hmac_sha512_from_slice},
+    error::{Error, Result},
+    util::strip_spaces,
 };
 
 use data_encoding::BASE32_NOPAD;
@@ -236,21 +237,36 @@ impl OtpData {
                 }
                 "digits" => {
                     digits = value.parse::<usize>().map_err(|_| {
-                        Error::OtpUrlParseError(format!("Invalid digits value {} passed in the url", value))
+                        Error::OtpUrlParseError(format!(
+                            "Invalid digits value {} passed in the url",
+                            value
+                        ))
                     })?;
                     verify_digits!(digits);
                 }
                 "period" => {
                     period = value.parse::<u64>().map_err(|_| {
-                        Error::OtpUrlParseError(format!("Invalid period value {} passed in the url", value))
+                        Error::OtpUrlParseError(format!(
+                            "Invalid period value {} passed in the url",
+                            value
+                        ))
                     })?;
                     verify_period!(period);
                 }
                 "secret" => {
-                    //debug!("Secret is {}", value.as_ref());
-                    let s = value.as_ref();
+                    // log::debug!("Secret is {}", value.as_ref());
+
+                    // Ensure that we have secret in uppercase
+                    // Otherwise BASE32_NOPAD.decode will fail
+                    let s = value.to_uppercase();
+
+                    // log::debug!("Secret after uppercase call is {}", &s);
+
                     secret = BASE32_NOPAD.decode(s.as_bytes()).map_err(|e| {
-                        Error::OtpUrlParseError(format!("Invalid secret code. Decoding of '{}' in the url failed with error {}", s, e))
+                        Error::OtpUrlParseError(format!(
+                            "Invalid secret code. Decoding of '{}' in the url failed with error {}",
+                            s, e
+                        ))
                     })?;
                 }
 
@@ -640,6 +656,34 @@ mod tests {
 
         assert!(n.is_ok());
         println!("Generated Token is {}", n.unwrap());
+    }
+
+    #[test]
+    fn verify_url_with_lowercase_secret() {
+        init_test_logging();
+        // secret is in lowercase
+        let url = "otpauth://totp/Google%3Ajeyms2002%40gmail.com?secret=i26ce7wthhpa2oqvoo6jb4mmy2uqxgb3&issuer=Google";
+        let r = OtpData::from_url(url);
+        if r.is_err() {
+            println!("Error is {:?}", r);
+        }
+        assert!(r.is_ok());
+
+        let otp = r.unwrap();
+        // println!("Parsed otp data {:?} and url {}",&otp, &otp.get_url());
+
+        let n = otp.generate_current();
+
+        assert!(n.is_ok());
+        println!("Generated Token is {}", n.unwrap());
+
+        // Same url with uppercase
+        let url = "otpauth://totp/Google:jeyms2002@gmail.com?secret=I26CE7WTHHPA2OQVOO6JB4MMY2UQXGB3&issuer=Google";
+        let r = OtpData::from_url(url);
+        if r.is_err() {
+            println!("Error is {:?}", r);
+        }
+        assert!(r.is_ok());
     }
 
     #[test]

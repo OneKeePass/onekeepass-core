@@ -125,6 +125,10 @@ impl RemoteStorageOperation for Webdav {
         )?
     }
 
+    fn create_file(&self,data:Arc<Vec<u8>>) -> Result<RemoteFileMetadata> {
+        self.write_file(data)
+    }
+
     fn file_metadata(&self) -> Result<RemoteFileMetadata> {
         let (connection_id, file_path) = parse_operation_fields_if!(self, connection_id, file_path);
         let file_path = file_path.to_string();
