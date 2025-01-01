@@ -155,6 +155,17 @@ pub enum Error {
     #[error("DuplicateKeyFileName: {0}")]
     DuplicateKeyFileName(String),
 
+    // See DataError where we can use str
+    // UnexpectedError is used where we can use format!
+    #[error("{0}")]
+    UnexpectedError(String),
+
+    // Used in a situation where we can't provide any solution for this kind of errors
+    #[error("UnRecoverableError: {0}")]
+    UnRecoverableError(String),
+
+    ////  Remote storage specifc errors
+    
     #[error("RusshError: {0}")]
     RusshError(#[from] russh::Error),
 
@@ -176,14 +187,10 @@ pub enum Error {
     #[error("NoRemoteStorageConnection")]
     NoRemoteStorageConnection,
 
-    // See DataError where we can use str
-    // UnexpectedError is used where we can use format!
-    #[error("{0}")]
-    UnexpectedError(String),
-
-    // Used in a situation where we can't provide any solution for this kind of errors
-    #[error("UnRecoverableError: {0}")]
-    UnRecoverableError(String),
+    // TODO: We may plan to use a struct RemoteStorageCallErrorEx {message,source, } See https://docs.rs/thiserror/latest/thiserror/ example
+    // instead of RemoteStorageCallError(String)
+    #[error("RemoteStorageCallError: {0}")]
+    RemoteStorageCallError(String),
 
 }
 

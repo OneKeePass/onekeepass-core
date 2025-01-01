@@ -153,7 +153,7 @@ impl RemoteStorageOperation for Sftp {
         )?
     }
 
-    fn create_file(&self,data:Arc<Vec<u8>>) -> Result<RemoteFileMetadata> {
+    fn create_file(&self, data: Arc<Vec<u8>>) -> Result<RemoteFileMetadata> {
         let (connection_id, file_path) = parse_operation_fields_if!(self, connection_id, file_path);
         let file_path = file_path.to_string();
         let c_id = connection_id.clone();
@@ -197,16 +197,14 @@ impl RemoteStorageOperation for Sftp {
 
         r
     }
-    
+
     fn file_name(&self) -> Option<&str> {
         self.file_name.as_ref().map(|x| x.as_str())
     }
-    
+
     fn file_path(&self) -> Option<&str> {
         self.file_path.as_ref().map(|x| x.as_str())
     }
-
-    
 }
 
 //  Exposed functions
@@ -219,7 +217,10 @@ struct Client;
 // See https://docs.rs/async-trait/latest/async_trait/
 #[async_trait]
 impl client::Handler for Client {
-    type Error = Error;
+    // our error::Error can also be used
+    // Also in the example anyhow::Error was used
+    // For now we are using russh::Error directly and used in 'convert_error' fn
+    type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
@@ -396,27 +397,46 @@ impl SftpConnection {
             ..
         } = connection_info;
 
+        debug!("Sftp::connect Going to russh connect...");
+
         let config = russh::client::Config::default();
         let sh = Client {};
         let mut client_handle =
-            russh::client::connect(Arc::new(config), (host.clone(), port.clone()), sh).await?;
+            russh::client::connect(Arc::new(config), (host.clone(), port.clone()), sh)
+                .await
+                .map_err(|e| convert_error(e))?;
+
+        debug!("Sftp::connect russh connected");
 
         let session_authenticated = if let Some(full_file_path) = private_key_full_file_name {
             // let full_file_path = CallbackServiceProvider::common_callback_service().sftp_private_key_file_full_path(file_name);
 
-            debug!("Private key full path is {:?}", &full_file_path);
+            debug!(
+                "Sftp::connect Private key full path is {:?}",
+                &full_file_path
+            );
 
             // Note load_secret_key calls the fn decode_secret_key(&secret, password)
             // where secret is a String that has the text of the private key
-            let key = load_secret_key(full_file_path, password.as_ref().map(|x| x.as_str()))?;
+            let key = load_secret_key(full_file_path, password.as_ref().map(|x| x.as_str()))
+                .map_err(convert_russh_keys_error)?;
             client_handle
                 .authenticate_publickey(user_name, Arc::new(key))
-                .await?
+                .await
+                .map_err(convert_error)?
         } else if let Some(pwd) = password {
-            client_handle.authenticate_password(user_name, pwd).await?
+            client_handle
+                .authenticate_password(user_name, pwd)
+                .await
+                .map_err(convert_error)?
         } else {
             false
         };
+
+        debug!(
+            "Sftp::connect session_authenticated is {}",
+            &session_authenticated
+        );
 
         if session_authenticated {
             Ok(SftpConnection {
@@ -534,7 +554,7 @@ impl SftpConnection {
         let sftp_session = self.create_sftp_session().await?;
 
         // debug!("Sftp going to create file path {} ", &file_path);
-        
+
         // First we need to create a new file on the sftp storage before writing
         sftp_session.create(file_path).await?;
 
@@ -582,12 +602,10 @@ impl SftpConnection {
         Ok(rmd)
     }
 
-    async fn file_metadata(
-        &self,
-        file_path:&str,
-    ) -> Result<RemoteFileMetadata> {
+    async fn file_metadata(&self, file_path: &str) -> Result<RemoteFileMetadata> {
         let sftp_session = self.create_sftp_session().await?;
-        self.create_remote_file_metadata(sftp_session, file_path).await
+        self.create_remote_file_metadata(sftp_session, file_path)
+            .await
     }
 
     // All instance level send_* calls
@@ -647,139 +665,65 @@ impl SftpConnection {
     //reply_by_sftp_async_fn!(send_metadata (parent_dir:String,fiile_name:String), metadata (&parent_dir,&fiile_name), RemoteFileMetadata);
 }
 
-/*
-
-async fn connect_by_id(connection_id: &str) -> Result<RemoteStorageTypeConfig> {
-        let mut rc:RemoteStorageTypeConfig;
-        {
-            let connections = sftp_connections_store().lock().await;
-
-            // if let Some(c) = connections.get(connection_id) {
-            //     if !c.client_handle.is_closed() {
-            //         debug!("SFTP connection is already done and no new connection is created");
-            //         return Ok(());
-            //     }
-            // }
-
-            // Gets the connection config and use that to connect the sftp server if required  and stores
-            // that connection for the future use
-
-            let u_id = uuid::Uuid::parse_str(connection_id)?;
-
-            rc = ConnectionConfigs::find_remote_storage_config(&u_id, RemoteStorageType::Sftp)
-                .ok_or_else(|| {
-                    Error::DataError(
-                        "Previously saved SFTP Connection config is not found in configs",
-                    )
-                })?;
-
-            if let Some(c) = connections.get(connection_id) {
-                if !c.client_handle.is_closed() {
-                    debug!("SFTP connection is already done and no new connection is created");
-                    return Ok(rc);
-                }
-            }
+fn convert_error(inner_error: russh::Error) -> error::Error {
+    match inner_error {
+        russh::Error::ConnectionTimeout => {
+            debug!("russh::Error::ConnectionTimeout  happened ");
+            error::Error::RemoteStorageCallError(format!("Connection timedout"))
         }
 
-        {
-            debug!("Previous connection is not available and will make new connection");
+        russh::Error::Keys(e) => convert_russh_keys_error(e),
 
-            let RemoteStorageTypeConfig::Sftp(connection_info) = rc.clone() else {
-                // Should not happen
-                return Err(Error::DataError(
-                    "SFTP Connection config is expected and not returned from configs",
-                ));
-            };
+        x => {
+            // Connection refused (os error 111) when port is not correct
 
-            let sftp_connection = Self::connect(&connection_info).await?;
+            let s = format!("{}", x);
+            debug!("Formatted s is {}", s);
+            if s.contains("Connection refused") {
+                error::Error::RemoteStorageCallError(format!("Valid host and port are required"))
+            } else {
+                debug!("Unhandled russh::Error {} ", x);
+                error::Error::RemoteStorageCallError(format!("{}", x))
+            }
 
-            // Store it for future reference
-            let mut connections = sftp_connections_store().lock().await;
-            connections.insert(connection_id.to_string(), sftp_connection);
-
-            debug!("Created connection is stored in memory");
-
-            Ok(rc)
+            //debug!("Unhandled russh::Error {} ", x);
+            //error::Error::RemoteStorageCallError(format!("{}", x))
         }
     }
+}
 
+fn convert_russh_keys_error(inner_error: russh_keys::Error) -> error::Error {
+    match inner_error {
+        russh_keys::Error::SshKey(x) => {
+            debug!("russh_keys::Error::SshKey is {}", x);
 
-async fn connect_by_id(connection_id:&str) -> Result<()> {
-        let connections = sftp_connections_store().lock().await;
+            // Typically we get the error text as "cryptographic error"
+            error::Error::RemoteStorageCallError(format!(
+                "Valid private key file and a valid password for the key file are required"
+            ))
+        }
 
-        if let Some(c) = connections.get(connection_id) {
-            if !c.client_handle.is_closed() {
+        russh_keys::Error::SshEncoding(e) => {
+            debug!("Unhandled russh_keys::Error::SshEncoding {} ", e);
+            error::Error::RemoteStorageCallError(format!("Valid private key file is requied"))
+        }
 
+        x => {
+            // TDOO: 
+            // "stream did not contain valid UTF-8" when invalid file is used for private key
+
+            // Connection refused (os error 111) when port or host is not correct
+            debug!("Unhandled russh_keys::Error {} ", x);
+            let s = format!("{}", x);
+            debug!("Formatted s is {}", s);
+            if s.contains("Connection refused") {
+                error::Error::RemoteStorageCallError(format!("Valid host and port are required"))
+            } else if s.contains("stream did not contain valid") {
+                error::Error::RemoteStorageCallError(format!("Valid private key file is requied"))
+            } 
+            else {
+                error::Error::RemoteStorageCallError(format!("{}. Please ensure a valid private key file is used", x))
             }
         }
-        Ok(())
     }
-
-pub fn connect_and_retrieve_root_dir(
-    connection_info: SftpConnectionConfig,
-) -> Result<ConnectStatus> {
-    // IMPORTANT Remove this
-    ConnectionConfigs::test_read_config();
-
-    // The macro creates a block where we call async fn in a spawn thread and wait for the result
-    // Return the result on receving
-    receive_from_async_fn!(
-        SftpConnection::send_connect_and_retrieve_root_dir(connection_info),
-        ConnectStatus
-    )?
 }
-
-pub fn list_sub_dir(
-    connection_id: &str,
-    parent_dir: &str,
-    sub_dir: &str,
-) -> Result<ServerDirEntry> {
-    let (cn, pd, sd) = string_tuple3(&[connection_id, parent_dir, sub_dir]);
-    receive_from_async_fn!(
-        SftpConnection::send_list_sub_dir(cn, pd, sd),
-        ServerDirEntry
-    )?
-}
-
-pub fn read(connection_id: &str, parent_dir: &str, file_name: &str) -> Result<RemoteReadData> {
-    let (cn, pd, file) = string_tuple3(&[connection_id, parent_dir, file_name]);
-    receive_from_async_fn!(SftpConnection::send_read(cn, pd, file), RemoteReadData)?
-}
-
-pub fn metadata(
-    connection_id: &str,
-    parent_dir: &str,
-    file_name: &str,
-) -> Result<RemoteFileMetadata> {
-    let (cn, pd, file) = string_tuple3(&[connection_id, parent_dir, file_name]);
-    receive_from_async_fn!(
-        SftpConnection::send_metadata(cn, pd, file),
-        RemoteFileMetadata
-    )?
-}
-
-pub fn write() {}
-// let c = self
-        //     .connection_info
-        //     .as_ref()
-        //     .ok_or("connection_info cannot be nil")?
-        //     .clone();
-
-// let (Some(connection_id), Some(parent_dir), Some(sub_dir)) = (
-        //     self.connection_id.as_ref(),
-        //     self.parent_dir.as_ref(),
-        //     self.sub_dir.as_ref(),
-        // ) else {
-        //     return Err(error::Error::DataError("Required fields are not found"));
-        // };
-macro_rules! parse_operation_fields {
-    ($self:expr,$($field_vals:tt)*) => {
-        let ( $(Some($field_vals)),* ) = ($($self.$field_vals.as_ref()),*) else {
-            return Err(error::Error::DataError("Required fields are not found"))
-        };
-        Ok(($($field_vals)*,))
-
-    };
-}
-
-*/

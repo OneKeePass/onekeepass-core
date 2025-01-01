@@ -115,8 +115,8 @@ impl RemoteStorageOperation for Webdav {
         receive_from_async_fn!(WebdavConnection::send_read(cn, pd, name), RemoteReadData)?
     }
 
-    fn write_file(&self,data: Arc<Vec<u8>>) -> Result<RemoteFileMetadata> {
-        let (connection_id,file_path) = parse_operation_fields_if!(self, connection_id,file_path);
+    fn write_file(&self, data: Arc<Vec<u8>>) -> Result<RemoteFileMetadata> {
+        let (connection_id, file_path) = parse_operation_fields_if!(self, connection_id, file_path);
         let file_path = file_path.to_string();
         let c_id = connection_id.clone();
         receive_from_async_fn!(
@@ -125,7 +125,7 @@ impl RemoteStorageOperation for Webdav {
         )?
     }
 
-    fn create_file(&self,data:Arc<Vec<u8>>) -> Result<RemoteFileMetadata> {
+    fn create_file(&self, data: Arc<Vec<u8>>) -> Result<RemoteFileMetadata> {
         self.write_file(data)
     }
 
@@ -314,7 +314,11 @@ impl WebdavConnection {
 
         debug!("Listing root dir content to verify the client config info");
 
-        let _dir_info = webdav_connection.client.list(".", Depth::Number(0)).await?;
+        let _r = webdav_connection
+            .client
+            .list(".", Depth::Number(0))
+            .await
+            .map_err(|e| convert_error(e))?;
 
         debug!("Connection verification is done");
 
@@ -413,7 +417,7 @@ impl WebdavConnection {
 
         debug!("Webdav content read and size is {}", contents.len());
 
-        /* 
+        /*
         // Need to use Depth::Number(0) to get the file info as Depth of "0" applies only to the resource
         let (size, modified) = if let Some(list_entity) = self
             .client
@@ -463,11 +467,7 @@ impl WebdavConnection {
         })
     }
 
-    async fn file_metadata(
-        &self,
-        file_path: &str,
-    ) -> Result<RemoteFileMetadata> { 
-
+    async fn file_metadata(&self, file_path: &str) -> Result<RemoteFileMetadata> {
         self.create_remote_file_metadata(file_path).await
     }
 
@@ -572,163 +572,67 @@ impl WebdavConnection {
     reply_by_webdav_async_fn!(send_file_metadta(file_path:String), file_metadata(&file_path), RemoteFileMetadata);
 }
 
-/*
-
-pub(crate) async fn connect_and_retrieve_root_dir(
-        mut connection_info: WebdavConnectionConfig,
-    ) -> Result<ConnectStatus> {
-        connection_info.connection_id =
-            ConnectionConfigs::generate_config_id_on_check(connection_info.connection_id); // ConnectionConfigs::generate_config_id_on_check(connection_info);
-
-        let agent = reqwest_dav::re_exports::reqwest::ClientBuilder::new()
-            .danger_accept_invalid_certs(connection_info.allow_untrusted_cert)
-            .build()?;
-
-        info!("Agent is created...");
-
-        // build a client
-        let client = ClientBuilder::new()
-            .set_agent(agent)
-            .set_host(connection_info.root_url)
-            .set_auth(Auth::Basic(
-                connection_info.user_name,
-                connection_info.password,
-            ))
-            .build()?;
-
-        info!("Client is created...{:?}", &client);
-        let webdav_connection = WebdavConnection { client };
-
-        // Keep the start dir for the UI side to use for root dir listing with an existing connection
-        connection_info.start_dir = Some(".".to_string());
-
-        let dirs = webdav_connection.list_dir(".").await?;
-
-        let store_key = connection_info.connection_id.to_string();
-        // Store it for future reference
-        let mut connections = webdav_connections_store().lock().await;
-        info!("Inserting webdav connection for {}", &connection_info.name);
-        connections.insert(store_key, webdav_connection);
-
-        let conn_status = ConnectStatus {
-            connection_id: connection_info.connection_id,
-            dir_entries: Some(dirs),
-        };
-
-        Ok(conn_status)
-    }
-
-
-pub fn list_sub_dir(
-    connetion_name: &str,
-    parent_dir: &str,
-    sub_dir: &str,
-) -> Result<ServerDirEntry> {
-    let (cn, pd, sd) = (
-        connetion_name.to_string(),
-        parent_dir.to_string(),
-        sub_dir.to_string(),
-    );
-
-    receive_from_async_fn!(
-        WebdavConnection::send_list_sub_dir(cn, pd, sd),
-        ServerDirEntry
-    )?
-}
-
-pub fn read(connection_name: &str, parent_dir: &str, file_name: &str) -> Result<RemoteReadData> {
-    let (cn, pd, file) = string_tuple3(&[connection_name, parent_dir, file_name]);
-    receive_from_async_fn!(WebdavConnection::send_read(cn, pd, file), RemoteReadData)?
-}
-
-
-// Caller needs to pass the relative path as parent_dir
-    // e.g "." "/dav" "/dav/databases" etc and these parent dir should exists. Oterwiese an error with 404 code raised
-    async fn list_dir(&self, parent_dir: &str) -> Result<ServerDirEntry> {
-        let dir_info = self.client.list(parent_dir, Depth::Number(1)).await?;
-
-        let mut sub_dirs: Vec<String> = vec![];
-        let mut files: Vec<String> = vec![];
-        for e in dir_info {
-            match e {
-                ListEntity::File(f) => {
-                    info!("List entry is a file and meta is {:?} ", f);
-                    let n = f.href.split_once("/").map_or_else(|| ".", |v| v.1);
-                    files.push(n.to_string());
-                }
-                ListEntity::Folder(f) => {
-                    info!("List entry is a folder and meta is {:?} ", f);
-                    let n = f.href.split_once("/").map_or_else(|| ".", |v| v.1);
-                    sub_dirs.push(n.to_string());
-                }
+fn convert_error(inner_error: reqwest_dav::types::Error) -> error::Error {
+    
+    match inner_error {
+        
+        reqwest_dav::Error::Reqwest(e) => {
+            debug!("The r is {:?}", e);
+            debug!("The r is {}, {}", &e.is_timeout(), &e.is_connect());
+            if e.is_connect() {
+                error::Error::RemoteStorageCallError(format!("Invalid root url. Please provide a valid value for host and port"))
+            }
+            else if e.is_timeout() && e.is_connect() {
+                error::Error::RemoteStorageCallError(format!(
+                    "Invalid root url. Please provide a valid value for host and port"
+                ))
+            } else {
+                error::Error::RemoteStorageCallError(format!("{}", e))
             }
         }
 
-        Ok(ServerDirEntry {
-            parent_dir: parent_dir.into(),
-            sub_dirs,
-            files,
-        })
+        reqwest_dav::Error::Decode(e1) => {
+            debug!("reqwest_dav::Error::Decode error is {:?}",&e1);
+            match e1 {
+            
+                reqwest_dav::DecodeError::StatusMismatched(e) => {
+                    if e.response_code == 404 {
+                        // && e2.expected_code == 207
+                        debug!("The url is not found ..."); // resource is not found
+                        error::Error::RemoteStorageCallError(format!("Invalid resource path"))
+                    } else if e.response_code == 401 && e.expected_code == 207 {
+                        debug!("The user id or password is wrong and returning our error");
+                        error::Error::RemoteStorageCallError(format!(
+                            "Invalid User Name and/or Password. Please provide valid values"
+                        ))
+                    } else {
+                        error::Error::RemoteStorageCallError(format!("{:?}", e))
+                    }
+                }
+                e => error::Error::RemoteStorageCallError(format!("{:?}", e)),
+            }
+        }
+        
+        reqwest_dav::Error::ReqwestDecode(e1) => {
+            debug!("reqwest_dav::Error::ReqwestDecode error is {:?}",&e1);
+            match e1 {
+                reqwest_dav::ReqwestDecodeError::Url(e) => {
+                    let s = format!("{}", &e);
+                    let b = s.contains("invalid port number");
+                    debug!("Invalid root url {}", &e);
+                    if b {
+                        error::Error::RemoteStorageCallError(format!(
+                            "Invalid port information. Please provide a valid port"
+                        ))
+                    } else {
+                        error::Error::RemoteStorageCallError(format!("{}", e))
+                    }
+                }
+                e => error::Error::RemoteStorageCallError(format!("{:?}", e)),
+            }
+        },
+
+        e => error::Error::RemoteStorageCallError(format!("{:?}", e)),
     }
-
-
-pub fn connect_to_server(connection_info: WebdavConnectionConfig) -> Result<ServerDirEntry> {
-    let (tx, rx) = oneshot::channel::<Result<ServerDirEntry>>();
-    async_runtime().spawn(WebdavConnection::send_connect_to_server(
-        tx,
-        connection_info,
-    ));
-
-    let s = rx.blocking_recv().map_err(|e| {
-        error::Error::UnexpectedError(format!("In connect_to_server receive channel error {}", e))
-    })?;
-
-    s
 }
 
-pub fn list_dir(connetion_name: &str, parent_dir: &str) -> Result<ServerDirEntry> {
-    let (cn, pd) = (connetion_name.to_string(), parent_dir.to_string());
-    let (tx, rx) = oneshot::channel::<Result<ServerDirEntry>>();
-    async_runtime().spawn(WebdavConnection::send_list_dir(tx, cn, pd));
-    rx.blocking_recv().map_err(|e| {
-        error::Error::UnexpectedError(format!("In list_dir receive channel error {}", e))
-    })?
-}
-
-    async fn send_connect_to_server(
-        tx: oneshot::Sender<Result<ServerDirEntry>>,
-        connection_info: WebdavConnectionConfig,
-    ) {
-        let dir_listing = WebdavConnection::connect_to_server(connection_info).await;
-        let r = tx.send(dir_listing);
-        if let Err(_) = r {
-            log::error!("In connect_to_server send channel failed ");
-        }
-    }
-
-    pub(crate) async fn send_list_dir(
-        tx: oneshot::Sender<Result<ServerDirEntry>>,
-        connetion_name: String,
-        parent_dir: String,
-    ) {
-        let connections = webdav_connections_store().lock().await;
-
-        let r = if let Some(conn) = connections.get(&connetion_name) {
-            conn.list_dir(&parent_dir).await
-        } else {
-            Err(error::Error::UnexpectedError(format!(
-                "No previous connected webdav session is found for the name {}",
-                &connetion_name
-            )))
-        };
-
-        let r = tx.send(r);
-        if let Err(_) = r {
-            // Should not happen? But may happen if no receiver?
-            log::error!("The 'send_list_dir' fn send channel call failed ");
-        }
-    }
-
-
-
-*/
