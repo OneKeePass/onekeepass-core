@@ -97,6 +97,7 @@ impl KdbxLoaded {
 #[derive(Default, Serialize, Deserialize, Debug)]
 pub struct KdbxSaved {
     pub db_key: String,
+    // This is the database name from the meta data of kdbx content
     pub database_name: String,
 }
 

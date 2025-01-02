@@ -1,4 +1,5 @@
 use std::io;
+use reqwest_dav::re_exports::reqwest;
 use uuid;
 
 use regex::Error as ReError;
@@ -42,8 +43,21 @@ pub enum Error {
 
     #[error("Header corrupted")] //#[error("Header Hash Check Failed")]
     HeaderHashCheckFailed,
+
+    #[cfg(any(target_os = "ios",target_os = "android"))]
+    #[error("InvalidCredentials: Invalid credentials were provided, please try again")]
+    HeaderHmacHashCheckFailed,
+
+    #[cfg(any(target_os = "macos",target_os = "windows",target_os = "linux"))]
     #[error("Invalid credentials were provided, please try again")]
     HeaderHmacHashCheckFailed,
+
+    // #[cfg(any(target_os = "ios",target_os = "android"))] 
+    // Using cfg will only work when this error variant is used behind ios and android target
+    // For now, we cannot use the cfg as used in the db_service_ffi crate ( expects macos target?)
+    #[error("BiometricCredentialsAuthenticationFailed")]
+    BiometricCredentialsAuthenticationFailed,
+
     #[error("BlockHashCheckFailed")]
     BlockHashCheckFailed,
 
@@ -138,13 +152,46 @@ pub enum Error {
     #[error("SecureKeyOperationError {0}")]
     SecureKeyOperationError(String),
 
-    #[error("DuplicateKeyFileName:{0}")]
+    #[error("DuplicateKeyFileName: {0}")]
     DuplicateKeyFileName(String),
 
     // See DataError where we can use str
     // UnexpectedError is used where we can use format!
     #[error("{0}")]
     UnexpectedError(String),
+
+    // Used in a situation where we can't provide any solution for this kind of errors
+    #[error("UnRecoverableError: {0}")]
+    UnRecoverableError(String),
+
+    ////  Remote storage specifc errors
+    
+    #[error("RusshError: {0}")]
+    RusshError(#[from] russh::Error),
+
+    #[error("RusshKeysError: {0}")]
+    RusshKeysError(#[from] russh_keys::Error),
+
+    #[error("RusshSftpClientError: {0}")]
+    RusshSftpClientError(#[from] russh_sftp::client::error::Error),
+
+    #[error("SftpServerAuthenticationFailed: Authentication to SFTP server failed")]
+    SftpServerAuthenticationFailed,
+
+    #[error("ReqwestError: {0}")]
+    ReqwestError(#[from] reqwest::Error),
+
+    #[error("ReqwestDavError: {0}")]
+    ReqwestDavError(#[from] reqwest_dav::types::Error),
+
+    #[error("NoRemoteStorageConnection")]
+    NoRemoteStorageConnection,
+
+    // TODO: We may plan to use a struct RemoteStorageCallErrorEx {message,source, } See https://docs.rs/thiserror/latest/thiserror/ example
+    // instead of RemoteStorageCallError(String)
+    #[error("RemoteStorageCallError: {0}")]
+    RemoteStorageCallError(String),
+
 }
 
 // Tauri main converts App error such as above as "hooks::InvokeError" using serde call and then returns to to the UI

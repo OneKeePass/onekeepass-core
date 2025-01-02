@@ -4,6 +4,10 @@
 mod attachment;
 mod io;
 
+// Moduels storage and callback_service are used for now only in mobile apss
+pub mod storage;
+pub mod callback_service;
+
 use crate::db::KdbxFile;
 use crate::db_content::{standard_types_ordered_by_id, Entry, KeepassFile, OtpData};
 use crate::searcher;
@@ -45,10 +49,14 @@ pub use io::*;
 pub use crate::error::{self, Error, Result};
 
 pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions, PasswordScore};
-pub use crate::util::{file_name, formatted_key, parse_attachment_hash, string_to_simple_hash};
+
+// See lib.rs where util module is reexported as service_util
+// another option is rename 'util' module as 'service_util' to avoid confilts with other crates 'util' module
+pub use crate::service_util;
 
 pub use crate::db::{
-    KeyStoreOperation, KeyStoreService, KeyStoreServiceType, NewDatabase, SecureKeyInfo,
+    calculate_db_file_checksum, KeyStoreOperation, KeyStoreService, KeyStoreServiceType,
+    NewDatabase, SecureKeyInfo,
 };
 
 pub use crate::db_content::{
@@ -285,6 +293,13 @@ pub fn all_kdbx_cache_keys() -> Result<Vec<String>> {
     Ok(vec)
 }
 
+// Gets the previously calculated checksum for a db found under the db_key
+pub fn db_checksum_hash(db_key: &str) -> Result<Vec<u8>> {
+    call_kdbx_context_action(db_key, |ctx: &KdbxContext| {
+        Ok(ctx.kdbx_file.checksum_hash().clone())
+    })
+}
+
 pub fn close_all_databases() -> Result<()> {
     if let Ok(keys) = all_kdbx_cache_keys() {
         for k in keys {
@@ -308,7 +323,16 @@ pub fn close_kdbx(db_key: &str) -> Result<()> {
 // Mobile
 // Called to rename the db key used and the database_file_name as we know
 // the full db file name and db_key are used interchangeably
+
+// See db_service::ios::save_as_kdbx for desktop version where db_key is the 
+// actual file to which content is written. Here we are channging map key
+
+//TODO: Combine these two
+
 pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
+    // Need to copy the encrytion key for the new name from the existing one
+    KeyStoreOperation::copy_key(old_db_key, new_db_key)?;
+
     let kdbx_loaded = call_kdbx_context_mut_action(old_db_key, |ctx: &mut KdbxContext| {
         ctx.kdbx_file.set_database_file_name(new_db_key);
 
@@ -320,10 +344,14 @@ pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
         })
     })?;
 
+    // As the db_file_name is changed, we need to reset the db key to this new name
     let mut store = main_store().lock().unwrap();
     if let Some(v) = store.remove(old_db_key) {
         store.insert(new_db_key.into(), v);
     }
+
+    // Remove the old encryption key for the old db_key
+    KeyStoreOperation::delete_key(old_db_key)?;
 
     Ok(kdbx_loaded)
 }
@@ -812,7 +840,11 @@ pub fn insert_entry_from_form_data(db_key: &str, form_data: EntryFormData) -> Re
     })
 }
 
-pub fn clone_entry(db_key: &str, entry_uuid: &Uuid, entry_clone_option: &EntryCloneOption) -> Result<Uuid> {
+pub fn clone_entry(
+    db_key: &str,
+    entry_uuid: &Uuid,
+    entry_clone_option: &EntryCloneOption,
+) -> Result<Uuid> {
     main_content_mut_action!(db_key, move |k: &mut KeepassFile| {
         k.root.clone_entry(entry_uuid, entry_clone_option)
     })

@@ -51,3 +51,20 @@ impl KeyCipher {
         Ok(aes_gcm.process(&self.nonce, data)?)
     }
 }
+
+
+pub struct AeadKeyCipher {
+    pub salt:Vec<u8>,
+    
+}
+
+impl AeadKeyCipher {
+
+    fn derive_key_material(&mut self,output_length:usize) {
+
+    }
+
+    pub fn encrypt(&mut self, password:&str, data: &[u8]) {}
+
+    pub fn decrypt() {}
+}

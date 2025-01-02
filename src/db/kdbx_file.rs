@@ -6,6 +6,7 @@ use super::*;
 pub struct KdbxFile {
     // database_file_name is full uri and used as db_key in all subsequent calls
     // See db_service::read_kdbx
+    // In desktop (and also in mobile?), this is the actual full file path
     pub(crate) database_file_name: String,
     pub(crate) file_key: Option<FileKey>,
     pub(crate) main_header: MainHeader,
@@ -132,6 +133,7 @@ impl KdbxFile {
         self
     }
 
+    // Gets the full file path in desktop app and may be in mobile app  
     pub fn get_database_file_name(&self) -> &str {
         &self.database_file_name
     }
@@ -176,6 +178,10 @@ impl KdbxFile {
                 "Invalid Kdf algorithm is passed while updating in the setting".into(),
             ))
         }
+    }
+
+    pub(crate) fn checksum_hash(&self) -> &Vec<u8> {
+        &self.checksum_hash
     }
 }
 

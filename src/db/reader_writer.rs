@@ -37,6 +37,7 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
         }
     }
 
+    // Reads the content of kdbx db, parses headers, decrypts payload, parses xml content into in memory struct
     pub(crate) fn read(&mut self) -> Result<()> {
         debug!("Starting the dataabse read_file_signature call");
         self.read_file_signature()?;

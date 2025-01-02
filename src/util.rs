@@ -80,6 +80,46 @@ pub fn now_utc() -> NaiveDateTime {
     now
 }
 
+// Returns the number of non-leap seconds since January 1, 1970 0:00:00 UTC
+#[inline]
+pub fn now_utc_seconds() -> i64 {
+    now_utc().and_utc().timestamp()
+}
+
+// Formats the now utc time
+#[allow(dead_code)]
+pub fn format_utc_now(format_str: Option<&str>) -> String {
+    let now:NaiveDateTime = now_utc(); // 2024-11-05 20:01:42
+    let fmt_str = if let Some(s) = format_str {
+        s
+    } else {
+        // "%d %b %Y %H:%M:%S" This will print 05 Nov 2024
+
+        // Formatted string is of form 2024-11-05 20:05:18
+        "%Y-%m-%d %H:%M:%S"
+    };
+    now.format(fmt_str).to_string()
+}
+
+// We get the secs part of SystemTime ignoring nanosecs
+pub fn system_time_to_seconds(system_time: std::time::SystemTime) -> u64 {
+    system_time
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .map_or_else(|_| 0, |d| d.as_secs())
+}
+
+// Creates the SystemTime instance from the secs ignoring nanosecs
+pub fn seconds_to_system_time(secs: u64) -> std::time::SystemTime {
+    // This also works with chrono 0.4.38 not with the earlier 0.4.24
+    // let dt = chrono::DateTime::from_timestamp(secs as i64,0).unwrap();
+    // dt.into()
+
+    // See doc https://doc.rust-lang.org/std/time/struct.SystemTime.html#associatedconstant.UNIX_EPOCH
+    // where it is mentioned to get SystemTime from a duration
+    // "using UNIX_EPOCH + duration can be used to create a SystemTime instance to represent another fixed point in time"
+    std::time::UNIX_EPOCH + std::time::Duration::new(secs, 0)
+}
+
 // See https://docs.rs/chrono/latest/chrono/format/strftime/index.html
 // for details on various format specifiers
 
@@ -286,6 +326,7 @@ pub fn empty_str() -> String {
     EMPTY_STR.to_string()
 }
 
+// Called to get just the file name from the full path
 pub fn file_name(full_file_uri: &str) -> Option<String> {
     let p = Path::new(full_file_uri);
     p.file_name().map(|s| s.to_string_lossy().to_string())
@@ -513,6 +554,17 @@ mod tests {
     }
 
     #[test]
+    fn verify1() {
+        //DateTime::<Utc>
+        //NaiveDateTime::new(date, time)
+
+        let d1 = now_utc(); // 2024-11-05 20:01:42
+        let s1 = d1.format("%d %b %Y %H:%M:%S").to_string();
+        let s1 = d1.format("%Y-%m-%d %H:%M:%S").to_string();
+        println!("d1 is {}", &s1);
+    }
+
+    #[test]
     fn verify_datetime_local_format() {
         // Experiment to show UTC and Local now calls. The Local now should be based on the system timezone
         // and accordingly it is expected have some offsets
@@ -636,6 +688,26 @@ mod tests {
         assert_eq!(ndt.hour(), 01); //Same
         assert_eq!(ndt.minute(), 37); //Same
         assert_eq!(ndt.second(), 08); //Same
+    }
+
+    use super::system_time_to_seconds;
+
+    #[test]
+    fn verify_system_time_secs() {
+        use std::time::SystemTime;
+        let s1 = SystemTime::now();
+        println!("S1 is  {:?}",&s1);
+
+        let secs = system_time_to_seconds(s1);
+        println!("Secs {}",&secs);
+
+        let s2 = super::seconds_to_system_time(secs);
+        println!("S2 is  {:?}",&s2);
+
+        assert_eq!(
+            s1.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
+            s1.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
+        );
     }
 
     #[test]

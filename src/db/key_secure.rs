@@ -35,6 +35,7 @@ impl KeyStoreOperation {
         .expect("Error: KeyStoreService is not initialzed")
     }
 
+    // Stores the ecryption key by calling platform specific implementation of key store calls
     pub fn store_key(db_key: &str, val: Vec<u8>) -> Result<()> {
         let mut store_service = Self::key_store_service_instance().lock().unwrap();
         store_service.store_key(db_key, val)

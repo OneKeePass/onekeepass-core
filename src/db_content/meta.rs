@@ -14,7 +14,7 @@ use super::entry_type::VersionedEntryType;
 use super::Item;
 
 #[derive(Debug)]
-pub struct HistoryItemsMeta {
+pub(crate) struct HistoryItemsMeta {
     pub(crate) history_max_items: i32,
     pub(crate) history_max_size: i32,
 }
@@ -24,7 +24,7 @@ pub struct HistoryItemsMeta {
 #[derive(Debug)]
 pub struct MetaShare {
     pub custom_entry_types_by_id: Mutex<HashMap<Uuid, EntryType>>,
-    pub history_items_meta: Mutex<HistoryItemsMeta>,
+    history_items_meta: Mutex<HistoryItemsMeta>,
 }
 
 impl Default for MetaShare {
