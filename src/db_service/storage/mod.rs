@@ -4,7 +4,6 @@ mod server_connection_config;
 pub mod sftp;
 pub mod webdav;
 
-
 pub use server_connection_config::{
     read_configs, set_config_reader_writer, ConnectionConfigReaderWriter,
     ConnectionConfigReaderWriterType,
@@ -21,7 +20,6 @@ pub struct ParsedDbKey<'a> {
     pub file_path_part: &'a str,
     pub file_name: &'a str,
 }
-
 
 #[derive(Serialize, Deserialize)]
 pub struct ServerDirEntry {
@@ -144,115 +142,3 @@ mod tests {
         );
     }
 }
-
-/*
-struct s1{}
-
-impl CommonCallbackService for s1 {
-    fn sftp_private_key_file_full_path(&self,file_name:&str) -> PathBuf {
-        PathBuf::new()
-    }
-}
-
-// fn test1<T:CommonCallbackService+ ?Sized, F>(a:String, b:Option<F>) where F:Fn(T) -> String {
-
-//     if let Some(f) = b {
-//         let c = s1{};
-//         let b = f(c);
-//         //let b = c.sftp_private_key_file_full_path("");
-//         //let s = f(<dyn CommonCallbackService>::s1{});
-//     }
-// }
-
-
-// This works
-fn test1<T:CommonCallbackService+ ?Sized>(a:String, b:Option<&T>)  {
-
-    if let Some(f) = b {
-        let b = f.sftp_private_key_file_full_path("");
-        
-    }
-}
-
-fn test2(a:String, b:Option<&dyn CommonCallbackService>)  {
-
-    if let Some(f) = b {
-        let b = f.sftp_private_key_file_full_path("");
-        
-    }
-}
-*/
-
-/*
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum RemoteStorageToRead {
-    Sftp {
-        connection_id: String,
-        parent_dir: String,
-        file_name: String,
-    },
-    Webdav {
-        connection_id: String,
-        parent_dir: String,
-        file_name: String,
-    },
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "type")]
-pub enum RemoteStorageConnect {
-    Sftp {
-        connection_info: sftp::SftpConnectionConfig,
-    },
-    Webdav {
-        connection_info: webdav::WebdavConnectionConfig,
-    },
-}
-
-impl RemoteStorageConnect {
-    pub fn connect_and_retrieve_root_dir(&self) -> Result<ConnectStatus> {
-        use RemoteStorageConnect::*;
-        match self {
-            Sftp { connection_info } => {
-                sftp::connect_and_retrieve_root_dir(connection_info.clone())
-            }
-            Webdav { connection_info } => {
-                webdav::connect_and_retrieve_root_dir(connection_info.clone())
-            }
-        }
-    }
-}
-
-
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum RemoteStorageSubDirListing {
-    Sftp {
-        connection_id: String,
-        parent_dir: String,
-        sub_dir: String,
-    },
-    Webdav {
-        connection_id: String,
-        parent_dir: String,
-        sub_dir: String,
-    },
-}
-
-impl RemoteStorageSubDirListing {
-    pub fn list_sub_dir(&self) -> Result<ServerDirEntry> {
-        use RemoteStorageSubDirListing::*;
-        match self {
-            Sftp { connection_id,parent_dir,sub_dir } => {
-                sftp::list_sub_dir(connection_id, parent_dir, sub_dir)
-            }
-            Webdav { connection_id,parent_dir,sub_dir } => {
-                webdav::list_sub_dir(connection_id, parent_dir, sub_dir)
-            }
-        }
-    }
-}
-
-
-*/

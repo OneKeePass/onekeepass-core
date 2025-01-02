@@ -572,6 +572,10 @@ impl WebdavConnection {
     reply_by_webdav_async_fn!(send_file_metadta(file_path:String), file_metadata(&file_path), RemoteFileMetadata);
 }
 
+
+// For now this custom error messaging is done for reqwest_dav::types::Error
+// TODO: Need to find out how to incorporate this conversion in the crate::error::Error itself using From
+
 fn convert_error(inner_error: reqwest_dav::types::Error) -> error::Error {
     
     match inner_error {

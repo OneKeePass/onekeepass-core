@@ -665,6 +665,9 @@ impl SftpConnection {
     //reply_by_sftp_async_fn!(send_metadata (parent_dir:String,fiile_name:String), metadata (&parent_dir,&fiile_name), RemoteFileMetadata);
 }
 
+// For now this custom error messaging is done for russh::Error 
+// TODO: Need to find out how to incorporate this conversion in the crate::error::Error itself using From
+
 fn convert_error(inner_error: russh::Error) -> error::Error {
     match inner_error {
         russh::Error::ConnectionTimeout => {
