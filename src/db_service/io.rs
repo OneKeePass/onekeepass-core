@@ -4,7 +4,7 @@ use std::path::Path;
 use log::debug;
 
 use super::{
-    call_kdbx_context_mut_action, call_kdbx_context_action,main_store, KdbxContext, KdbxLoaded, KdbxSaved, NewDatabase,
+    call_kdbx_context_mut_action, main_store, KdbxContext, KdbxLoaded, KdbxSaved, NewDatabase,
     SaveAllResponse, SaveStatus,
 };
 use crate::db_content::KeepassFile;
@@ -394,6 +394,7 @@ pub fn create_and_write_to_writer<W: Read + Write + Seek>(
 // We are using file name instead of writer as this is an internal file and accessible by file name
 #[cfg(target_os = "ios")]
 pub fn copy_and_write_autofill_ready_db(db_key: &str, full_file_name: &str) -> Result<()> {
+    use super::call_kdbx_context_action;
     use crate::db::KdfAlgorithm;
 
     let mut kdbx_file =
@@ -425,7 +426,10 @@ pub fn verify_db_file_checksum<R: Read + Seek>(db_key: &str, reader: &mut R) -> 
 }
 
 // Mobile
-pub fn calculate_and_set_db_file_checksum<R: Read + Seek>(db_key: &str, reader: &mut R) -> Result<()> {
+pub fn calculate_and_set_db_file_checksum<R: Read + Seek>(
+    db_key: &str,
+    reader: &mut R,
+) -> Result<()> {
     call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
         ctx.kdbx_file.checksum_hash = db::calculate_db_file_checksum(reader)?;
         Ok(())

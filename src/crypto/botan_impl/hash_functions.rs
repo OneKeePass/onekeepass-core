@@ -87,7 +87,6 @@ pub fn sha256_hash_from_slice(data: &[u8]) -> Result<Vec<u8>> {
 mod tests {
     use std::io::{BufReader, Read};
 
-    use super::sha256_hash_from_slice;
 
     #[test]
     fn verify_large_file_hash256() {

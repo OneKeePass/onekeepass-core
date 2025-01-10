@@ -45,7 +45,7 @@ mod tests {
 
     #[test]
     fn verify_aes256_encrypt_decrypt_botan() {
-        let (uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
+        let (_uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
         let key = get_random_bytes::<32>();
 
         let text = "Hello World!";
@@ -71,7 +71,7 @@ mod tests {
 
     #[test]
     fn verify_aes256_file_data_encrypt_decrypt_botan() {
-        let (uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
+        let (_uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
         let key = get_random_bytes::<32>();
 
         let data: Vec<u8> = read_file_data();
@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn verify_chacha20_encrypt_decrypt_botan() {
-        let (uuid, enc_iv) = ContentCipherId::ChaCha20.uuid_with_iv().unwrap();
+        let (_uuid, enc_iv) = ContentCipherId::ChaCha20.uuid_with_iv().unwrap();
         let key = get_random_bytes::<32>();
 
         let text = "Hello World!";

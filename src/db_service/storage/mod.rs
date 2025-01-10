@@ -103,7 +103,7 @@ fn filter_entry(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::{path::PathBuf, time::SystemTime};
+    use std::path::PathBuf;
 
     use url::Url;
 

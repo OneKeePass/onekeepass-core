@@ -390,7 +390,7 @@ impl SftpConnection {
             host,
             port,
             private_key_full_file_name,
-            private_key_file_name,
+            private_key_file_name:_,
             user_name,
             password,
             // Omits the remaining fields

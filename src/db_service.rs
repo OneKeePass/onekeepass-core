@@ -5,14 +5,14 @@ mod attachment;
 mod io;
 
 // Moduels storage and callback_service are used for now only in mobile apss
-pub mod storage;
 pub mod callback_service;
+pub mod storage;
 
 use crate::db::KdbxFile;
 use crate::db_content::{standard_types_ordered_by_id, Entry, KeepassFile, OtpData};
 use crate::searcher;
 use crate::util;
-use crate::{form_data, password_generator};
+use crate::{form_data, password_passphrase_generator};
 
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -48,7 +48,10 @@ pub use io::*;
 
 pub use crate::error::{self, Error, Result};
 
-pub use crate::password_generator::{AnalyzedPassword, PasswordGenerationOptions, PasswordScore};
+pub use crate::password_passphrase_generator::{
+    AnalyzedPassword, GeneratedPassPhrase, PassphraseGenerationOptions, PasswordGenerationOptions,
+    PasswordScore,
+};
 
 // See lib.rs where util module is reexported as service_util
 // another option is rename 'util' module as 'service_util' to avoid confilts with other crates 'util' module
@@ -324,7 +327,7 @@ pub fn close_kdbx(db_key: &str) -> Result<()> {
 // Called to rename the db key used and the database_file_name as we know
 // the full db file name and db_key are used interchangeably
 
-// See db_service::ios::save_as_kdbx for desktop version where db_key is the 
+// See db_service::ios::save_as_kdbx for desktop version where db_key is the
 // actual file to which content is written. Here we are channging map key
 
 //TODO: Combine these two
@@ -970,14 +973,6 @@ pub fn new_blank_group_with_parent(
     let mut group = new_blank_group(mark_as_category);
     group.parent_group_uuid = parent_group_uuid;
     Ok(group)
-}
-
-pub fn analyzed_password(password_options: PasswordGenerationOptions) -> Result<AnalyzedPassword> {
-    password_options.analyzed_password()
-}
-
-pub fn score_password(password: &str) -> PasswordScore {
-    password_generator::score_password(password)
 }
 
 /*

@@ -5,7 +5,6 @@ use once_cell::sync::Lazy;
 use reqwest_dav::{list_cmd::ListEntity, Auth, Client, ClientBuilder, Depth};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
-use url::Url;
 use uuid::Uuid;
 
 use crate::{

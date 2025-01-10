@@ -1445,6 +1445,7 @@ impl<W: Write> FileKeyXmlWriter<W> {
 // the test needs to fail !
 
 #[cfg(test)]
+#[allow(unused)]
 mod tests {
 
     use super::*;

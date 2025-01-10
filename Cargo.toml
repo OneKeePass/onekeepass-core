@@ -1,6 +1,6 @@
 [package]
 name = "onekeepass-core"
-version = "0.16.0"
+version = "0.17.0"
 authors = ["jeyasankar"]
 edition = "2021"
 
@@ -53,8 +53,12 @@ cfg-if = "1.0"
 enum_dispatch = "0.3.13"
 
 quick-xml = "0.30.0"
-## Removed quick_xml_023 use 
+## Removed quick_xml_023 
+## Leaving it here as an example of using old version package 
 ## quick_xml_023 = { package = "quick-xml", version = "0.23.0" }
+
+
+chbs = "0.1.1"
 
 ## SFTP
 russh-sftp = "2.0.5"
@@ -95,6 +99,7 @@ features = ["common-password"]
 env_logger = "0.8.4"
 mockall = "0.10.2"
 rstest = "0.18.1"
+directories = "5.0.1"
 
 
 

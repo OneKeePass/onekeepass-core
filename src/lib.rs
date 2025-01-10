@@ -2,7 +2,7 @@ mod constants;
 mod crypto;
 mod db;
 mod form_data;
-mod password_generator;
+mod password_passphrase_generator;
 mod searcher;
 mod xml_parse;
 //mod xml_parse_023;

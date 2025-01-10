@@ -74,6 +74,7 @@ pub fn init_log_lib_info() {
 }
 
 #[cfg(test)]
+#[allow(unused)]
 mod tests {
     use std::{
         fs::{self, File},

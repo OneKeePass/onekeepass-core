@@ -6,3 +6,5 @@ Cargo.lock
 .DS_Store
 .lsp
 .clj-kondo
+
+/test_data/
