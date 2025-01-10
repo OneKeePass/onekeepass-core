@@ -44,16 +44,19 @@ pub enum ProbabilityOption {
     Never,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone,Debug)]
 pub struct PassphraseGenerationOptions {
-    // pub(crate) word_list_source:WordListSource,
-    pub(crate) word_list_file_path: Option<PathBuf>,
+    pub(crate) word_list_source:WordListSource,
+
     // No of words in the phrase
     pub(crate) words: usize,
+
     // The separator string to use between passphrase words.
     pub(crate) separator: String,
+
     // Whether to capitalize the first characters of words.
     pub(crate) capitalize_first: ProbabilityOption,
+
     // Whether to capitalize whole words.
     pub(crate) capitalize_words: ProbabilityOption,
 }
@@ -61,8 +64,7 @@ pub struct PassphraseGenerationOptions {
 impl Default for PassphraseGenerationOptions {
     fn default() -> Self {
         Self {
-            // word_list_source:WordListSource::EFFLarge,
-            word_list_file_path: None,
+            word_list_source:WordListSource::EFFLarge,
             words: 5,
             separator: " ".into(),
             capitalize_first: ProbabilityOption::Always,
@@ -82,15 +84,19 @@ mod pass_phrase_impl {
     use chbs::{config::BasicConfig, probability, word};
     use std::convert::From;
 
-    use super::{GeneratedPassPhrase, PassphraseGenerationOptions, ProbabilityOption};
+    use super::{GeneratedPassPhrase, PassphraseGenerationOptions, ProbabilityOption, WordListSource};
 
     pub(crate) fn generate(
         pass_phrase_options: &PassphraseGenerationOptions,
     ) -> Result<GeneratedPassPhrase> {
-        let wl = if let Some(ref wl_dir_p) = pass_phrase_options.word_list_file_path {
-            word::WordList::load_diced(wl_dir_p)?
-        } else {
-            word::WordList::builtin_eff_large()
+        
+        let wl = match pass_phrase_options.word_list_source {
+            WordListSource::EFFLarge => word::WordList::builtin_eff_large(),
+            WordListSource::EFFShort1 => word::WordList::builtin_eff_short(),
+            WordListSource::EFFShort2 => word::WordList::builtin_eff_general_short(),
+            WordListSource::Custom(ref wl_file_path) => {
+                word::WordList::load_diced(wl_file_path)?
+            }
         };
 
         let config = BasicConfig {
@@ -131,7 +137,7 @@ mod tests {
         config::BasicConfig, passphrase, probability::Probability, scheme::ToScheme, word
     };
 
-    use crate::db_service::PasswordScore;
+    use crate::{db_service::PasswordScore, password_passphrase_generator::passphrase_generator::ProbabilityOption};
 
     use super::PassphraseGenerationOptions;
 
@@ -139,9 +145,17 @@ mod tests {
     fn verify_with_phrase_generation_options() {
         let mut opt = PassphraseGenerationOptions::default();
         opt.words = 3;
+        //opt.capitalize_words = ProbabilityOption::Sometimes(0.5);
         opt.separator = "-".into();
 
-        //println!("ds is {}", serde_json::to_string_pretty(&opt).unwrap());
+        // println!("deserialized json str is {}", serde_json::to_string_pretty(&opt).unwrap());
+
+        // #[derive(serde::Deserialize, serde::Serialize, Clone)]
+        // struct Pref {
+        //     pp_options: PassphraseGenerationOptions,
+        // }
+        // let sd = Pref { pp_options: opt.clone()};
+        // println!("deserialized toml str is {}",toml::to_string_pretty(&sd).unwrap());
         
         let p = opt.generate().unwrap();
         //println!("p is {:?}", &p);
@@ -152,7 +166,9 @@ mod tests {
     #[test]
     fn verify_deserialized_option() {
         let opt_s = r#"{
-                        "word_list_file_path": null,
+                        "word_list_source": {
+                            "name": "EFFLarge"
+                        },
                         "words": 4,
                         "separator": "-",
                         "capitalize_first": {
