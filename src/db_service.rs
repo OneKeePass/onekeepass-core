@@ -4,15 +4,19 @@
 mod attachment;
 mod io;
 
-// Moduels storage and callback_service are used for now only in mobile apss
-pub mod callback_service;
-pub mod storage;
+// TODO: Need to move module storage to db_service_ffi crate as it is used only in mobile apps 
+
+// Modules storage and callback_service are used for now only in mobile apps
+//#[cfg(any( target_os = "ios",target_os = "android"))]
+//pub mod callback_service;
+// #[cfg(any( target_os = "ios",target_os = "android"))]
+// pub mod storage;
 
 use crate::db::KdbxFile;
 use crate::db_content::{standard_types_ordered_by_id, Entry, KeepassFile, OtpData};
 use crate::searcher;
 use crate::util;
-use crate::{form_data, password_passphrase_generator};
+use crate::form_data;
 
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};

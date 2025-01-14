@@ -1,3 +1,4 @@
+use log::debug;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -5,24 +6,41 @@ use crate::error::Result;
 
 use super::PasswordScore;
 
-#[derive(Deserialize, Serialize,Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct GeneratedPassPhrase {
     password: String,
     score: PasswordScore,
     entropy_bits: f64,
 }
 
-#[derive(Deserialize, Serialize, Clone,Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 #[serde(tag = "name", content = "source")]
 pub enum WordListSource {
     EFFLarge,
     EFFShort1,
     EFFShort2,
+    Google1000UsaEnglishNoSwearsMedium,
+    FrenchDicewareWordlist, //french-diceware-wordlist
+    GermanDicewareWordlist,
     Custom(String),
 }
 
+impl WordListSource {
+    fn name(&self) -> &str {
+        debug!("Name fn is called for {:?}", &self);
+        match self {
+            Self::Google1000UsaEnglishNoSwearsMedium => {
+                "google-10000-english-usa-no-swears-medium.txt"
+            }
+            Self::FrenchDicewareWordlist => "french-diceware-wordlist.txt",
+            Self::GermanDicewareWordlist => "german-diceware-wordlist.txt",
+            _ => "",
+        }
+    }
+}
+
 // Similar to chbs::probability::Probability with serilaization support
-#[derive(Deserialize, Serialize, Clone,Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 #[serde(tag = "type_name", content = "value")]
 pub enum ProbabilityOption {
     /// This is always true.
@@ -44,12 +62,12 @@ pub enum ProbabilityOption {
     Never,
 }
 
-#[derive(Deserialize, Serialize, Clone,Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct PassphraseGenerationOptions {
-    pub(crate) word_list_source:WordListSource,
+    pub(crate) word_list_source: WordListSource,
 
     // No of words in the phrase
-    pub(crate) words: usize,
+    pub words: usize,
 
     // The separator string to use between passphrase words.
     pub(crate) separator: String,
@@ -64,9 +82,9 @@ pub struct PassphraseGenerationOptions {
 impl Default for PassphraseGenerationOptions {
     fn default() -> Self {
         Self {
-            word_list_source:WordListSource::EFFLarge,
+            word_list_source: WordListSource::EFFLarge,
             words: 5,
-            separator: " ".into(),
+            separator: "-".into(),
             capitalize_first: ProbabilityOption::Always,
             capitalize_words: ProbabilityOption::Never,
         }
@@ -80,23 +98,46 @@ impl PassphraseGenerationOptions {
 }
 
 mod pass_phrase_impl {
-    use crate::{error::Result, password_passphrase_generator::PasswordScore};
+    use crate::{
+        callback_service::CallbackServiceProvider, error::Result,
+        password_passphrase_generator::PasswordScore,
+    };
     use chbs::{config::BasicConfig, probability, word};
+    use log::debug;
     use std::convert::From;
 
-    use super::{GeneratedPassPhrase, PassphraseGenerationOptions, ProbabilityOption, WordListSource};
+    use super::{
+        GeneratedPassPhrase, PassphraseGenerationOptions, ProbabilityOption, WordListSource,
+    };
+
+    fn load_resource_world_list(file_name: &str) -> Result<word::WordList> {
+        debug!("Resource file name is {}",file_name);
+        let content =
+            CallbackServiceProvider::common_callback_service().load_wordlist(file_name)?;
+        
+        let words: Vec<String> = content
+            .lines()
+            .filter(|w| !w.is_empty())
+            .filter_map(|w| w.rsplit_terminator(char::is_whitespace).next())
+            .map(|w| w.to_owned())
+            .collect();
+
+        Ok(word::WordList::new(words))
+    }
 
     pub(crate) fn generate(
         pass_phrase_options: &PassphraseGenerationOptions,
     ) -> Result<GeneratedPassPhrase> {
         
+        use WordListSource::*;
         let wl = match pass_phrase_options.word_list_source {
-            WordListSource::EFFLarge => word::WordList::builtin_eff_large(),
-            WordListSource::EFFShort1 => word::WordList::builtin_eff_short(),
-            WordListSource::EFFShort2 => word::WordList::builtin_eff_general_short(),
-            WordListSource::Custom(ref wl_file_path) => {
-                word::WordList::load_diced(wl_file_path)?
-            }
+            EFFLarge => word::WordList::builtin_eff_large(),
+            EFFShort1 => word::WordList::builtin_eff_short(),
+            EFFShort2 => word::WordList::builtin_eff_general_short(),
+            ref s @ (Google1000UsaEnglishNoSwearsMedium
+            | FrenchDicewareWordlist
+            | GermanDicewareWordlist) => load_resource_world_list(s.name())?,
+            Custom(ref wl_file_path) => word::WordList::load_diced(wl_file_path)?,
         };
 
         let config = BasicConfig {
@@ -133,11 +174,12 @@ mod pass_phrase_impl {
 
 #[cfg(test)]
 mod tests {
-    use chbs::{
-        config::BasicConfig, passphrase, probability::Probability, scheme::ToScheme, word
-    };
+    use chbs::{config::BasicConfig, passphrase, probability::Probability, scheme::ToScheme, word};
 
-    use crate::{db_service::PasswordScore, password_passphrase_generator::passphrase_generator::ProbabilityOption};
+    use crate::{
+        db_service::PasswordScore,
+        password_passphrase_generator::passphrase_generator::ProbabilityOption,
+    };
 
     use super::PassphraseGenerationOptions;
 
@@ -156,11 +198,11 @@ mod tests {
         // }
         // let sd = Pref { pp_options: opt.clone()};
         // println!("deserialized toml str is {}",toml::to_string_pretty(&sd).unwrap());
-        
+
         let p = opt.generate().unwrap();
         //println!("p is {:?}", &p);
 
-        assert_eq!(p.password.split("-").count(),3, "Expected 3");
+        assert_eq!(p.password.split("-").count(), 3, "Expected 3");
     }
 
     #[test]
@@ -182,7 +224,7 @@ mod tests {
 
         let opt = serde_json::from_str::<PassphraseGenerationOptions>(&opt_s).unwrap();
         let p = opt.generate().unwrap();
-        assert_eq!(p.password.split("-").count(),4, "Expected 4");
+        assert_eq!(p.password.split("-").count(), 4, "Expected 4");
     }
 
     #[test]
@@ -194,7 +236,7 @@ mod tests {
         config.separator = "  -".into();
         config.capitalize_first = Probability::Always;
         //config.capitalize_words = Probability::half();
-        let  scheme = config.to_scheme();
+        let scheme = config.to_scheme();
 
         println!("Passphrase: {:?}", scheme.generate());
         println!("Entropy: {:?}", scheme.entropy().bits());
@@ -222,17 +264,17 @@ mod tests {
 
         let scheme = config.to_scheme();
         let p = scheme.generate();
-        let ap:PasswordScore = (&p).into();
+        let ap: PasswordScore = (&p).into();
         println!("Passphrase: {:?} with score {:?}", &p, ap);
         println!("Entropy: {:?}", scheme.entropy().bits());
 
         let p = scheme.generate();
-        let ap:PasswordScore  = (&p).into();
+        let ap: PasswordScore = (&p).into();
         println!("Passphrase: {:?} with score {:?}", &p, ap);
         println!("Entropy: {:?}", scheme.entropy().bits());
 
         let p = scheme.generate();
-        let ap:PasswordScore  = (&p).into();
+        let ap: PasswordScore = (&p).into();
         println!("Passphrase: {:?} with score {:?}", &p, ap);
         println!("Entropy: {:?}", scheme.entropy().bits());
 

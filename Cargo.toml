@@ -60,23 +60,17 @@ quick-xml = "0.30.0"
 
 chbs = "0.1.1"
 
+
+## To be removed as SFTP and WebDav module moved to mobile side 
+## Leaving it here just for Error enum building which is yet to be replaced
 ## SFTP
 russh-sftp = "2.0.5"
 russh = "0.45"
 russh-keys = "0.45"
-async-trait = "0.1"
-
-## WebDav 
-## reqwest_dav = "0.1.13"  - This did not build for android because of Openssl dependency
-
-## The following two together works for ios and android build 
-## Openssl is used for android and rustls for ios
-#reqwest = { version = "0.12", default-features = false, features = ["native-tls-vendored"] }
-#reqwest_dav = {version = "0.1.13", default-features = false }
-
 
 ## This works for ios and android as it uses rustls 
 reqwest_dav = {version = "0.1.13", default-features = false,features = ["rustls-tls"]}
+
 
 
 ## rusqlite = { version = "0.32.0", features = ["bundled"] }
