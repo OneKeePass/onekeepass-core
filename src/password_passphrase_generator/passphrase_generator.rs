@@ -1,6 +1,5 @@
 use log::debug;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 use crate::error::Result;
 
@@ -13,13 +12,13 @@ pub struct GeneratedPassPhrase {
     entropy_bits: f64,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
-#[serde(tag = "name", content = "source")]
+#[derive(Deserialize, Serialize, Clone, Debug,PartialEq)]
+#[serde(tag = "type_name", content = "content")]
 pub enum WordListSource {
     EFFLarge,
     EFFShort1,
     EFFShort2,
-    Google1000UsaEnglishNoSwearsMedium,
+    Google10000UsaEnglishNoSwearsMedium,
     FrenchDicewareWordlist, //french-diceware-wordlist
     GermanDicewareWordlist,
     Custom(String),
@@ -29,19 +28,19 @@ impl WordListSource {
     fn name(&self) -> &str {
         debug!("Name fn is called for {:?}", &self);
         match self {
-            Self::Google1000UsaEnglishNoSwearsMedium => {
+            Self::Google10000UsaEnglishNoSwearsMedium => {
                 "google-10000-english-usa-no-swears-medium.txt"
             }
             Self::FrenchDicewareWordlist => "french-diceware-wordlist.txt",
             Self::GermanDicewareWordlist => "german-diceware-wordlist.txt",
-            _ => "",
+            _ => "NoWordList",
         }
     }
 }
 
 // Similar to chbs::probability::Probability with serilaization support
-#[derive(Deserialize, Serialize, Clone, Debug)]
-#[serde(tag = "type_name", content = "value")]
+#[derive(Deserialize, Serialize, Clone, Debug,PartialEq)]
+#[serde(tag = "type_name", content = "content")]
 pub enum ProbabilityOption {
     /// This is always true.
     Always,
@@ -62,7 +61,7 @@ pub enum ProbabilityOption {
     Never,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug,PartialEq)]
 pub struct PassphraseGenerationOptions {
     pub(crate) word_list_source: WordListSource,
 
@@ -134,7 +133,7 @@ mod pass_phrase_impl {
             EFFLarge => word::WordList::builtin_eff_large(),
             EFFShort1 => word::WordList::builtin_eff_short(),
             EFFShort2 => word::WordList::builtin_eff_general_short(),
-            ref s @ (Google1000UsaEnglishNoSwearsMedium
+            ref s @ (Google10000UsaEnglishNoSwearsMedium
             | FrenchDicewareWordlist
             | GermanDicewareWordlist) => load_resource_world_list(s.name())?,
             Custom(ref wl_file_path) => word::WordList::load_diced(wl_file_path)?,
@@ -176,10 +175,9 @@ mod pass_phrase_impl {
 mod tests {
     use chbs::{config::BasicConfig, passphrase, probability::Probability, scheme::ToScheme, word};
 
-    use crate::{
-        db_service::PasswordScore,
-        password_passphrase_generator::passphrase_generator::ProbabilityOption,
-    };
+    use crate::
+        db_service::PasswordScore
+    ;
 
     use super::PassphraseGenerationOptions;
 
@@ -209,13 +207,13 @@ mod tests {
     fn verify_deserialized_option() {
         let opt_s = r#"{
                         "word_list_source": {
-                            "name": "EFFLarge"
+                            "type_name": "EFFLarge"
                         },
                         "words": 4,
                         "separator": "-",
                         "capitalize_first": {
                             "type_name": "Sometimes",
-                            "value": 0.5
+                            "content": 0.5
                         },
                         "capitalize_words": {
                             "type_name": "Never"
