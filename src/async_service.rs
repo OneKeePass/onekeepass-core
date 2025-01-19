@@ -509,6 +509,8 @@ async fn poll_token_generation(db_key: String, entry_uuid: Uuid) {
 static mut OKP_TOKIO_RUNTIME: Option<Runtime> = None;
 
 // Assumed this is called once in a single thread
+// See src-tauri/src/app_state.rs  AppState::init_app fn
+// See src/udl_uniffi_exports.rs   db_service_initialize fn
 pub fn start_runtime() {
 
     // This is not expected except during dev time if 'start_runtime' is 

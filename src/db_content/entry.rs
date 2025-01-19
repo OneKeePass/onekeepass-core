@@ -8,14 +8,14 @@ use crate::constants::custom_data_key::{
     OKP_ENTRY_TYPE, OKP_ENTRY_TYPE_DATA, OKP_ENTRY_TYPE_DATA_INDEX, OKP_ENTRY_TYPE_LIST_DATA,
 };
 
-use crate::constants::OTP_URL_PREFIX;
 use crate::constants::entry_keyvalue_key::*;
+use crate::constants::OTP_URL_PREFIX;
 use crate::db_content::{entry_type::*, Item};
 use crate::db_content::{AttachmentHashValue, CustomData, Times};
 use crate::util;
 
 use super::meta::MetaShare;
-use super::otp::{CurrentOtpTokenData, OtpData,};
+use super::otp::{CurrentOtpTokenData, OtpData};
 use super::Meta;
 
 // To carry additional entry field grouping and for easy KV data lookup
@@ -132,8 +132,10 @@ impl EntryField {
     }
 
     // finds a KeyValue from the 'fields' map and updates its 'value' field with the passed value
-    pub fn update_value(&mut self, key: &str, value:&str) {
-        self.fields.entry(key.to_string()).and_modify(|e| e.value = value.into());
+    pub fn update_value(&mut self, key: &str, value: &str) {
+        self.fields
+            .entry(key.to_string())
+            .and_modify(|e| e.value = value.into());
     }
 }
 
@@ -141,19 +143,30 @@ impl EntryField {
 #[derive(Debug, Clone)]
 pub struct Entry {
     pub(crate) uuid: Uuid,
+
     //The parent group uuid to refer back the group if required
     pub group_uuid: Uuid,
+
     pub icon_id: i32,
+
     pub times: Times,
+
     pub tags: String,
+
     // entry_field contains all KeyValues
     pub entry_field: EntryField,
+
     pub binary_key_values: Vec<BinaryKeyValue>,
+
     pub custom_data: CustomData,
+
     pub auto_type: AutoType,
+
     pub history: History,
-    //#[serde(skip)]
+
+    // Need to use #[serde(skip)] if we use Entry 'Serialize'
     pub(crate) meta_share: Arc<MetaShare>,
+
     //pub(crate) parsed_otp_values: Option<HashMap<String, ParsedOtpData>>,
     pub(crate) parsed_otp_values: Option<HashMap<String, OtpData>>,
 }
@@ -281,15 +294,15 @@ impl Entry {
 
     // Called to ensure the custom data values are created and otp fields are parsed when
     // a new entry is created
-    pub(crate) fn complete_insert(&mut self,) {
+    pub(crate) fn complete_insert(&mut self) {
         self.parse_all_otp_fields();
         // Call copy_to_custom_data from the incoming new entry
         self.copy_to_custom_data();
     }
 
-    // Called to create entry level custom data fields when an entry is updated or a new entry inserted 
+    // Called to create entry level custom data fields when an entry is updated or a new entry inserted
     // Currently mainly Entrytype definition info is stored
-    // We store entry type uuid if there is no change and type is not LOGIN or the changed entry type's serialized 
+    // We store entry type uuid if there is no change and type is not LOGIN or the changed entry type's serialized
     // data when custom fields or sections are added to the predefined entry type
     pub(crate) fn copy_to_custom_data(&mut self) {
         // To be safe first we need to remove the existing entry type related keys.
@@ -426,7 +439,7 @@ impl Entry {
     }
 
     // Checks the whether the value of a field starts with otp url and parses if it is an valid otp url
-    // and stores in the map with the field name as key and parsed value as value 
+    // and stores in the map with the field name as key and parsed value as value
     // However if parsing a otp url fails, then nothing is set for that field in this map
     fn parse_all_otp_fields(&mut self) {
         let otp_vals: HashMap<String, OtpData> = self

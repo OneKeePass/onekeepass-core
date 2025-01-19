@@ -5,7 +5,7 @@ use super::{
     kdbx_file::{InnerHeader, MainHeader},
     ContentCipherId, FileKey, KdbxFile, KdfAlgorithm, SecuredDatabaseKeys,
 };
-use crate::crypto::get_random_bytes_2;
+use crate::{constants::GENERATOR_NAME, crypto::get_random_bytes_2};
 use crate::error::Result;
 use crate::{
     constants::inner_header_type,
@@ -69,7 +69,7 @@ impl NewDatabase {
         ih.stream_cipher_id = inner_header_type::CHACHA20_STREAM;
         ih.inner_stream_key = rn64;
         let mut kc = KeepassFile::new();
-        kc.meta.generator = "OneKeePass".into();
+        kc.meta.generator = GENERATOR_NAME.into();
         kc.meta.database_name = self.database_name.clone();
         kc.meta.database_description = self
             .database_description

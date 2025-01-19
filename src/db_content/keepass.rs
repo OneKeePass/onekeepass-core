@@ -101,7 +101,7 @@ impl KeepassFile {
         // Need to read any meta specific custom data first
         self.meta.copy_from_custom_data();
 
-        //IMPORTANT:We need to set attachment hashes in all entries read from xml
+        // IMPORTANT:We need to set attachment hashes in all entries read from xml
         self.root.set_attachment_hashes(attachment_hash_indexed);
 
         // The uuid of a group that is identified as recycle group and this is available only as child

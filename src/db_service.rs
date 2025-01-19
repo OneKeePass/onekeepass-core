@@ -327,14 +327,15 @@ pub fn close_kdbx(db_key: &str) -> Result<()> {
     Ok(())
 }
 
-// Mobile
+// Mobile (iOS and Android)
 // Called to rename the db key used and the database_file_name as we know
 // the full db file name and db_key are used interchangeably
+// Used mainly in 'complete_save_as_on_error' call
 
 // See db_service::ios::save_as_kdbx for desktop version where db_key is the
-// actual file to which content is written. Here we are channging map key
+// actual file to which content is written. Here we are changing map key
 
-//TODO: Combine these two
+// TODO: Combine these two  
 
 pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
     // Need to copy the encrytion key for the new name from the existing one
@@ -346,6 +347,8 @@ pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
         Ok(KdbxLoaded {
             db_key: new_db_key.into(),
             database_name: ctx.kdbx_file.get_database_name().into(),
+            // TODO: Check the use of 'None' values below fields in iOS and Android after this Save as call 
+            //       We may need to update in db-service_ffi crate before sending back to UI 
             file_name: None,
             key_file_name: None,
         })

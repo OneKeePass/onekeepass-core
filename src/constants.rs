@@ -25,9 +25,9 @@ pub const EMPTY: &[u8] = &[];
 pub const PAYLOAD_BLOCK_SIZE: u64 = 1048576; // (1MB = 1024 * 1024), 65536  1048576
 
 /*
-    Version 2:
-        Otp changes
- */
+   Version 2:
+       Otp changes
+*/
 pub const INTERNAL_VERSION: i32 = 2;
 
 pub const GENERATOR_NAME: &str = "OneKeyPass";
@@ -72,8 +72,8 @@ pub mod general_category_names {
 #[allow(dead_code)]
 pub mod standard_in_section_names {
     pub const LOGIN_DETAILS: &str = "Login Details";
-    pub const ADDITIONAL_ONE_TIME_PASSWORDS: &str = "Additional One-Time Passwords" ;
-    pub const CARD_DETAILS: &str = "Card Details" ;
+    pub const ADDITIONAL_ONE_TIME_PASSWORDS: &str = "Additional One-Time Passwords";
+    pub const CARD_DETAILS: &str = "Card Details";
 }
 
 #[allow(dead_code)]
@@ -82,10 +82,13 @@ pub mod entry_type_name {
     pub const WIRELESS_ROUTER: &str = "Wireless Router";
     pub const CREDIT_DEBIT_CARD: &str = "Credit/Debit Card";
     pub const BANK_ACCOUNT: &str = "Bank Account";
+
+    pub const AUTO_DB_OPEN: &str = "Auto/Child Database Open";
+
     pub const PASSPORT: &str = "Passport";
     pub const IDENTITY: &str = "Identity";
     pub const DRIVER_LICENSE: &str = "Driver License";
-
+    
     //Medical Record, Membership,
 }
 
@@ -93,6 +96,8 @@ pub mod entry_type_name {
 // let uid = Uuid::new_v4();
 // println!("{}",util::as_hex_array_formatted(uid.as_bytes()));
 // println!("{}",uid.to_string());
+
+// See the test fn 'generate_uuid()' in the mod tests at the bottom
 
 #[allow(dead_code)]
 pub mod entry_type_uuid {
@@ -136,6 +141,12 @@ pub mod entry_type_uuid {
         0x90, 0xAC, 0x9D, 0x76, 0x7E, 0xA7, 0x41, 0x76, 0xB5, 0xD0, 0xFA, 0xBF, 0x8A, 0x9A, 0x00,
         0x58,
     ];
+
+    //389368a9-73a9-4256-8247-321a2e60b2c7
+    pub const AUTO_DB_OPEN: &[u8] = &[
+        0x38, 0x93, 0x68, 0xA9, 0x73, 0xA9, 0x42, 0x56, 0x82, 0x47, 0x32, 0x1A, 0x2E, 0x60, 0xB2,
+        0xC7,
+    ];
 }
 
 #[allow(dead_code)]
@@ -146,6 +157,8 @@ pub mod entry_keyvalue_key {
     pub const PASSWORD: &str = "Password";
     pub const OTP: &str = "otp";
     pub const URL: &str = "URL";
+
+    pub const IF_DEVICE: &str = "IfDevice";
 
     pub const NUMBER: &str = "Number";
 }
@@ -342,4 +355,17 @@ pub mod inner_header_type {
 
     pub const SALSA20_STREAM: u32 = 2; //LE Bytes (2 0 0 0)
     pub const CHACHA20_STREAM: u32 = 3; //LE Bytes (3 0 0 0)
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+#[allow(unused)]
+mod tests {
+
+    #[test]
+    fn generate_uuid() {
+        let uid = uuid::Uuid::new_v4();
+        println!("{}", crate::util::as_hex_array_formatted(uid.as_bytes()));
+        println!("{}", uid.to_string());
+    }
 }

@@ -27,11 +27,18 @@ pub struct KeyValueData {
     pub helper_text: Option<String>,
     pub data_type: FieldDataType,
     pub standard_field: bool,
+    
     // TODO: Use select_field name instead of forming options list everytime.
     pub select_field_options: Option<Vec<String>>,
+
+    // Only relevant for PASSWORD field and in other cases it is None
+    // We get the PasswordScore based on the String value of password
+    // Only serialization is enabled so as to send the data to UI 
     #[serde(skip_deserializing)]
     pub password_score: Option<PasswordScore>,
+    
     // Following are set on otp token generation
+    // Should this also use 'skip_deserializing' ?
     pub current_opt_token: Option<CurrentOtpTokenData>,
 }
 
@@ -270,7 +277,7 @@ impl EntryFormData {
                         // Need to ensure that the field name of this 'fd.name' is NOT yet
                         // added earlier to any other section.
 
-                        // This will happen in a situation when a new field is introduced later in the satndard section with same name as
+                        // This will happen in a situation when a new field is introduced later in the standard section with same name as
                         // in any previously user added custom section
 
                         // For example, let us assume we have a previously user defined section "Section1" with field name "UserName" for

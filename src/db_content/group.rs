@@ -6,7 +6,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Group {
     pub(crate) uuid: Uuid,
-    //TODO: Should we add parent group uuid as it is done for Entry?
+    // TODO: Should we add parent group uuid as it is done for Entry?
     pub parent_group_uuid: Uuid,
     pub name: String,
     #[serde(default)]
@@ -26,10 +26,10 @@ pub struct Group {
     pub(crate) default_auto_type_sequence: Option<String>,
     pub(crate) enable_auto_type: Option<bool>,
 
-    //Only the child group uuids are kept here and used to do lookup in 'root.all_groups'
+    // Only the child group uuids are kept here and used to do lookup in 'root.all_groups'
     #[serde(default)]
     pub(crate) group_uuids: Vec<Uuid>,
-    //Only the child entry uuids are kept here and used to do lookup in 'root.all_entries'
+    // Only the child entry uuids are kept here and used to do lookup in 'root.all_entries'
     #[serde(default)]
     pub(crate) entry_uuids: Vec<Uuid>,
 }

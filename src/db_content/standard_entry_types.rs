@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 // Use "use crate::build_uuid;" in any other module to use this macro
 // See https://stackoverflow.com/questions/26731243/how-do-i-use-a-macro-across-module-files for more techniques
+// This macros builds uuid from an array - [u8]
 #[macro_export]
 macro_rules! build_uuid {
     ($aname:expr) => {
@@ -18,9 +19,19 @@ macro_rules! build_uuid {
     };
 }
 
-// IMPORTANT: As we add more standard types, we need to ensure to add that name here
-pub const STANDARD_TYPE_NAMES: &[&'static str] =
-    &[LOGIN, CREDIT_DEBIT_CARD, BANK_ACCOUNT, WIRELESS_ROUTER];
+// IMPORTANT: 
+// As we add more standard types, we need to ensure to add that name here
+// In 'STANDARD_TYPE_UUIDS_BY_NAME' and in 'UUID_TO_ENTRY_TYPE_MAP'
+// Also these names are to be added in 'src/main/onekeepass/frontend/constants.cljs'
+
+// All standard types available for UI to use
+pub const STANDARD_TYPE_NAMES: &[&'static str] = &[
+    LOGIN,
+    CREDIT_DEBIT_CARD,
+    BANK_ACCOUNT,
+    WIRELESS_ROUTER,
+    AUTO_DB_OPEN,
+];
 
 //pub const STANDARD_TYPE_UUIDS:&[&'static Uuid] = &[&build_uuid!(entry_type_uuid::LOGIN) ];
 
@@ -36,19 +47,21 @@ lazy_static! {
         m
     };
 
+    // Look up to get the entry type's UUID from its name
     pub static ref STANDARD_TYPE_UUIDS_BY_NAME: HashMap<&'static str, Uuid> = {
         let mut m = HashMap::new();
         m.insert(LOGIN,build_uuid!(entry_type_uuid::LOGIN));
         m.insert(CREDIT_DEBIT_CARD,build_uuid!(entry_type_uuid::CREDIT_DEBIT_CARD));
         m.insert(BANK_ACCOUNT,build_uuid!(entry_type_uuid::BANK_ACCOUNT));
         m.insert(WIRELESS_ROUTER,build_uuid!(entry_type_uuid::WIRELESS_ROUTER));
+        m.insert(AUTO_DB_OPEN,build_uuid!(entry_type_uuid::AUTO_DB_OPEN));
         m
     };
 
     pub static ref DEFAULT_ENTRY_TYPE: EntryType = EntryType {
         //try **(STANDARD_TYPE_UUIDS_BY_NAME.get(LOGIN).unwrap()),
         //uuid::Builder::from_slice(&entry_type_uuid::LOGIN).unwrap().build(),
-        uuid: build_uuid!(entry_type_uuid::LOGIN),     
+        uuid: build_uuid!(entry_type_uuid::LOGIN),
         name: LOGIN.into(),
         secondary_title: Some(USER_NAME.into()),
         icon_name:None,
@@ -64,7 +77,7 @@ lazy_static! {
                 FieldDef::new("Additional URLs"),
                 //FieldDef::new("Date created").set_data_type(FieldDataType::Date),
             ],
-            
+
         },
         Section {
             name: ADDITIONAL_ONE_TIME_PASSWORDS.into(),
@@ -75,7 +88,9 @@ lazy_static! {
 
     pub static ref UUID_TO_ENTRY_TYPE_MAP: HashMap<uuid::Uuid, EntryType> = {
         let mut m = HashMap::new();
+
         m.insert(DEFAULT_ENTRY_TYPE.uuid, DEFAULT_ENTRY_TYPE.clone());
+
         m.insert(
             build_uuid!(entry_type_uuid::WIRELESS_ROUTER),
             EntryType {
@@ -100,7 +115,7 @@ lazy_static! {
             EntryType {
                 uuid: build_uuid!(entry_type_uuid::CREDIT_DEBIT_CARD),
                 name: CREDIT_DEBIT_CARD.into(),
-                secondary_title: Some("Number".into()),
+                secondary_title: Some(NUMBER.into()),
                 icon_name:None,
                 sections: vec![
                     Section {
@@ -158,52 +173,73 @@ lazy_static! {
 
         m.insert(
             build_uuid!(entry_type_uuid::BANK_ACCOUNT),
-        EntryType {
-            uuid: build_uuid!(entry_type_uuid::BANK_ACCOUNT),
-            name: BANK_ACCOUNT.into(),
-            secondary_title: Some("Account holder".into()),
-            icon_name:None,
-            sections: vec![
-                Section {
+            EntryType {
+                uuid: build_uuid!(entry_type_uuid::BANK_ACCOUNT),
+                name: BANK_ACCOUNT.into(),
+                secondary_title: Some("Account holder".into()),
+                icon_name:None,
+                sections: vec![
+                    Section {
+                        name: LOGIN_DETAILS.into(),
+                        field_defs: vec![
+                            FieldDef::new(USER_NAME).required(),
+                            FieldDef::new(PASSWORD)
+                                .required()
+                                .set_require_protection(true),
+                                FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword).set_require_protection(true),
+                            FieldDef::new(URL)
+                        ],
+                    },
+                    Section {
+                        name: ADDITIONAL_ONE_TIME_PASSWORDS.into(),
+                        field_defs: vec![],
+                    },
+                    Section {
+                        name: "Account Details".into(),
+                        field_defs: vec![
+                            FieldDef::new("Account holder").required(),
+                            FieldDef::new("Account type").required(),
+                            FieldDef::new("Account number").required(),
+                            FieldDef::new("Bank Code/Routing number"),
+                            FieldDef::new("SWIFT"),
+                        ],
+                    },
+                    Section {
+                        name: "Bank Address".into(),
+                        field_defs: vec![
+                            FieldDef::new("Address Line1"),
+                            FieldDef::new("Address Line2"),
+                            FieldDef::new("City"),
+                            FieldDef::new("State"),
+                            FieldDef::new("Zip Code"),
+                            FieldDef::new("Country"),
+                            FieldDef::new("Phone Number"),
+                        ],
+                    },
+                ]
+            }
+        );
+
+        m.insert(
+            build_uuid!(entry_type_uuid::AUTO_DB_OPEN),
+            EntryType {
+                uuid: build_uuid!(entry_type_uuid::AUTO_DB_OPEN),
+                name: AUTO_DB_OPEN.into(),
+                secondary_title: Some(USER_NAME.into()),
+                icon_name:None,
+                sections: vec![Section {
                     name: LOGIN_DETAILS.into(),
                     field_defs: vec![
-                        FieldDef::new(USER_NAME).required(),
-                        FieldDef::new(PASSWORD)
-                            .required()
-                            .set_require_protection(true),
-                            FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword).set_require_protection(true),
-                        FieldDef::new(URL)
+                        FieldDef::new(USER_NAME),
+                        FieldDef::new(PASSWORD).set_require_protection(true),
+                        FieldDef::new(URL),
+                        FieldDef::new(IF_DEVICE),
                     ],
-                },
-                Section {
-                    name: ADDITIONAL_ONE_TIME_PASSWORDS.into(),
-                    field_defs: vec![],
-                },
-                Section {
-                    name: "Account Details".into(),
-                    field_defs: vec![
-                        FieldDef::new("Account holder").required(),
-                        FieldDef::new("Account type").required(),
-                        FieldDef::new("Account number").required(),
-                        FieldDef::new("Bank Code/Routing number"),
-                        FieldDef::new("SWIFT"),
-                    ],
-                },
-                Section {
-                    name: "Bank Address".into(),
-                    field_defs: vec![
-                        FieldDef::new("Address Line1"),
-                        FieldDef::new("Address Line2"),
-                        FieldDef::new("City"),
-                        FieldDef::new("State"),
-                        FieldDef::new("Zip Code"),
-                        FieldDef::new("Country"),
-                        FieldDef::new("Phone Number"),
-                    ],
-                },
-            ]
-        }
+                }],
+            },
         );
+
+
         m
     };
 }

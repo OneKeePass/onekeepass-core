@@ -21,11 +21,15 @@ pub type FieldDef = FieldDefV1;
 #[derive(PartialEq, Debug, Default, Clone, Serialize, Deserialize)]
 pub struct EntryTypeV1 {
     pub(crate) uuid: Uuid,
+
     // This is the name used to identify an entry type
     pub(crate) name: String,
+
     // Name of a field which is used along Title in the entry listing ( more UI specific use)
     pub(crate) secondary_title: Option<String>,
+
     pub(crate) icon_name: Option<String>,
+
     // Each entry may have one or more sections.
     pub(crate) sections: Vec<SectionV1>,
 }
@@ -54,7 +58,7 @@ impl EntryTypeV1 {
         }
     }
 
-    // Gets all builtin standard field names from all sections if the entry type is a standard one
+    // Gets all built-in standard field names from all sections if the entry type is a standard one
     pub fn standard_field_names_by_id(&self) -> Vec<&str> {
         let v = if let Some(et) = UUID_TO_ENTRY_TYPE_MAP.get(&self.uuid) {
             et.sections
