@@ -76,12 +76,13 @@ impl GroupVisitor for InOrderIds {
 
 #[derive(Debug, Clone)]
 pub struct Root {
-    pub(crate) root_uuid: Uuid,
-    pub(crate) recycle_bin_uuid: Uuid,
+    root_uuid: Uuid,
+    recycle_bin_uuid: Uuid,
+    auto_open_group_uuid: Option<Uuid>,
     // All groups data for easy lookup by uuid
-    pub(crate) all_groups: HashMap<Uuid, Group>,
+    all_groups: HashMap<Uuid, Group>,
     // All entries data for easy lookup by uuid
-    pub(crate) all_entries: HashMap<Uuid, Entry>,
+    all_entries: HashMap<Uuid, Entry>,
 }
 
 impl Root {
@@ -89,9 +90,47 @@ impl Root {
         Root {
             root_uuid: Uuid::default(),
             recycle_bin_uuid: Uuid::default(),
+            auto_open_group_uuid: None,
             all_groups: HashMap::new(),
             all_entries: HashMap::new(),
         }
+    }
+
+    pub(crate) fn auto_open_group_uuid(&self) -> Option<Uuid> {
+        self.auto_open_group_uuid
+    }
+
+    pub(crate) fn set_auto_open_group_uuid(&mut self, uuid: Uuid) {
+        self.auto_open_group_uuid = Some(uuid);
+    }
+
+    pub(crate) fn root_uuid(&self) -> Uuid {
+        self.root_uuid
+    }
+
+    pub(crate) fn set_root_uuid(&mut self, uuid: Uuid) {
+        self.root_uuid = uuid;
+    }
+
+    pub(crate) fn recycle_bin_uuid(&self) -> Uuid {
+        self.recycle_bin_uuid
+    }
+
+    pub(crate) fn set_recycle_bin_uuid(&mut self, uuid: Uuid) {
+        self.recycle_bin_uuid = uuid;
+    }
+
+    pub(crate) fn insert_to_all_groups(&mut self, group: Group) {
+        self.all_groups.insert(group.uuid, group);
+    }
+
+    pub(crate) fn all_entries(&self) -> &HashMap<Uuid, Entry> {
+        &self.all_entries
+    }
+
+    pub(crate) fn insert_to_all_entries(&mut self, entry: Entry) {
+        //let a:std::sync::Arc<Root>  =  std::sync::Arc::clone(self);
+        self.all_entries.insert(entry.uuid, entry);
     }
 
     pub fn entry_by_id(&self, entry_uuid: &Uuid) -> Option<&Entry> {
@@ -810,12 +849,14 @@ impl Root {
     //         .for_each(|e| e.after_xml_reading());
     // }
 
+    // Called to set shared meta data to all entries after parsing xml payload data
     pub fn entries_after_xml_reading(&mut self, meta: &Meta) {
         self.all_entries
             .values_mut()
             .for_each(|e| e.after_xml_reading(meta));
     }
 
+    // Called to ensure that any house keeping is required to be done before xml writing
     pub fn entries_before_xml_writing(&mut self) {
         self.all_entries
             .values_mut()
@@ -830,7 +871,7 @@ impl Root {
     //         });
     // }
 
-    pub fn groups_to_custom_data(&mut self) {
+    pub(crate) fn groups_to_custom_data(&mut self) {
         let mut acc = InOrderIds {
             ids: vec![],
             entry_ids_wanted: false,
@@ -848,7 +889,7 @@ impl Root {
         }
     }
 
-    pub fn collect_tags(&self) -> AllTags {
+    pub(crate) fn collect_tags(&self) -> AllTags {
         let mut all_tags = AllTags::new();
         // First collect all the unique tags used at group levels
         self.root_group_visitor_action(&mut all_tags);
@@ -861,13 +902,70 @@ impl Root {
         all_tags
     }
 
-    /// Visit each group starting with the root and do some action using the node group's data
-    pub fn root_group_visitor_action(&self, acc: &mut dyn GroupVisitor) {
+    // Called after xml content is parsed to ensure that AutoOpen group has entry type as AUTO_DB_OPEN
+    pub(crate) fn adjust_auto_open_group_entries(&mut self) {
+        // Only groups under root are considered
+        let root_child_group_ids = self
+            .all_groups
+            .get(&self.root_uuid)
+            .map_or(vec![], |root_child_group| {
+                root_child_group.group_uuids.clone()
+            });
+
+        let auto_open_entry_type = super::standard_entry_types::auto_open_entry_type();
+
+        for ref grp_id in root_child_group_ids {
+            // Find the AutoOpen group and change the entry type to AUTO_DB_OPEN if required
+            // Here for now we are assuming all entries under this group are meant for auto open purpose only
+            if let Some(ao_group) = self
+                .all_groups
+                .get_mut(grp_id)
+                .filter(|g| g.name == "AutoOpen")
+            {
+                // Keep this uuid for later use
+                self.auto_open_group_uuid = Some(ao_group.uuid);
+
+                for e_id in &mut ao_group.entry_uuids {
+                    if let Some(entry) = self.all_entries.get_mut(e_id) {
+                        if entry.entry_field.entry_type.uuid != auto_open_entry_type.uuid {
+                            entry.entry_field.entry_type = auto_open_entry_type.clone();
+                        }
+                    }
+                }
+            }
+        }
+
+        // let found_opt = self.all_groups.iter_mut().try_for_each(|g| {
+        //     if g.1.name == "AutoOpen" {
+        //         std::ops::ControlFlow::Break(g.1)
+        //     } else {
+        //         std::ops::ControlFlow::Continue(())
+        //     }
+        // });
+
+        // // Move to group
+        // let auto_open_entry_type = super::standard_entry_types::auto_open_entry_type();
+
+        // if let Some(ao_group) = found_opt.break_value() {
+        //     for e_id in &mut ao_group.entry_uuids {
+        //         if let Some(entry) = self.all_entries.get_mut(e_id) {
+        //             if entry.entry_field.entry_type.name != AUTO_DB_OPEN {
+        //                 if let Some(t) = auto_open_entry_type {
+        //                     entry.entry_field.entry_type = t.clone();
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+    }
+
+    // Visit each group starting with the root and do some action using the node group's data
+    fn root_group_visitor_action(&self, acc: &mut dyn GroupVisitor) {
         self.group_visitor_action(&self.root_uuid, acc);
     }
 
     // Gets all sub groups' uuids found under a group with the group_uuid
-    pub(crate) fn children_groups_uuids(&self, group_uuid: &Uuid) -> Vec<Uuid> {
+    fn children_groups_uuids(&self, group_uuid: &Uuid) -> Vec<Uuid> {
         let mut acc = InOrderIds {
             ids: vec![],
             entry_ids_wanted: false,

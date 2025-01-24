@@ -601,7 +601,7 @@ pub fn insert_or_update_custom_entry_type(
 // Adjusts the special groups are such as recycle bin group listed
 // in the end of the child group ids in case of root group
 fn adjust_special_groups_order(k: &KeepassFile, group: &Group) -> Vec<String> {
-    if k.root.root_uuid == group.uuid {
+    if k.root.root_uuid() == group.uuid {
         let v: Vec<String> = group
             .group_uuids
             .iter()
@@ -642,8 +642,9 @@ fn create_groups_summary_data(k: &KeepassFile) -> Result<GroupTree> {
         );
     }
     Ok(GroupTree {
-        root_uuid: k.root.root_uuid,
-        recycle_bin_uuid: k.root.recycle_bin_uuid,
+        root_uuid: k.root.root_uuid(),
+        recycle_bin_uuid: k.root.recycle_bin_uuid(),
+        auto_open_group_uuid:k.root.auto_open_group_uuid(),
         deleted_group_uuids: k.deleted_group_uuids(),
         groups: grps,
     })

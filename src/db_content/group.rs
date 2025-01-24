@@ -78,6 +78,7 @@ impl Group {
     //     }
     // }
 
+    // Called to set the group's custom data field values
     pub fn group_to_custom_data(&mut self) {
         if self.marked_category {
             // Remove any previous setting when marked_category is true

@@ -16,6 +16,7 @@ pub struct GroupTree {
     //pub root_uuid: String,
     pub root_uuid: Uuid,
     pub recycle_bin_uuid: Uuid,
+    pub auto_open_group_uuid:Option<Uuid>,
     pub deleted_group_uuids: Vec<Uuid>,
     pub groups: HashMap<String, GroupSummary>,
 }
@@ -100,7 +101,7 @@ pub(crate) fn entry_by_category<'a>(
         EntryCategory::Deleted => kp.root.deleted_entries(),
         EntryCategory::Group(uuid) => {
             if let Ok(group_uuid) = Uuid::parse_str(uuid) {
-                if let Some(g) = kp.root.all_groups.get(&group_uuid) {
+                if let Some(g) = kp.root.group_by_id(&group_uuid) {
                     for entry_uuid in &g.entry_uuids {
                         if let Some(e) = kp.root.entry_by_id(&entry_uuid) {
                             entries.push(e);

@@ -79,8 +79,9 @@ impl NewDatabase {
         let mut root_g = Group::new();
         root_g.uuid = uuid::Uuid::new_v4();
         root_g.name = kc.meta.database_name.clone();
-        kc.root.root_uuid = root_g.uuid.clone();
-        kc.root.all_groups.insert(root_g.uuid, root_g);
+        //kc.root.root_uuid = root_g.uuid.clone();
+        kc.root.set_root_uuid(root_g.uuid);
+        kc.root.insert_to_all_groups(root_g);
         
         debug!("New database create: password nil? {}, file name {:?}",self.password.is_none(),&self.key_file_name);
 

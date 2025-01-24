@@ -24,7 +24,7 @@ impl KeepassFile {
     pub fn empty_trash(&mut self) -> Result<()> {
         // The recycle_bin_uuid from the root itself used for now till we move the root 'recycle_bin_uuid'
         // to meta 'recycle_bin_uuid' instead of using share_meta_to_root and share_root_to_meta
-        self.root.empty_trash(self.root.recycle_bin_uuid)
+        self.root.empty_trash(self.root.recycle_bin_uuid())
     }
 
     // TODO:
@@ -42,12 +42,12 @@ impl KeepassFile {
 
     pub fn collect_all_active_entries<'a>(&'a self) -> Vec<&'a Entry> {
         self.root
-            .collect_all_active_entries(self.root.recycle_bin_uuid)
+            .collect_all_active_entries(self.root.recycle_bin_uuid())
     }
 
     pub fn collect_favorite_entries<'a>(&'a self) -> Vec<&'a Entry> {
         self.root
-            .collect_favorite_entries(self.root.recycle_bin_uuid)
+            .collect_favorite_entries(self.root.recycle_bin_uuid())
     }
 
     pub fn deleted_entry_uuids(&self) -> Vec<Uuid> {
@@ -107,7 +107,7 @@ impl KeepassFile {
         // The uuid of a group that is identified as recycle group and this is available only as child
         // element of Meta element
         if self.meta.recycle_bin_uuid != Uuid::default() {
-            self.root.recycle_bin_uuid = self.meta.recycle_bin_uuid;
+            self.root.set_recycle_bin_uuid(self.meta.recycle_bin_uuid);
             //self.root.adjust_special_groups_order();
         }
 
@@ -116,6 +116,8 @@ impl KeepassFile {
 
         //self.root.custom_data_to_entries();
         self.root.entries_after_xml_reading(&self.meta);
+
+        self.root.adjust_auto_open_group_entries();
     }
 
     // Called before writing xml content
@@ -131,12 +133,12 @@ impl KeepassFile {
         // When a recycle group is created under root group, we need to set it in Meta so that
         // it can be written as child element of Meta and subsequent reading of db
         // includes this special group uuid
-        if self.root.recycle_bin_uuid != Uuid::default() {
-            self.meta.recycle_bin_uuid = self.root.recycle_bin_uuid;
+        if self.root.recycle_bin_uuid() != Uuid::default() {
+            self.meta.recycle_bin_uuid = self.root.recycle_bin_uuid();
             self.meta.recycle_bin_enabled = true;
         }
 
-        // This copies any custom data specific field informantion back to custom data before xml writing
+        // This copies any custom data specific field information back to custom data before xml writing
         self.root.groups_to_custom_data();
 
         // Sets the new version

@@ -452,7 +452,10 @@ impl<'a> XmlReader<'a> {
             start_tag_fns {},
             start_tag_blks {
                 GROUP => {
-                    root.root_uuid = self.read_group(None,&mut root.all_groups,&mut root.all_entries)?;
+                    // root.root_uuid = self.read_group(None,&mut root.all_groups,&mut root.all_entries)?;
+                    // root.root_uuid = self.read_group(None,root)?;
+                    let uuid = self.read_group(None,root)?;
+                    root.set_root_uuid(uuid);
                 }
             },
             empty_tags {},
@@ -464,8 +467,7 @@ impl<'a> XmlReader<'a> {
     fn read_group(
         &mut self,
         parent_group_uuid: Option<uuid::Uuid>,
-        all_groups: &mut HashMap<uuid::Uuid, Group>,
-        all_entries: &mut HashMap<uuid::Uuid, Entry>,
+        root: &mut Root,
     ) -> Result<uuid::Uuid> {
         let mut group = Group::new();
         // All non root groups will have some parent group as parent
@@ -494,8 +496,8 @@ impl<'a> XmlReader<'a> {
                     self.read_times(&mut group.times)?;
                 },
                 GROUP => {
-                    //group.groups.push(self.read_group()?);
-                    group.group_uuids.push(self.read_group(Some(group.uuid),all_groups,all_entries)?);
+                    // Recursive child group call
+                    group.group_uuids.push(self.read_group(Some(group.uuid),root)?);
                 },
                 ENTRY => {
                     // group.entries.push(self.read_entry()?);
@@ -504,7 +506,7 @@ impl<'a> XmlReader<'a> {
                     // If entry tag of a group comes before UUID tag of Group, then group.uuid will be a Uuid:Default vlaue.
                     // May need to fix when that happens with other KeePass app generated xml content.
                     // So far a group's entry always come after the group's uuid read
-                    group.entry_uuids.push(self.read_entry(group.uuid, all_entries)?);
+                    group.entry_uuids.push(self.read_entry(group.uuid, root)?);
                 },
                 CUSTOM_DATA => {
                     self.read_custom_data(&mut group.custom_data)?;
@@ -515,7 +517,8 @@ impl<'a> XmlReader<'a> {
         );
         // TODO: We may need to ensure all Entries of this group has its group_uuid is set to this group's UUID. See above comments in 'ENTRY'
         let gid = group.uuid; // copy to return
-        all_groups.insert(group.uuid, group);
+    
+        root.insert_to_all_groups(group);
         Ok(gid)
     }
 
@@ -557,12 +560,12 @@ impl<'a> XmlReader<'a> {
     fn read_entry(
         &mut self,
         group_uuid: uuid::Uuid,
-        all_entries: &mut HashMap<uuid::Uuid, Entry>,
+        root: &mut Root,
     ) -> Result<uuid::Uuid> {
         let mut entry = self.read_entry_data()?; //Entry::new();
         entry.group_uuid = group_uuid;
         let eid = entry.uuid;
-        all_entries.insert(entry.uuid, entry);
+        root.insert_to_all_entries(entry);
         Ok(eid)
     }
 
@@ -955,11 +958,10 @@ impl<W: Write> XmlWriter<W> {
     fn write_group(
         &mut self,
         group_uuid: &uuid::Uuid,
-        all_groups: &HashMap<uuid::Uuid, Group>,
-        all_entries: &HashMap<uuid::Uuid, Entry>,
+        root:&Root,
     ) -> Result<()> {
         let group_tag = std::str::from_utf8(GROUP)?;
-        if let Some(group) = all_groups.get(group_uuid) {
+        if let Some(group) = root.group_by_id(group_uuid) {
             self.writer
                 .write_event(Event::Start(BytesStart::new(group_tag)))?;
             write_tags! { self,
@@ -977,11 +979,11 @@ impl<W: Write> XmlWriter<W> {
             self.write_custom_data(&group.custom_data)?;
 
             for e_uuid in group.entry_uuids.iter() {
-                self.write_entry(e_uuid, all_entries, false)?;
+                self.write_entry(e_uuid, root.all_entries(), false)?;
             }
 
             for g_uuid in group.group_uuids.iter() {
-                self.write_group(g_uuid, all_groups, all_entries)?;
+                self.write_group(g_uuid, root)?;
             }
 
             self.writer
@@ -1122,9 +1124,8 @@ impl<W: Write> XmlWriter<W> {
         self.writer
             .write_event(Event::Start(BytesStart::new(tag_element)))?;
         self.write_group(
-            &kp.root.root_uuid,
-            &kp.root.all_groups,
-            &kp.root.all_entries,
+            &kp.root.root_uuid(),
+            &kp.root,
         )?;
         self.writer
             .write_event(Event::End(BytesEnd::new(tag_element)))?;

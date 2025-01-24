@@ -16,7 +16,7 @@ use crate::util;
 
 use super::meta::MetaShare;
 use super::otp::{CurrentOtpTokenData, OtpData};
-use super::Meta;
+use super::{Meta, Root};
 
 // To carry additional entry field grouping and for easy KV data lookup
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -169,6 +169,9 @@ pub struct Entry {
 
     //pub(crate) parsed_otp_values: Option<HashMap<String, ParsedOtpData>>,
     pub(crate) parsed_otp_values: Option<HashMap<String, OtpData>>,
+
+    pub(crate) root_share:Option<Arc<Root>>,
+
 }
 
 impl Entry {
@@ -188,6 +191,7 @@ impl Entry {
             history: History::default(),
             meta_share: Arc::default(),
             parsed_otp_values: None,
+            root_share:None,
         }
     }
 

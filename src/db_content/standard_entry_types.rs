@@ -234,11 +234,13 @@ lazy_static! {
                         FieldDef::new(PASSWORD).set_require_protection(true),
                         FieldDef::new(URL),
                         FieldDef::new(IF_DEVICE),
+                        // FieldDef::new(PRIORITY),
+                        // FieldDef::new(SKIP_IF_NOT_EXISTS).set_data_type(FieldDataType::Bool),
+                        // FieldDef::new(SKIP_IF_KEY_FILE_NOT_EXISTS).set_data_type(FieldDataType::Bool),
                     ],
                 }],
             },
         );
-
 
         m
     };
@@ -269,13 +271,24 @@ pub fn standard_types_ordered_by_id() -> Vec<&'static EntryType> {
     STANDARD_TYPE_NAMES
         .iter()
         .map(|s| {
-            //IMPORATNT: we use unwrap expecting that STANDARD_TYPE_UUIDS_BY_NAME and STANDARD_TYPE_NAMES match
+            // IMPORATNT: we use unwrap expecting that STANDARD_TYPE_UUIDS_BY_NAME and STANDARD_TYPE_NAMES match
             let uuid = STANDARD_TYPE_UUIDS_BY_NAME.get(s).unwrap();
             UUID_TO_ENTRY_TYPE_MAP
                 .get(uuid)
                 .map_or_else(|| &*DEFAULT_ENTRY_TYPE, |e| e)
         })
         .collect::<Vec<&EntryType>>()
+}
+
+pub fn _auto_open_entry_type_opt() -> Option<&'static EntryType> {
+    let uuid = build_uuid!(entry_type_uuid::AUTO_DB_OPEN);
+    UUID_TO_ENTRY_TYPE_MAP.get(&uuid)
+}
+
+pub fn auto_open_entry_type() -> &'static EntryType {
+    let uuid = build_uuid!(entry_type_uuid::AUTO_DB_OPEN);
+    // IMPORATNT: we use unwrap expecting that AUTO_DB_OPEN is already set
+    UUID_TO_ENTRY_TYPE_MAP.get(&uuid).unwrap()
 }
 
 /*
