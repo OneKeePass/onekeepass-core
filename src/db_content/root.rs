@@ -100,7 +100,7 @@ impl Root {
         self.auto_open_group_uuid
     }
 
-    pub(crate) fn set_auto_open_group_uuid(&mut self, uuid: Uuid) {
+    pub(crate) fn _set_auto_open_group_uuid(&mut self, uuid: Uuid) {
         self.auto_open_group_uuid = Some(uuid);
     }
 
@@ -108,22 +108,28 @@ impl Root {
         self.root_uuid
     }
 
-    pub(crate) fn set_root_uuid(&mut self, uuid: Uuid) {
+    pub(crate) fn set_root_uuid(&mut self, uuid: Uuid) -> &mut Self {
         self.root_uuid = uuid;
+        self
     }
 
     pub(crate) fn recycle_bin_uuid(&self) -> Uuid {
         self.recycle_bin_uuid
     }
 
-    pub(crate) fn set_recycle_bin_uuid(&mut self, uuid: Uuid) {
+    pub(crate) fn set_recycle_bin_uuid(&mut self, uuid: Uuid) -> &mut Self {
         self.recycle_bin_uuid = uuid;
+        self
     }
 
+    // Called to add to the collection of all groups HashMap for easy lookup
+    // IMPORTANT: This does not verify any data on the passed 'group'
     pub(crate) fn insert_to_all_groups(&mut self, group: Group) {
         self.all_groups.insert(group.uuid, group);
     }
 
+    // Called to add to the collection of all entries HashMap for easy lookup
+    // IMPORTANT: This does not verify any data on the passed 'entry'. Caller side reponsible for validata data
     pub(crate) fn all_entries(&self) -> &HashMap<Uuid, Entry> {
         &self.all_entries
     }

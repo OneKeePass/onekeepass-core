@@ -1,5 +1,6 @@
 mod categories;
 mod entry;
+mod parsing;
 
 use serde::{Deserialize, Serialize};
 

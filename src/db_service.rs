@@ -721,7 +721,8 @@ pub fn get_group_by_id(db_key: &str, group_uuid: &Uuid) -> Result<Group> {
 pub fn get_entry_form_data_by_id(db_key: &str, entry_uuid: &Uuid) -> Result<EntryFormData> {
     main_content_action!(db_key, move |k: &KeepassFile| {
         match k.root.entry_by_id(entry_uuid) {
-            Some(e) => Ok(e.into()),
+            // Some(e) => Ok(e.into()),
+            Some(e) => Ok(EntryFormData::form_data_from_entry(&k.root, e)),
             None => Err(Error::NotFound(format!(
                 "No entry is found for the id {}",
                 entry_uuid

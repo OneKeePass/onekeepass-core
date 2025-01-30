@@ -170,7 +170,6 @@ pub struct Entry {
     //pub(crate) parsed_otp_values: Option<HashMap<String, ParsedOtpData>>,
     pub(crate) parsed_otp_values: Option<HashMap<String, OtpData>>,
 
-    pub(crate) root_share:Option<Arc<Root>>,
 
 }
 
@@ -191,8 +190,11 @@ impl Entry {
             history: History::default(),
             meta_share: Arc::default(),
             parsed_otp_values: None,
-            root_share:None,
         }
+    }
+
+    pub(crate) fn get_uuid(&self) -> &Uuid {
+        &self.uuid
     }
 
     pub fn new_blank_entry_by_type_id(
