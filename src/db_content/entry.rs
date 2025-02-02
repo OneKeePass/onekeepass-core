@@ -132,6 +132,7 @@ impl EntryField {
     }
 
     // finds a KeyValue from the 'fields' map and updates its 'value' field with the passed value
+    // The update is done only if an entry is found
     pub fn update_value(&mut self, key: &str, value: &str) {
         self.fields
             .entry(key.to_string())
@@ -169,8 +170,6 @@ pub struct Entry {
 
     //pub(crate) parsed_otp_values: Option<HashMap<String, ParsedOtpData>>,
     pub(crate) parsed_otp_values: Option<HashMap<String, OtpData>>,
-
-
 }
 
 impl Entry {

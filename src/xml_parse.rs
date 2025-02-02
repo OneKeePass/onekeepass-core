@@ -656,7 +656,7 @@ impl<'a> XmlReader<'a> {
         Ok(kv)
     }
 
-    /// Reads the "AutoType" tag content. Each "AutoType" tag has 0 or more Association
+    // Reads the "AutoType" tag content. Each "AutoType" tag has 0 or more Association
     fn read_auto_type(&mut self) -> Result<AutoType> {
         let mut auto_type = AutoType::default();
         read_tags!(self,

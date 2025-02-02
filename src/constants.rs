@@ -83,7 +83,7 @@ pub mod entry_type_name {
     pub const CREDIT_DEBIT_CARD: &str = "Credit/Debit Card";
     pub const BANK_ACCOUNT: &str = "Bank Account";
 
-    pub const AUTO_DB_OPEN: &str = "Auto/Child Database Open";
+    pub const AUTO_DB_OPEN: &str = "Auto Database Open";
 
     pub const PASSPORT: &str = "Passport";
     pub const IDENTITY: &str = "Identity";

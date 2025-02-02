@@ -2,9 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::vec;
 
-use crate::constants::entry_keyvalue_key::TITLE;
+use crate::constants::entry_keyvalue_key::{PASSWORD, TITLE, USER_NAME};
 use crate::constants::general_category_names::FAVORITES;
-use crate::db_content::{move_to_recycle_bin, verify_uuid, AttachmentHashValue, Entry, Group};
+use crate::db_content::{
+    move_to_recycle_bin, verify_uuid, AttachmentHashValue, Entry, Group, KeyValue,
+};
 use crate::error::{Error, Result};
 use crate::util;
 use log::{debug, error};
@@ -29,6 +31,8 @@ pub struct EntryCloneOption {
     pub new_title: Option<String>,
     pub parent_group_uuid: Uuid,
     pub keep_histories: bool,
+    // The cloned entry's username and password refers to the source entry
+    pub link_by_reference: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -723,11 +727,11 @@ impl Root {
         // Caller needs to ensure that a valid parent group uuid is passed
         verify_uuid!(self, entry_clone_option.parent_group_uuid, all_groups);
 
-        let Some(e) = self.all_entries.get(entry_uuid) else {
+        let Some(source_entry) = self.all_entries.get(entry_uuid) else {
             return Err(Error::NotFound("Entry is not found to clone".into()));
         };
 
-        let mut cloned_entry = e.clone();
+        let mut cloned_entry = source_entry.clone();
         // A new entry uuid is required for the cloned one
         let new_e_uuid = uuid::Uuid::new_v4();
         cloned_entry.uuid = new_e_uuid;
@@ -739,6 +743,27 @@ impl Root {
         if let Some(title) = entry_clone_option.new_title.as_ref() {
             cloned_entry.entry_field.update_value(TITLE, title);
         }
+
+        // Link by reference done for UserName and Password
+        if entry_clone_option.link_by_reference {
+            // Uppercase Uuid string is used as done by other KP implementation
+            let mut buff = Uuid::encode_buffer();
+            let uuid_str = source_entry.uuid.simple().encode_upper(&mut buff);
+
+            // debug!("Source entry uuid_str {} for cloning",uuid_str);
+
+            let mut kv = KeyValue::new();
+            kv.key = USER_NAME.to_string();
+            kv.value = format!("{{REF:U@I:{}}}", uuid_str);
+            cloned_entry.entry_field.insert_key_value(kv);
+
+            let mut kv = KeyValue::new();
+            kv.key = PASSWORD.to_string();
+            kv.value = format!("{{REF:P@I:{}}}", uuid_str);
+            kv.protected = true;
+            cloned_entry.entry_field.insert_key_value(kv);
+        }
+
         // Remove the source entry's histories if required
         if !entry_clone_option.keep_histories {
             // This should remove histories and history realted entry type custom data
@@ -758,10 +783,7 @@ impl Root {
         // Add this new cloned entry to the entries lookup map
         self.all_entries.insert(cloned_entry.uuid, cloned_entry);
 
-        debug!(
-            "Entry uuid {} is cloned and cloned entry uuid is {}",
-            &entry_uuid, &new_e_uuid
-        );
+        // debug!("Entry uuid {} is cloned and cloned entry uuid is {}", &entry_uuid, &new_e_uuid);
 
         Ok(new_e_uuid)
     }

@@ -701,8 +701,8 @@ pub fn entry_summary_data(
     entry_category: EntryCategory,
 ) -> Result<Vec<EntrySummary>> {
     let action = |k: &KeepassFile| {
-        let mut entries =
-            EntrySummary::entry_summary_data(form_data::entry_by_category(&k, &entry_category));
+        // let mut entries = EntrySummary::entry_summary_data(form_data::entry_by_category(&k, &entry_category));
+        let mut entries = EntrySummary::entry_summary_data(&k, &entry_category);
         // for now sort just by the title
         entries.sort_unstable_by(|a, b| a.title.cmp(&b.title));
         Ok(entries)
@@ -722,7 +722,7 @@ pub fn get_entry_form_data_by_id(db_key: &str, entry_uuid: &Uuid) -> Result<Entr
     main_content_action!(db_key, move |k: &KeepassFile| {
         match k.root.entry_by_id(entry_uuid) {
             // Some(e) => Ok(e.into()),
-            Some(e) => Ok(EntryFormData::form_data_from_entry(&k.root, e)),
+            Some(e) => Ok(EntryFormData::place_holder_resolved_form_data(&k.root, e)),
             None => Err(Error::NotFound(format!(
                 "No entry is found for the id {}",
                 entry_uuid
@@ -794,10 +794,11 @@ pub fn is_valid_otp_url(otp_url_str: &str) -> bool {
 // Collects all entry field names and its values (not in any particular order)
 pub fn entry_key_value_fields(db_key: &str, entry_uuid: &Uuid) -> Result<HashMap<String, String>> {
     main_content_action!(db_key, move |k: &KeepassFile| {
-        match k.root.entry_by_id(entry_uuid) {
-            Some(e) => Ok(e.field_values()),
-            None => Err(Error::NotFound("No entry Entry found for the id".into())),
-        }
+        EntryFormData::entry_key_value_fields(k, entry_uuid)
+        // match k.root.entry_by_id(entry_uuid) {
+        //     Some(e) => Ok(e.field_values()),
+        //     None => Err(Error::NotFound("No entry Entry found for the id".into())),
+        // }
     })
 }
 

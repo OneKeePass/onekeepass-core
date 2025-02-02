@@ -65,6 +65,12 @@ pub struct EntryCategories {
     pub grouped_categories: Vec<CategoryDetail>,
 }
 
+// TODO:  
+// We need to fix the use of '#[serde(rename_all = "camelCase")]' and change it to use serde attribute 
+// tag and content as shown below 
+// Changes to be done for both Desktop and Mobile same time if we change this in enum EntryCategory
+// See in entry-summary-data, combined-category-details fns of background.cljs
+
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum EntryCategory {
@@ -77,6 +83,20 @@ pub enum EntryCategory {
     EntryTypeUuid(Uuid), //
     Tag(String),
 }
+
+// TODO: See the above comments
+/* 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(tag = "type_name", content = "content")]
+pub enum EntryCategory {
+    AllEntries,
+    Favorites,
+    Deleted,
+    Group(String),
+    EntryTypeUuid(Uuid), //
+    Tag(String),
+}
+*/
 
 impl EntryCategory {
     fn as_title_key(&self) -> (String, Option<String>) {

@@ -146,7 +146,7 @@ impl ReferenceFieldParsed {
             // Ensure that place holder resolving is done for all KVs of this entry
             let mut entry_fields = entry.extract_place_holders();
 
-            println!("New EntryPlaceHolderParser is created for the next entry");
+            // println!("New EntryPlaceHolderParser is created for the next entry");
 
             let mut ef = EntryPlaceHolderParser::from(
                 entry_place_holder_parser.root,
@@ -169,10 +169,10 @@ impl ReferenceFieldParsed {
     }
 
     fn default_unparsed(&self) -> String {
-        // Note if we "{{REF:{}@{}:{}}}", the recurive call in EntryPlaceHolderParser.parse() 
+        // Note if we "{{REF:{}@{}:{}}}", the recurive call in EntryPlaceHolderParser.parse()
         // may call this REF parsing again and again (need to check possible use cases)
         // Because of that "REF:{}@{}:{}" is used
-    
+
         format!(
             "REF:{}@{}:{}",
             &self.wanted_field.as_char(),
@@ -244,7 +244,7 @@ pub(crate) struct EntryPlaceHolderParser<'a> {
 }
 
 impl<'a> EntryPlaceHolderParser<'a> {
-    pub(crate) fn from(
+    fn from(
         root: &'a Root,
         current_entry: &'a Entry,
         entry_fields: &'a mut HashMap<String, String>,
@@ -259,15 +259,45 @@ impl<'a> EntryPlaceHolderParser<'a> {
         }
     }
 
+    pub(crate) fn resolve_place_holders(
+        root: &'a Root,
+        entry: &'a Entry,
+    ) -> HashMap<String, String> {
+        let mut entry_fields_with_place_holders = entry.extract_place_holders();
+
+        if !entry_fields_with_place_holders.is_empty() {
+            let mut ef =
+                EntryPlaceHolderParser::from(root, entry, &mut entry_fields_with_place_holders);
+            if let Err(e) = ef.parse_main(1) {
+                log::error!("EntryPlaceHolderParser parsing failed {}", e);
+                return HashMap::default();
+            }
+
+            let modified = ef.modified_fields();
+
+            entry_fields_with_place_holders.retain(
+                |k, _v| {
+                    if modified.contains(k) {
+                        true
+                    } else {
+                        false
+                    }
+                },
+            );
+        }
+
+        entry_fields_with_place_holders
+    }
+
     pub(crate) fn modified_fields(&self) -> Vec<String> {
         self.modified_fields.clone()
     }
 
-    pub(crate) fn print(&self) -> String {
-        format!(
+    pub(crate) fn _print(&self) {
+        println!(
             "modified_fields:{:?}, \n entry_fields:{:?}",
             self.modified_fields, self.entry_fields
-        )
+        );
     }
 }
 
@@ -285,15 +315,15 @@ impl<'a> EntryPlaceHolderParser<'a> {
             if let Some(v) = self.entry_fields.get(&k) {
                 let to_be_parsed = v.to_string();
 
-                println!("Going to parse for k {} , v {}", &k, &to_be_parsed);
+                // println!("Going to parse for k {} , v {}", &k, &to_be_parsed);
 
                 self.current_field_name = Some(k.to_string());
                 self.depth_counter = depth_counter;
 
                 if let Ok(r) = self.parse(to_be_parsed.clone(), depth_counter) {
-                    println!("Parsing is done for k {} , r {}", &k, &r);
+                    // println!("Parsing is done for k {} , r {}", &k, &r);
                     if to_be_parsed != r && self.depth_counter < 10 {
-                        println!("Inserting parsed value for k {} , r {}", &k, &r);
+                        // println!("Inserting parsed value for k {} , r {}", &k, &r);
                         self.modified_fields.push(k.to_string());
                         self.entry_fields.insert(k.to_string(), r);
                     }
@@ -312,10 +342,7 @@ impl<'a> EntryPlaceHolderParser<'a> {
     ) -> Result<String> {
         let name_str = name.trim().to_uppercase().to_string();
 
-        println!(
-            "---- next parsing is called for left: {} , name: {} , right: {} ",
-            left, name, right
-        );
+        // println!("---- next parsing is called for left: {} , name: {} , right: {} ",left, name, right );
 
         // No point of continuing for the same field again and according the call returns early
         // let early_return = self.current_field_name.as_ref().map_or_else(
@@ -351,6 +378,16 @@ impl<'a> EntryPlaceHolderParser<'a> {
                 /*
                 // If we use the format "{{REF:{}@{}:{}}}" to return default value for ref_value,
                 // then we may the following assuming ref_value does not have any other place holder
+                
+                // Or we can make self.parse on 'ref_value' and on 'right_val' separately and then combine to return as final value.
+                
+                // ref_value = self.parse(ref_value.to_string(), depth_counter + 1).unwrap_or(String::default());
+                // if we call self.parse on 'ref_value' and it returns the same "{{REF:{}@{}:{}}}", to avoid looping again
+                // we can store 'ref_value' and call self.parse only when returned value is not the same 
+                // let local_ref_value = ref_value
+                // ref_value = self.parse(ref_value.to_string(), depth_counter + 1).unwrap_or(String::default())
+                
+
                 let right_val = self.parse(right.to_string(), depth_counter + 1).unwrap_or(String::default());
                 let next_val = format!("{}{}{}", left, &ref_value, right_val);
                 Ok(next_val)
@@ -365,15 +402,6 @@ impl<'a> EntryPlaceHolderParser<'a> {
             } else {
                 Ok(format!("{}{{{}}}{}", left, name, right))
             }
-
-            // let matching_field_value = self
-            //     .entry_fields
-            //     .get(&name_str)
-            //     .map_or(String::default(), |s| s.to_string());
-
-            // // Recursive call
-            // let next_val = format!("{}{}{}", left, matching_field_value, right);
-            // self.parse(next_val, depth_counter + 1)
         }
     }
 
