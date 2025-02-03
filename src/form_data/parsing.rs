@@ -1,15 +1,9 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::OnceLock,
-};
+use std::collections::HashMap;
 
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take_until, take_while},
-    character::{
-        complete::{multispace0, one_of},
-        is_hex_digit,
-    },
+    bytes::complete::{tag, take_until},
+    character::complete::{multispace0, one_of},
     combinator::{map, rest},
     sequence::{delimited, preceded, terminated, tuple},
     IResult, Parser,
@@ -27,6 +21,8 @@ use crate::{
 //     //STANDARD_FIELDS.get_or_init(|| HashSet::from(["TITLE", "USERNAME", "PASSWORD", "URL", "NOTES"]))
 //     STANDARD_FIELDS.get_or_init(|| HashSet::from(["URL", "USERNAME", "PASSWORD", "TITLE", "NOTES"]))
 // }
+
+const MAX_RECURSIVE_DEPTHS: usize = 10;
 
 #[derive(Debug, PartialEq, Eq)]
 enum FieldNameResolver<'a> {
@@ -139,7 +135,7 @@ impl ReferenceFieldParsed {
         // First we check to whether we need to do the place holder resolving for the retrived value
         if place_holder_marker_found(&kv) {
             // We go till tenth level looking for uuid matching
-            if depth_counter > 10 {
+            if depth_counter > MAX_RECURSIVE_DEPTHS {
                 return None;
             }
 
@@ -174,7 +170,7 @@ impl ReferenceFieldParsed {
         // Because of that "REF:{}@{}:{}" is used
 
         format!(
-            "REF:{}@{}:{}",
+            "{{REF:{}@{}:{}}}", //"REF:{}@{}:{}",
             &self.wanted_field.as_char(),
             &self.search_in_field.as_char(),
             &self.text_or_uuid
@@ -194,7 +190,9 @@ impl ReferenceFieldParsed {
         // Should depth_counter check needs to be done here or in 'parse_matched_entry'
         // self.search_in_field != ReferenceField::Uuid || depth_counter > 3
         if self.search_in_field != ReferenceField::Uuid {
-            println!("Only uuid search_in_field is supported and returing REF string itself");
+            log::info!(
+                "Only uuid based search_in_field is supported and returing REF string itself"
+            );
             return self.default_unparsed();
         }
 
@@ -225,9 +223,8 @@ impl ReferenceFieldParsed {
                 .unwrap_or(self.default_unparsed());
             out
         } else {
-            // This happens if the uuid string extracted is an invalid one
+            // This happens if the uuid string extracted is not a valid Uuid
             log::error!("Invalid UUID found in the reference");
-            println!("Invalid UUID found in the reference");
             format!("Invalid-{}", &self.text_or_uuid)
         }
     }
@@ -235,11 +232,21 @@ impl ReferenceFieldParsed {
 
 #[derive(Debug)]
 pub(crate) struct EntryPlaceHolderParser<'a> {
+    // All modified entry fields are colleted here
     modified_fields: Vec<String>,
+
+    // We need to have ref to root to resolve any REF related resolve
     root: &'a Root,
+
+    // The entry for which the fileds are getting resolved
     current_entry: &'a Entry,
+
     current_field_name: Option<String>,
+
+    // Keeps track of the recursive call depths
     depth_counter: usize,
+
+    // All fields of an entry - keys are from field names (in uppercase) and values are from the field values
     entry_fields: &'a mut HashMap<String, String>,
 }
 
@@ -273,6 +280,8 @@ impl<'a> EntryPlaceHolderParser<'a> {
                 return HashMap::default();
             }
 
+            //  Need to get the modified fields and then use in closure to avoid error
+            // 'cannot borrow `entry_fields_with_place_holders` as mutable more than once at a time'
             let modified = ef.modified_fields();
 
             entry_fields_with_place_holders.retain(
@@ -293,39 +302,33 @@ impl<'a> EntryPlaceHolderParser<'a> {
         self.modified_fields.clone()
     }
 
-    pub(crate) fn _print(&self) {
-        println!(
-            "modified_fields:{:?}, \n entry_fields:{:?}",
-            self.modified_fields, self.entry_fields
-        );
-    }
-}
-
-impl<'a> EntryPlaceHolderParser<'a> {
     pub(crate) fn parse_main(&mut self, depth_counter: usize) -> Result<()> {
+        // for k in standard_fields()
+
         let keys = self
             .entry_fields
             .keys()
             .map(|s| s.to_string())
             .collect::<Vec<String>>();
-        // for k in standard_fields()
-        for k in keys {
-            // entry_fields keys are in uppercase
 
+        // IMPORTANT: entry_fields' keys are in uppercase
+        for k in keys {
             if let Some(v) = self.entry_fields.get(&k) {
                 let to_be_parsed = v.to_string();
-
-                // println!("Going to parse for k {} , v {}", &k, &to_be_parsed);
 
                 self.current_field_name = Some(k.to_string());
                 self.depth_counter = depth_counter;
 
-                if let Ok(r) = self.parse(to_be_parsed.clone(), depth_counter) {
-                    // println!("Parsing is done for k {} , r {}", &k, &r);
-                    if to_be_parsed != r && self.depth_counter < 10 {
-                        // println!("Inserting parsed value for k {} , r {}", &k, &r);
-                        self.modified_fields.push(k.to_string());
-                        self.entry_fields.insert(k.to_string(), r);
+                match self.parse(to_be_parsed.clone(), depth_counter) {
+                    Ok(r) => {
+                        if to_be_parsed != r && self.depth_counter < MAX_RECURSIVE_DEPTHS {
+                            self.modified_fields.push(k.to_string());
+                            self.entry_fields.insert(k.to_string(), r);
+                        }
+                    }
+                    Err(e) => {
+                        // If there is any parsing error,just log it
+                        log::error!("Parsing failed for the entry field {} with error {}", &k, e);
                     }
                 }
             }
@@ -333,83 +336,11 @@ impl<'a> EntryPlaceHolderParser<'a> {
         Ok(())
     }
 
-    fn next_parsing(
-        &mut self,
-        left: &str,
-        name: &str,
-        right: &str,
-        depth_counter: usize,
-    ) -> Result<String> {
-        let name_str = name.trim().to_uppercase().to_string();
-
-        // println!("---- next parsing is called for left: {} , name: {} , right: {} ",left, name, right );
-
-        // No point of continuing for the same field again and according the call returns early
-        // let early_return = self.current_field_name.as_ref().map_or_else(
-        //     || false,
-        //     |f| {
-        //         // println!("Checking early_return current field {}, name_str {}, counter {} ",f,&name_str,depth_counter);
-        //         (f == &name_str) && (depth_counter > 1)
-        //     },
-        // );
-
-        // if early_return {
-        //     println!("Returning early for name {}", &name);
-        //     return Ok(format!("{}{{{}}}{}", left, name, right));
-        // }
-
-        if tag::<&str, &str, nom::error::Error<_>>("REF:")
-            .parse(name)
-            .is_ok()
-        {
-            if let Ok((_, ref_parsed)) = parse_reference_holder(name) {
-                let ref_value = ref_parsed.parse(self, depth_counter);
-
-                let next_val = format!("{}{}{}", left, &ref_value, right);
-                // println!("Ref parse returning value {} ", &next_val);
-
-                // We need to do this to ensure that 'next_val' is parsed again for any place holder on the 'right'
-                // e.g right = "/{USERNAME}""
-
-                // Will 'ref_value' returned have any other place holder?. Need to check
-
-                self.parse(next_val, depth_counter + 1)
-
-                /*
-                // If we use the format "{{REF:{}@{}:{}}}" to return default value for ref_value,
-                // then we may the following assuming ref_value does not have any other place holder
-                
-                // Or we can make self.parse on 'ref_value' and on 'right_val' separately and then combine to return as final value.
-                
-                // ref_value = self.parse(ref_value.to_string(), depth_counter + 1).unwrap_or(String::default());
-                // if we call self.parse on 'ref_value' and it returns the same "{{REF:{}@{}:{}}}", to avoid looping again
-                // we can store 'ref_value' and call self.parse only when returned value is not the same 
-                // let local_ref_value = ref_value
-                // ref_value = self.parse(ref_value.to_string(), depth_counter + 1).unwrap_or(String::default())
-                
-
-                let right_val = self.parse(right.to_string(), depth_counter + 1).unwrap_or(String::default());
-                let next_val = format!("{}{}{}", left, &ref_value, right_val);
-                Ok(next_val)
-                */
-            } else {
-                Ok(format!("{}{}{}", left, name, right))
-            }
-        } else {
-            if let Some(matching_field_value) = self.entry_fields.get(&name_str) {
-                let next_val = format!("{}{}{}", left, matching_field_value, right);
-                self.parse(next_val, depth_counter + 1)
-            } else {
-                Ok(format!("{}{{{}}}{}", left, name, right))
-            }
-        }
-    }
-
     fn parse(&mut self, input: String, depth_counter: usize) -> Result<String> {
         self.depth_counter = depth_counter;
 
-        if depth_counter > 10 {
-            println!(
+        if depth_counter > MAX_RECURSIVE_DEPTHS {
+            log::debug!(
                 "Parse depth counter exceed and returning {} for current field {:?}",
                 &input, self.current_field_name
             );
@@ -428,7 +359,7 @@ impl<'a> EntryPlaceHolderParser<'a> {
                 FieldNameResolver::Completed(s) => Ok(s.to_string()),
             },
             Err(e) => {
-                println!("Parsing error {}", e);
+                log::debug!("Parsing error {}", e);
                 Err(error::Error::UnexpectedError(format!(
                     "Parsing of string {} failed: error {} ",
                     &input, e
@@ -436,8 +367,136 @@ impl<'a> EntryPlaceHolderParser<'a> {
             }
         }
     }
+
+    // Parses the value of an entry in the hashmap 
+    // that matches the place holder name passed in 'name' arg 
+    fn match_field_name(
+        &mut self,
+        left: &str,
+        name: &str,
+        right: &str,
+        depth_counter: usize,
+    ) -> Result<String> {
+        if let Some(matching_field_value) = self.entry_fields.get(&name.trim().to_uppercase()) {
+            // TODO: Should we parse 'matching_field_value' and 'right' do as 
+            // a separte parse call instead of one with 'next_val'
+            let next_val = format!("{}{}{}", left, matching_field_value, right);
+            self.parse(next_val, depth_counter + 1)
+        } else {
+            // As no hashmap entry is found, we continue parse the right side
+            if let Ok(parsed_right_val) = self.parse(right.to_string(), depth_counter + 1) {
+                Ok(format!("{}{{{}}}{}", left, name, &parsed_right_val))
+            } else {
+                Ok(format!("{}{{{}}}{}", left, name, right))
+            }
+        }
+    }
+
+    fn next_parsing(
+        &mut self,
+        left: &str,
+        name: &str,
+        right: &str,
+        depth_counter: usize,
+    ) -> Result<String> {
+        use PlaceHolderType::*;
+
+        let (_, ph) = parse_place_holder_name(name)
+            .map_err(|_e| error::Error::UnexpectedError("Next parsing call failed".into()))?;
+
+        match ph {
+            Reference => {
+                if let Ok((_, ref_parsed)) = parse_reference_holder(name) {
+                    let ref_value = ref_parsed.parse(self, depth_counter);
+
+                    // Here we parse right side now and then return the combined string
+                    let right_val = self
+                        .parse(right.to_string(), depth_counter + 1)
+                        .unwrap_or(String::default());
+                    let next_val = format!("{}{}{}", left, &ref_value, right_val);
+                    Ok(next_val)
+                } else {
+                    Ok(format!("{}{}{}", left, name, right))
+                }
+            }
+
+            CustomField(fld_name) => self.match_field_name(left, fld_name, right, depth_counter),
+
+            AnyName => self.match_field_name(left, name, right, depth_counter),
+        }
+
+        /*
+        if let Ok((_, ph)) = parse_place_holder_name(name) {
+            match ph {
+                Reference => {
+                    if let Ok((_, ref_parsed)) = parse_reference_holder(name) {
+                        let ref_value = ref_parsed.parse(self, depth_counter);
+
+                        // Here we parse right side now and then return the combined string
+                        let right_val = self
+                            .parse(right.to_string(), depth_counter + 1)
+                            .unwrap_or(String::default());
+                        let next_val = format!("{}{}{}", left, &ref_value, right_val);
+                        Ok(next_val)
+                    } else {
+                        Ok(format!("{}{}{}", left, name, right))
+                    }
+                }
+
+                CustomField(fld_name) => {
+                    self.match_field_name(left, fld_name, right, depth_counter)
+                }
+
+                AnyName => self.match_field_name(left, name, right, depth_counter),
+            }
+        } else {
+            Ok(format!("{}{{{}}}{}", left, name, right))
+        }
+        */
+        /*
+        let name_str = name.trim().to_uppercase().to_string();
+        if tag::<&str, &str, nom::error::Error<_>>("REF:")
+            .parse(name)
+            .is_ok()
+        {
+            if let Ok((_, ref_parsed)) = parse_reference_holder(name) {
+                let ref_value = ref_parsed.parse(self, depth_counter);
+
+                // Here we parse right side now and then return the combined string
+                let right_val = self
+                    .parse(right.to_string(), depth_counter + 1)
+                    .unwrap_or(String::default());
+                let next_val = format!("{}{}{}", left, &ref_value, right_val);
+                Ok(next_val)
+            } else {
+                Ok(format!("{}{}{}", left, name, right))
+            }
+        } else {
+            if let Some(matching_field_value) = self.entry_fields.get(&name_str) {
+                let next_val = format!("{}{}{}", left, matching_field_value, right);
+                self.parse(next_val, depth_counter + 1)
+            } else {
+                if let Ok(parsed_right_val) = self.parse(right.to_string(), depth_counter + 1) {
+                    Ok(format!("{}{{{}}}{}", left, name, &parsed_right_val))
+                } else {
+                    Ok(format!("{}{{{}}}{}", left, name, right))
+                }
+            }
+        }
+
+        */
+    }
+
+    pub(crate) fn _print(&self) {
+        println!(
+            "modified_fields:{:?}, \n entry_fields:{:?}",
+            self.modified_fields, self.entry_fields
+        );
+    }
 }
 
+// Returns a parser where we look for {...} in a string and extract the variable name if found
+// Returns the 'NameExtracted' variant
 fn field_parser<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, FieldNameResolver<'a>> {
     map(
         // tuple returns output for each parser listed in an output tuple
@@ -451,10 +510,12 @@ fn field_parser<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, FieldNameResolv
     )
 }
 
+// Returns a parser which returns 'Completed' enum variant when there is no {...} in the passed str
 fn no_field_parser<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, FieldNameResolver<'a>> {
     map(rest, |x| FieldNameResolver::Completed(x))
 }
 
+// Parses the input string which starts with REF
 fn parse_reference_holder<'a>(input: &'a str) -> IResult<&'a str, ReferenceFieldParsed> {
     let r = map(
         tuple((
@@ -465,10 +526,7 @@ fn parse_reference_holder<'a>(input: &'a str) -> IResult<&'a str, ReferenceField
                 tag("@"),
             ),
             terminated(one_of("TUPANIO"), tag(":")),
-            rest, // one_of("TUPANIO"),
-                  // tag("@"),
-                  // one_of("TUPANIO"),
-                  // tag(":"),rest
+            rest,
         )),
         |x| ReferenceFieldParsed::from(x.0, x.1, x.2),
     )
@@ -477,6 +535,8 @@ fn parse_reference_holder<'a>(input: &'a str) -> IResult<&'a str, ReferenceField
     Ok(r)
 }
 
+// Parses a string input for '{' and '}'
+// Returns true if there is a match {..}
 fn check_place_holder_marker<'a>(input: &'a str) -> IResult<&'a str, bool> {
     map(
         tuple((take_until("{"), tag("{"), take_until("}"), tag("}"), rest)),
@@ -484,6 +544,40 @@ fn check_place_holder_marker<'a>(input: &'a str) -> IResult<&'a str, bool> {
     )(input)
 }
 
+#[derive(Debug, PartialEq)]
+pub enum PlaceHolderType<'a> {
+    Reference,
+    CustomField(&'a str),
+    AnyName,
+}
+
+fn parse_place_holder_name<'a>(input: &'a str) -> IResult<&'a str, PlaceHolderType<'a>> {
+    // IMPORTANT: 
+    // Order of the parsers listed in 'alt' matters
+    // First 'REF' and then 'S1:'. The last 'rest' parser a kind of 'else' 
+    alt((
+        map(preceded(multispace0, tag("REF:")), |_| {
+            PlaceHolderType::Reference
+        }),
+        map(
+            tuple((delimited(multispace0, tag("S:"), multispace0), rest)),
+            |x| PlaceHolderType::CustomField(x.1),
+        ),
+        map(rest, |_| PlaceHolderType::AnyName),
+    ))(input)
+}
+
+// fn parse_ref_prefix<'a>(input: &'a str) -> IResult<&'a str, PlaceHolderType<'a>> {
+//     map(tag("REF:"), |_| PlaceHolderType::Reference)(input)
+// }
+
+// fn parse_custom_field_prefix<'a>(input: &'a str) -> IResult<&'a str, PlaceHolderType<'a>> {
+//     map(tuple((tag("S:"), rest)), |x| {
+//         PlaceHolderType::CustomField(x.1)
+//     })(input)
+// }
+
+// Checks whether the string input contains any place holder variable
 pub(crate) fn place_holder_marker_found(input: &str) -> bool {
     check_place_holder_marker(input).map_or(false, |x| x.1)
 }
@@ -492,11 +586,203 @@ pub(crate) fn place_holder_marker_found(input: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_ref_val;
-    use super::ReferenceParser;
     use super::*;
 
-    fn parse1() {
+    #[test]
+    fn verify_place_holder_name_parsing() {
+        use super::PlaceHolderType::*;
+
+        let r = parse_place_holder_name("S:CUSTOM FIELD1");
+        // println!( "r is {:?}",&r);
+        assert!(r.is_ok());
+        assert_eq!(r, Ok(("", CustomField("CUSTOM FIELD1"))));
+
+        let r = parse_place_holder_name(" S: CUSTOM FIELD1");
+        // println!( "r is {:?}",&r);
+        assert!(r.is_ok());
+        assert_eq!(r, Ok(("", CustomField("CUSTOM FIELD1"))));
+
+        let r = parse_place_holder_name("REF:P@I:5017C6460FED43FFB16FD85C0F875D0A");
+        // println!( "r is {:?}",&r);
+        assert!(r.is_ok());
+        assert_eq!(r, Ok(("P@I:5017C6460FED43FFB16FD85C0F875D0A", Reference)));
+
+        // leading space
+        let r = parse_place_holder_name(" REF:P@I:5017C6460FED43FFB16FD85C0F875D0A");
+        // println!( "r is {:?}",&r);
+        assert!(r.is_ok());
+        assert_eq!(r, Ok(("P@I:5017C6460FED43FFB16FD85C0F875D0A", Reference)));
+
+        let r = parse_place_holder_name("TITLE");
+        // println!( "r is {:?}",&r);
+        assert_eq!(r, Ok(("", AnyName)));
+
+        let r = parse_place_holder_name(" USERNAME ");
+        // println!( "r is {:?}",&r);
+        assert_eq!(r, Ok(("", AnyName)));
+
+        let r = parse_place_holder_name(" DB_DIR ");
+        // println!( "r is {:?}",&r);
+        assert_eq!(r, Ok(("", AnyName)));
+    }
+
+    #[test]
+    fn verify_recursive_use() {
+        let mut entry_fields = HashMap::<String, String>::default();
+        entry_fields.insert("TITLE".into(), "MyAccount-{USERNAME}".into());
+        entry_fields.insert("USERNAME".into(), "John Adams - {TITLE}".into());
+        entry_fields.insert("URL".into(), "https:://www.oracle.com".into());
+        let root = Root::new();
+        let entry = Entry::new();
+        let mut ef = EntryPlaceHolderParser::from(&root, &entry, &mut entry_fields);
+
+        ef.parse_main(1).unwrap();
+
+        println!(
+            "\n parsed ef {:?} \n\n modified fields {:?}",
+            &ef.entry_fields, &ef.modified_fields
+        );
+
+        // No field value is changed
+        assert_eq!(ef.modified_fields.is_empty(), true);
+        // TITLE and USERNAME remains the same because of maxium recursive calls went geyond limit
+        assert_eq!(
+            ef.entry_fields.get("TITLE").unwrap(),
+            "MyAccount-{USERNAME}"
+        );
+        assert_eq!(
+            ef.entry_fields.get("USERNAME").unwrap(),
+            "John Adams - {TITLE}"
+        );
+    }
+
+    #[test]
+    fn verify_parsing_non_existing_ref() {
+        let mut entry_fields = HashMap::<String, String>::default();
+        entry_fields.insert("TITLE".into(), "MyAccount-{USERNAME}".into());
+        entry_fields.insert("USERNAME".into(), "John Adams".into());
+        // This ref lookup will fail as 'entry' is empty
+        entry_fields.insert(
+            "PASSWORD".into(),
+            "Xcvbd {REF:U@I:5017C6460FED43FFB16FD85C0F875D0E} - {URL}".into(),
+        );
+        entry_fields.insert("URL".into(), "https:://www.oracle.com".into());
+        let root = Root::new();
+        let entry = Entry::new();
+
+        let mut ef = EntryPlaceHolderParser::from(&root, &entry, &mut entry_fields);
+
+        ef.parse_main(1).unwrap();
+
+        //println!("\n parsed ef {:?} \n\n modified fields {:?}",&ef.entry_fields, &ef.modified_fields);
+
+        assert_eq!(ef.modified_fields.len(), 2);
+        assert_eq!(ef.modified_fields.contains(&"TITLE".into()), true);
+        assert_eq!(ef.modified_fields.contains(&"PASSWORD".into()), true);
+
+        assert_eq!(
+            ef.entry_fields.get("PASSWORD").unwrap(),
+            "Xcvbd {REF:U@I:5017C6460FED43FFB16FD85C0F875D0E} - https:://www.oracle.com"
+        );
+    }
+    #[test]
+    fn verify_not_supported_ref_source_search() {
+        let mut entry_fields = HashMap::<String, String>::default();
+        entry_fields.insert("TITLE".into(), "MyAccount-Title".into());
+        // REF:U@A is not supported
+        entry_fields.insert("USERNAME".into(), "John Doe {REF:U@A:some text}".into());
+        let root = Root::new();
+        let entry = Entry::new();
+        let mut ef = EntryPlaceHolderParser::from(&root, &entry, &mut entry_fields);
+        ef.parse_main(1).unwrap();
+        
+        // USERNAME is not changed
+        assert_eq!(ef.entry_fields.get("USERNAME").unwrap(),"John Doe {REF:U@A:some text}");
+    }
+
+    #[test]
+    fn verify_unknown_placeholder_name() {
+        let mut entry_fields = HashMap::<String, String>::default();
+        entry_fields.insert("TITLE".into(), "MyAccount-{USERNAME}".into());
+        // Here the place holder '{DB_NAME}' is not from any field name
+        entry_fields.insert("USERNAME".into(), "Name - {DB_NAME} - {URL}".into());
+        entry_fields.insert("URL".into(), "www.oracle.com".into());
+        let root = Root::new();
+        let entry = Entry::new();
+        let mut ef = EntryPlaceHolderParser::from(&root, &entry, &mut entry_fields);
+
+        let r = ef.parse_main(1);
+
+        println!(
+            "\n parsed ef {:?} \n\n modified fields {:?}",
+            &ef.entry_fields, &ef.modified_fields
+        );
+
+        assert_eq!(
+            ef.entry_fields.get("USERNAME"),
+            Some(&"Name - {DB_NAME} - www.oracle.com".to_string())
+        );
+    }
+
+    #[test]
+    fn verify_custom_field_parsing() {
+        let mut entry_fields = HashMap::<String, String>::default();
+        entry_fields.insert("TITLE".into(), "MyAccount-{USERNAME}".into());
+        entry_fields.insert("USERNAME".into(), "Name - {S:CUSTOM FIELD1} - {URL}".into());
+        entry_fields.insert("URL".into(), "www.oracle.com".into());
+        entry_fields.insert("CUSTOM FIELD1".into(), "Value of one".into());
+        let root = Root::new();
+        let entry = Entry::new();
+        let mut ef = EntryPlaceHolderParser::from(&root, &entry, &mut entry_fields);
+
+        let r = ef.parse_main(1);
+
+        println!(
+            "\n parsed ef {:?} \n\n modified fields {:?}",
+            &ef.entry_fields, &ef.modified_fields
+        );
+
+        // USERNAME includes value from 'CUSTOM FIELD1' which is 'Value of one'
+        assert_eq!(ef.entry_fields.get("USERNAME").unwrap(),"Name - Value of one - www.oracle.com");
+    }
+
+    #[test]
+    fn verify_place_holder_in_custom_field () {
+        let mut entry_fields = HashMap::<String, String>::default();
+        entry_fields.insert("TITLE".into(), "MyAccount Title".into());
+        entry_fields.insert("USERNAME".into(), "John Adams".into());
+        entry_fields.insert("URL".into(), "www.oracle.com".into());
+        // Here we use standard field in a custom field
+        entry_fields.insert("CUSTOM FIELD1".into(), "{URL}".into());
+        let root = Root::new();
+        let entry = Entry::new();
+        let mut ef = EntryPlaceHolderParser::from(&root, &entry, &mut entry_fields);
+
+        let r = ef.parse_main(1);
+
+        println!(
+            "\n parsed ef {:?} \n\n modified fields {:?}",
+            &ef.entry_fields, &ef.modified_fields
+        );
+    }
+
+    #[test]
+    fn verify_main_parser() {
+        let mut parser = alt((field_parser(), no_field_parser()));
+        //let r = parser("https:://MyAccount-John Doe REF:U@I:5017C6460FED43FFB16FD85C0F875D0A/{USERNAME}");
+        let r = parser("https:://{TITLE}/{USERNAME}");
+        println!(" r is {:?}", r);
+    }
+}
+
+/*
+
+#[test]
+    fn verify2() {
+        let r = parse_reference_holder(" REF:U@I:5017C6460FED43FFB16FD85C0F875D0A");
+        println!(" r is {:?}", r);
+    }
+fn parse1() {
         let mut entry_fields = HashMap::<String, String>::default();
         entry_fields.insert("TITLE".into(), "MyAccount-{USERNAME}".into());
         // entry_fields.insert("PASSWORD".into(), "John Doe {REF:U@I:5017C6460FED43FFB16FD85C0F875D0E}".into());
@@ -540,31 +826,6 @@ mod tests {
         // let r = field_parser()("No {URL} variables");
     }
 
-    #[test]
-    fn verify_main_parser() {
-        let mut parser = alt((field_parser(), no_field_parser()));
-        //let r = parser("https:://MyAccount-John Doe REF:U@I:5017C6460FED43FFB16FD85C0F875D0A/{USERNAME}");
-        let r = parser("https:://{TITLE}/{USERNAME}");
-        println!(" r is {:?}", r);
-    }
-
-    #[test]
-    fn verify2() {
-        let r = parse_reference_holder(" REF:U@I:5017C6460FED43FFB16FD85C0F875D0A");
-        println!(" r is {:?}", r);
-    }
-
-    #[test]
-    fn verify3() {
-        let val1 = "{REF:U@I:5017C6460FED43FFB16FD85C0F875D0A}";
-        let r = parse_ref_val("{REF:U@I:", val1);
-        println!("Parsed {:?}", &r);
-
-        let r = ReferenceParser::parse("{REF:U@I:", val1);
-        println!("Parsed2  {:?}", &r);
-    }
-}
-
 #[derive(Debug)]
 struct ReferenceParser<'a> {
     uuid_str: &'a str,
@@ -589,6 +850,17 @@ fn parse_ref_val<'a>(ref_prefix: &'a str, value: &'a str) -> IResult<&'a str, &'
 
     Ok((r.0, r.1))
 }
+
+#[test]
+    fn verify3() {
+        let val1 = "{REF:U@I:5017C6460FED43FFB16FD85C0F875D0A}";
+        let r = parse_ref_val("{REF:U@I:", val1);
+        println!("Parsed {:?}", &r);
+
+        let r = ReferenceParser::parse("{REF:U@I:", val1);
+        println!("Parsed2  {:?}", &r);
+    }
+*/
 
 // {REF:U@I:5017C6460FED43FFB16FD85C0F875D0A}
 // {REF:P@I:5017C6460FED43FFB16FD85C0F875D0A}
@@ -681,4 +953,148 @@ fn field_parser<'a>(field_name:&'a str) -> impl FnMut(&'a str) -> IResult<&'a st
       )
 }
 
+*/
+
+/*
+impl<'a> EntryPlaceHolderParser<'a> {
+    pub(crate) fn parse_main(&mut self, depth_counter: usize) -> Result<()> {
+        let keys = self
+            .entry_fields
+            .keys()
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>();
+        // for k in standard_fields()
+
+        // entry_fields keys are in uppercase
+        for k in keys {
+            if let Some(v) = self.entry_fields.get(&k) {
+                let to_be_parsed = v.to_string();
+
+                self.current_field_name = Some(k.to_string());
+                self.depth_counter = depth_counter;
+
+                if let Ok(r) = self.parse(to_be_parsed.clone(), depth_counter) {
+                    if to_be_parsed != r && self.depth_counter < MAX_RECURSIVE_DEPTHS {
+                        self.modified_fields.push(k.to_string());
+                        self.entry_fields.insert(k.to_string(), r);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn next_parsing(
+        &mut self,
+        left: &str,
+        name: &str,
+        right: &str,
+        depth_counter: usize,
+    ) -> Result<String> {
+        let name_str = name.trim().to_uppercase().to_string();
+
+        // println!("---- next parsing is called for left: {} , name: {} , right: {} ",left, name, right );
+
+        // No point of continuing for the same field again and according the call returns early
+        // let early_return = self.current_field_name.as_ref().map_or_else(
+        //     || false,
+        //     |f| {
+        //         // println!("Checking early_return current field {}, name_str {}, counter {} ",f,&name_str,depth_counter);
+        //         (f == &name_str) && (depth_counter > 1)
+        //     },
+        // );
+
+        // if early_return {
+        //     println!("Returning early for name {}", &name);
+        //     return Ok(format!("{}{{{}}}{}", left, name, right));
+        // }
+
+        if tag::<&str, &str, nom::error::Error<_>>("REF:")
+            .parse(name)
+            .is_ok()
+        {
+            if let Ok((_, ref_parsed)) = parse_reference_holder(name) {
+                let ref_value = ref_parsed.parse(self, depth_counter);
+
+                /*
+                let next_val = format!("{}{}{}", left, &ref_value, right);
+                // println!("Ref parse returning value {} ", &next_val);
+
+                // We need to do this to ensure that 'next_val' is parsed again for any place holder on the 'right'
+                // e.g right = "/{USERNAME}""
+
+                // Will 'ref_value' returned have any other place holder?. Need to check
+
+                self.parse(next_val, depth_counter + 1)
+                */
+
+
+                /*
+                // If we use the format "{{REF:{}@{}:{}}}" to return default value for ref_value,
+                // then we may the following assuming ref_value does not have any other place holder
+
+                // Or we can make self.parse on 'ref_value' and on 'right_val' separately and then combine to return as final value.
+
+                // ref_value = self.parse(ref_value.to_string(), depth_counter + 1).unwrap_or(String::default());
+                // if we call self.parse on 'ref_value' and it returns the same "{{REF:{}@{}:{}}}", to avoid looping again
+                // we can store 'ref_value' and call self.parse only when returned value is not the same
+                // let local_ref_value = ref_value
+                // ref_value = self.parse(ref_value.to_string(), depth_counter + 1).unwrap_or(String::default())
+                */
+
+                // Here we parse right side now and then return the combined string
+                let right_val = self.parse(right.to_string(), depth_counter + 1).unwrap_or(String::default());
+                let next_val = format!("{}{}{}", left, &ref_value, right_val);
+                Ok(next_val)
+
+            } else {
+                Ok(format!("{}{}{}", left, name, right))
+            }
+        } else {
+            if let Some(matching_field_value) = self.entry_fields.get(&name_str) {
+                let next_val = format!("{}{}{}", left, matching_field_value, right);
+                self.parse(next_val, depth_counter + 1)
+            } else {
+                if let Ok(parsed_right_val) = self.parse(right.to_string(), depth_counter + 1) {
+                    Ok(format!("{}{{{}}}{}", left, name, &parsed_right_val))
+                } else {
+                    Ok(format!("{}{{{}}}{}", left, name, right))
+                }
+            }
+        }
+    }
+
+    fn parse(&mut self, input: String, depth_counter: usize) -> Result<String> {
+        self.depth_counter = depth_counter;
+
+        if depth_counter > MAX_RECURSIVE_DEPTHS {
+            println!(
+                "Parse depth counter exceed and returning {} for current field {:?}",
+                &input, self.current_field_name
+            );
+            return Ok(input);
+        }
+
+        // alt gives us the result of first parser that succeeds, of the series of parsers we give it
+        let mut parser = alt((field_parser(), no_field_parser()));
+
+        match parser(input.as_str()) {
+            // r.0 should be empty
+            Ok(r) => match r.1 {
+                FieldNameResolver::NameExtracted { left, name, right } => {
+                    self.next_parsing(left, name, right, depth_counter)
+                }
+                FieldNameResolver::Completed(s) => Ok(s.to_string()),
+            },
+            Err(e) => {
+                println!("Parsing error {}", e);
+                Err(error::Error::UnexpectedError(format!(
+                    "Parsing of string {} failed: error {} ",
+                    &input, e
+                )))
+            }
+        }
+    }
+
+}
 */
