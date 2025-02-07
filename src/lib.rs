@@ -1,4 +1,4 @@
-pub mod callback_service;
+// pub mod callback_service;
 mod constants;
 mod crypto;
 mod db;
