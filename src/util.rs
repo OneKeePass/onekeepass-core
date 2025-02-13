@@ -86,6 +86,11 @@ pub fn now_utc_seconds() -> i64 {
     now_utc().and_utc().timestamp()
 }
 
+#[inline]
+pub fn now_utc_milli_seconds() -> i64 {
+    now_utc().and_utc().timestamp_millis()
+}
+
 // Formats the now utc time
 #[allow(dead_code)]
 pub fn format_utc_now(format_str: Option<&str>) -> String {

@@ -342,7 +342,8 @@ impl<'a> EntryPlaceHolderParser<'a> {
         if depth_counter > MAX_RECURSIVE_DEPTHS {
             log::debug!(
                 "Parse depth counter exceed and returning {} for current field {:?}",
-                &input, self.current_field_name
+                &input,
+                self.current_field_name
             );
             return Ok(input);
         }
@@ -368,8 +369,8 @@ impl<'a> EntryPlaceHolderParser<'a> {
         }
     }
 
-    // Parses the value of an entry in the hashmap 
-    // that matches the place holder name passed in 'name' arg 
+    // Parses the value of an entry in the hashmap
+    // that matches the place holder name passed in 'name' arg
     fn match_field_name(
         &mut self,
         left: &str,
@@ -378,7 +379,7 @@ impl<'a> EntryPlaceHolderParser<'a> {
         depth_counter: usize,
     ) -> Result<String> {
         if let Some(matching_field_value) = self.entry_fields.get(&name.trim().to_uppercase()) {
-            // TODO: Should we parse 'matching_field_value' and 'right' do as 
+            // TODO: Should we parse 'matching_field_value' and 'right' do as
             // a separte parse call instead of one with 'next_val'
             let next_val = format!("{}{}{}", left, matching_field_value, right);
             self.parse(next_val, depth_counter + 1)
@@ -552,9 +553,9 @@ pub enum PlaceHolderType<'a> {
 }
 
 fn parse_place_holder_name<'a>(input: &'a str) -> IResult<&'a str, PlaceHolderType<'a>> {
-    // IMPORTANT: 
+    // IMPORTANT:
     // Order of the parsers listed in 'alt' matters
-    // First 'REF' and then 'S1:'. The last 'rest' parser a kind of 'else' 
+    // First 'REF' and then 'S1:'. The last 'rest' parser a kind of 'else'
     alt((
         map(preceded(multispace0, tag("REF:")), |_| {
             PlaceHolderType::Reference
@@ -695,9 +696,12 @@ mod tests {
         let entry = Entry::new();
         let mut ef = EntryPlaceHolderParser::from(&root, &entry, &mut entry_fields);
         ef.parse_main(1).unwrap();
-        
+
         // USERNAME is not changed
-        assert_eq!(ef.entry_fields.get("USERNAME").unwrap(),"John Doe {REF:U@A:some text}");
+        assert_eq!(
+            ef.entry_fields.get("USERNAME").unwrap(),
+            "John Doe {REF:U@A:some text}"
+        );
     }
 
     #[test]
@@ -743,11 +747,14 @@ mod tests {
         );
 
         // USERNAME includes value from 'CUSTOM FIELD1' which is 'Value of one'
-        assert_eq!(ef.entry_fields.get("USERNAME").unwrap(),"Name - Value of one - www.oracle.com");
+        assert_eq!(
+            ef.entry_fields.get("USERNAME").unwrap(),
+            "Name - Value of one - www.oracle.com"
+        );
     }
 
     #[test]
-    fn verify_place_holder_in_custom_field () {
+    fn verify_place_holder_in_custom_field() {
         let mut entry_fields = HashMap::<String, String>::default();
         entry_fields.insert("TITLE".into(), "MyAccount Title".into());
         entry_fields.insert("USERNAME".into(), "John Adams".into());
@@ -773,6 +780,78 @@ mod tests {
         let r = parser("https:://{TITLE}/{USERNAME}");
         println!(" r is {:?}", r);
     }
+
+    #[test]
+    fn verify_part1() {
+        let s = "kdbx://{DB_DIR}/f1/PasswordsUsesKeyFile2.kdbx";
+
+        let pat: [char; 2] = ['/', '\\'];
+        let v = s.rsplit_once(pat);
+
+        println!("v is {:?}", &v);
+
+        let s = "kdbx://{DB_DIR}\\f1\\PasswordsUsesKeyFile2.kdbx";
+        let v = s.rsplit_once(pat);
+
+        println!("v is {:?}", &v);
+
+        let s = "kdbx://.\\PasswordsUsesKeyFile2.kdbx";
+        let v = s.rsplit_once(pat);
+        println!("v is {:?}", &v);
+
+        let s = "kdbx://./PasswordsUsesKeyFile2.kdbx";
+        let v = s.rsplit_once(pat);
+        println!("v is {:?}", &v);
+
+        let s = "kdbx://PasswordsUsesKeyFile2.kdbx";
+        let v = s.rsplit_once(pat);
+        println!("v is {:?}", &v);
+
+        let s = "kdbx://";
+        let v = s.rsplit_once(pat);
+        println!("v is {:?}", &v);
+
+        let s = "./my_key.keyx";
+        let v = s.rsplit_once(pat);
+        println!("v is {:?} , contains pat {}", &v, s.contains(pat));
+
+        let s = "my_key.keyx";
+        let v = s.rsplit_once(pat);
+        println!("v is {:?} , contains pat {}", &v, s.contains(pat));
+    }
+
+    #[test]
+    fn verify_drive() {
+        const FILE_PROVIDER_IDS: [&str; 11] = [
+            r"com.android.externalstorage.documents",
+            r"com.android.providers.downloads.documents",
+            r"com.google.android.apps.docs.storage",
+            //
+            r"com.dropbox.product.android.dbapp.document_provider.documents",
+            r"com.microsoft.skydrive.content.StorageAccessProvider",
+            r"mega.privacy.android.app",
+            r"com.nextcloud.client",
+            r"com.owncloud.android",
+            r"me.proton.android.drive",
+            //
+            r"idrive",
+            r"IDrive",
+
+
+        ];
+
+        let re = regex::RegexSet::new(&FILE_PROVIDER_IDS).unwrap();
+
+        //let full_file_name_uri = "content://my_file/com.nextcloud.client.content.provider/name=23232";
+
+        let full_file_name_uri = "content://my_file/IDrive.client.content.provider/name=23232";
+
+        let matches: Vec<_> = re.matches(full_file_name_uri).into_iter().collect();
+
+        println!("Matches {:?}, {:?}", matches, matches.first().map(|n| FILE_PROVIDER_IDS[*n]));
+    }
+
+    
 }
 
 /*
