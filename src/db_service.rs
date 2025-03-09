@@ -4,7 +4,7 @@
 mod attachment;
 mod io;
 
-// TODO: Need to move module storage to db_service_ffi crate as it is used only in mobile apps 
+// TODO: Need to move module storage to db_service_ffi crate as it is used only in mobile apps
 
 // Modules storage and callback_service are used for now only in mobile apps
 //#[cfg(any( target_os = "ios",target_os = "android"))]
@@ -14,9 +14,9 @@ mod io;
 
 use crate::db::KdbxFile;
 use crate::db_content::{standard_types_ordered_by_id, Entry, KeepassFile, OtpData};
+use crate::form_data;
 use crate::searcher;
 use crate::util;
-use crate::form_data;
 
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -54,7 +54,7 @@ pub use crate::error::{self, Error, Result};
 
 pub use crate::password_passphrase_generator::{
     AnalyzedPassword, GeneratedPassPhrase, PassphraseGenerationOptions, PasswordGenerationOptions,
-    PasswordScore,WordListLoader,
+    PasswordScore, WordListLoader,
 };
 
 // See lib.rs where util module is reexported as service_util
@@ -76,6 +76,8 @@ pub use crate::form_data::{
     EntryTypeHeader, EntryTypeHeaders, EntryTypeNames, GroupSummary, GroupTree, KdbxLoaded,
     KdbxSaved,
 };
+
+pub use crate::constants::entry_keyvalue_key;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SaveStatus {
@@ -129,6 +131,7 @@ impl Default for KdbxContext {
 
 // Here we're using an Arc to share memory among threads, and the data - HashMap<String, KdbxContext> - inside
 // the Arc is protected with a mutex.
+// The keys of inner HashMap are from 'db_key' of each opened database 
 type MainStore = Arc<Mutex<HashMap<String, KdbxContext>>>;
 
 fn main_store() -> &'static MainStore {
@@ -300,6 +303,11 @@ pub fn all_kdbx_cache_keys() -> Result<Vec<String>> {
     Ok(vec)
 }
 
+pub fn is_db_opened(db_key: &str) -> bool {
+    let store = main_store().lock().unwrap();
+    store.contains_key(db_key)
+}
+
 // Gets the previously calculated checksum for a db found under the db_key
 pub fn db_checksum_hash(db_key: &str) -> Result<Vec<u8>> {
     call_kdbx_context_action(db_key, |ctx: &KdbxContext| {
@@ -335,7 +343,7 @@ pub fn close_kdbx(db_key: &str) -> Result<()> {
 // See db_service::ios::save_as_kdbx for desktop version where db_key is the
 // actual file to which content is written. Here we are changing map key
 
-// TODO: Combine these two  
+// TODO: Combine these two
 
 pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
     // Need to copy the encrytion key for the new name from the existing one
@@ -347,8 +355,8 @@ pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
         Ok(KdbxLoaded {
             db_key: new_db_key.into(),
             database_name: ctx.kdbx_file.get_database_name().into(),
-            // TODO: Check the use of 'None' values below fields in iOS and Android after this Save as call 
-            //       We may need to update in db-service_ffi crate before sending back to UI 
+            // TODO: Check the use of 'None' values below fields in iOS and Android after this Save as call
+            //       We may need to update in db-service_ffi crate before sending back to UI
             file_name: None,
             key_file_name: None,
         })
@@ -644,7 +652,7 @@ fn create_groups_summary_data(k: &KeepassFile) -> Result<GroupTree> {
     Ok(GroupTree {
         root_uuid: k.root.root_uuid(),
         recycle_bin_uuid: k.root.recycle_bin_uuid(),
-        auto_open_group_uuid:k.root.auto_open_group_uuid(),
+        auto_open_group_uuid: k.root.auto_open_group_uuid(),
         deleted_group_uuids: k.deleted_group_uuids(),
         groups: grps,
     })
@@ -664,7 +672,7 @@ pub fn categories_to_show(db_key: &str) -> Result<EntryCategoryInfo> {
 // All categories that can be shown in the UI layer
 pub fn combined_category_details(
     db_key: &str,
-    grouping_kind: EntryCategoryGrouping,
+    grouping_kind: &EntryCategoryGrouping,
 ) -> Result<EntryCategories> {
     let action = |k: &KeepassFile| {
         Ok(form_data::combined_category_details(
@@ -721,13 +729,39 @@ pub fn get_group_by_id(db_key: &str, group_uuid: &Uuid) -> Result<Group> {
 pub fn get_entry_form_data_by_id(db_key: &str, entry_uuid: &Uuid) -> Result<EntryFormData> {
     main_content_action!(db_key, move |k: &KeepassFile| {
         match k.root.entry_by_id(entry_uuid) {
-            // Some(e) => Ok(e.into()),
+            // Need to parse and resolve place holders found in some entry fields
             Some(e) => Ok(EntryFormData::place_holder_resolved_form_data(&k.root, e)),
             None => Err(Error::NotFound(format!(
                 "No entry is found for the id {}",
                 entry_uuid
             ))),
         }
+    })
+}
+
+// Gets all entries found under the special group 'AutoOpen'
+pub fn auto_open_group_entries(db_key: &str) -> Result<Vec<EntryFormData>> {
+    main_content_action!(db_key, move |k: &KeepassFile| {
+        let ao_entries: Vec<EntryFormData> = k
+            .root
+            .auto_open_group_entries()
+            .iter()
+            .map(|entry| EntryFormData::place_holder_resolved_form_data(&k.root, entry))
+            .collect();
+
+        Ok(ao_entries)
+    })
+}
+
+pub fn auto_open_group_entry_uuids(db_key: &str) ->  Result<Vec<Uuid>>  {
+    main_content_action!(db_key, move |k: &KeepassFile| {
+        Ok(k.root.auto_open_group_entry_uuids())
+    })
+}
+
+pub fn auto_open_group_uuid(db_key: &str) ->  Result<Option<Uuid>>  {
+    main_content_action!(db_key, move |k: &KeepassFile| {
+        Ok(k.root.auto_open_group_uuid())
     })
 }
 

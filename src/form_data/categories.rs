@@ -9,14 +9,14 @@ use uuid::Uuid;
 
 use super::GroupSummary;
 
-use crate::constants::general_category_names::{ALL_ENTRIES,DELETED,FAVORITES};
+use crate::constants::general_category_names::{ALL_ENTRIES, DELETED, FAVORITES};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GroupTree {
     //pub root_uuid: String,
     pub root_uuid: Uuid,
     pub recycle_bin_uuid: Uuid,
-    pub auto_open_group_uuid:Option<Uuid>,
+    pub auto_open_group_uuid: Option<Uuid>,
     pub deleted_group_uuids: Vec<Uuid>,
     pub groups: HashMap<String, GroupSummary>,
 }
@@ -34,8 +34,7 @@ pub struct CategoryDetail {
     // In case of group tree or group category this is used
     pub group_uuid: Option<Uuid>,
     // Used when tag based grouping is used
-    pub tag_id:Option<String>,
-
+    pub tag_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -51,11 +50,23 @@ pub struct EntryCategoryInfo {
     pub type_categories: Vec<CategoryDetail>,
 }
 
-#[derive(Serialize, Deserialize, Debug,Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum EntryCategoryGrouping {
     AsGroupCategories,
     AsTypes,
     AsTags,
+}
+
+impl From<&str> for EntryCategoryGrouping {
+    // Need to get this enum from the string values used in front end preference
+    fn from(value: &str) -> Self {
+        match value {
+            "Types" => EntryCategoryGrouping::AsTypes,
+            "Tags" => EntryCategoryGrouping::AsTags,
+            "Categories" | "Group" => EntryCategoryGrouping::AsGroupCategories,
+            _  => EntryCategoryGrouping::AsGroupCategories
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -65,9 +76,9 @@ pub struct EntryCategories {
     pub grouped_categories: Vec<CategoryDetail>,
 }
 
-// TODO:  
-// We need to fix the use of '#[serde(rename_all = "camelCase")]' and change it to use serde attribute 
-// tag and content as shown below 
+// TODO:
+// We need to fix the use of '#[serde(rename_all = "camelCase")]' and change it to use serde attribute
+// tag and content as shown below
 // Changes to be done for both Desktop and Mobile same time if we change this in enum EntryCategory
 // See in entry-summary-data, combined-category-details fns of background.cljs
 
@@ -85,7 +96,7 @@ pub enum EntryCategory {
 }
 
 // TODO: See the above comments
-/* 
+/*
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(tag = "type_name", content = "content")]
 pub enum EntryCategory {
@@ -165,7 +176,7 @@ impl From<&KeepassFile> for EntryCategoryInfo {
             icon_name: None,
             entry_type_uuid: None,
             group_uuid: None,
-            tag_id:None,
+            tag_id: None,
         };
 
         let (title, display_title) = EntryCategory::Favorites.as_title_key();
@@ -178,7 +189,7 @@ impl From<&KeepassFile> for EntryCategoryInfo {
             icon_name: None,
             entry_type_uuid: None,
             group_uuid: None,
-            tag_id:None,
+            tag_id: None,
         };
 
         let (title, display_title) = EntryCategory::Deleted.as_title_key();
@@ -191,7 +202,7 @@ impl From<&KeepassFile> for EntryCategoryInfo {
             icon_name: None,
             entry_type_uuid: None,
             group_uuid: None,
-            tag_id:None,
+            tag_id: None,
         };
 
         //Group category details
@@ -211,7 +222,7 @@ impl From<&KeepassFile> for EntryCategoryInfo {
                         icon_name: None,
                         entry_type_uuid: None,
                         group_uuid: None,
-                        tag_id:None,
+                        tag_id: None,
                     },
                 })
             }
@@ -264,7 +275,7 @@ fn type_name_categories(
             },
             entry_type_uuid: Some(uuid.clone()),
             group_uuid: None,
-            tag_id:None,
+            tag_id: None,
         })
     }
     cats
@@ -272,9 +283,9 @@ fn type_name_categories(
 
 fn general_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
     let all = keepass_file.collect_all_active_entries();
-    
+
     //debug!("Loading all cat data with entries count {}", all.len());
-    
+
     let (title, display_title) = EntryCategory::AllEntries.as_title_key();
     let all_entries = CategoryDetail {
         title,
@@ -285,7 +296,7 @@ fn general_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
         icon_name: None,
         entry_type_uuid: None,
         group_uuid: None,
-        tag_id:None,
+        tag_id: None,
     };
 
     let (title, display_title) = EntryCategory::Favorites.as_title_key();
@@ -298,7 +309,7 @@ fn general_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
         icon_name: None,
         entry_type_uuid: None,
         group_uuid: None,
-        tag_id:None,
+        tag_id: None,
     };
 
     let (title, display_title) = EntryCategory::Deleted.as_title_key();
@@ -311,7 +322,7 @@ fn general_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
         icon_name: None,
         entry_type_uuid: None,
         group_uuid: None,
-        tag_id:None,
+        tag_id: None,
     };
 
     vec![all_entries, favorite_entries, deleted]
@@ -332,7 +343,7 @@ fn group_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
                 icon_name: None,
                 entry_type_uuid: None,
                 group_uuid: Some(group.uuid.clone()),
-                tag_id:None,
+                tag_id: None,
             })
         }
     }
@@ -380,7 +391,7 @@ fn tag_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
                         icon_name: None,
                         entry_type_uuid: None,
                         group_uuid: None,
-                        tag_id:Some(t.clone()),
+                        tag_id: Some(t.clone()),
                     };
                     acc.insert(t, d);
                 }
@@ -394,7 +405,7 @@ fn tag_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
     vals.into_values().collect()
 }
 
-// Gets all general category details and a grouped category details for 
+// Gets all general category details and a grouped category details for
 // the given grouping_kind
 pub fn combined_category_details(
     keepass_file: &KeepassFile,

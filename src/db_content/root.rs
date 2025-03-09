@@ -35,21 +35,12 @@ pub struct EntryCloneOption {
     pub link_by_reference: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize)]
 pub struct AllTags {
     // Unique entry tags set
     entry_tags: HashSet<String>,
     // Unique group tags set
     group_tags: HashSet<String>,
-}
-
-impl AllTags {
-    fn new() -> AllTags {
-        AllTags {
-            entry_tags: HashSet::new(),
-            group_tags: HashSet::new(),
-        }
-    }
 }
 
 impl GroupVisitor for AllTags {
@@ -918,7 +909,7 @@ impl Root {
     }
 
     pub(crate) fn collect_tags(&self) -> AllTags {
-        let mut all_tags = AllTags::new();
+        let mut all_tags = AllTags::default();
         // First collect all the unique tags used at group levels
         self.root_group_visitor_action(&mut all_tags);
         // Now collect all unique tags used at entry level
@@ -928,6 +919,40 @@ impl Root {
             }
         }
         all_tags
+    }
+
+    pub(crate) fn auto_open_group_entries(&self) -> Vec<&Entry> {
+        // auto_open_group_uuid is an Option type as we may or may not have an 'AutoOpen' group
+        // Option<Uuid> -> Option<&Group>
+        self.auto_open_group_uuid
+            .and_then(|ref ao_grp_id| self.group_by_id(ao_grp_id))
+            .map_or_else(
+                // empty vec is returned if there is auto group
+                || vec![],
+                |group| {
+                    let mut acc: Vec<&Entry> = vec![];
+                    for entry_uuid in group.entry_uuids.iter() {
+                        if let Some(entry) = self.entry_by_id(entry_uuid) {
+                            acc.push(entry);
+                        };
+                    }
+                    // acc may be empty if there are no entries for this auto group
+                    acc
+                },
+            )
+    }
+
+    pub(crate) fn auto_open_group_entry_uuids(&self) -> Vec<Uuid> {
+        self.auto_open_group_uuid.map_or_else(
+            || vec![],
+            |ref ao_grp_id| {
+                // Only top level entry_uuids for this group is returned. The sub groups are not considered 
+                self.group_by_id(ao_grp_id)
+                    .map_or_else(|| vec![], |group| group.entry_uuids.clone())
+            }, 
+            // To include entry_uuids from sun broups of auto_open_group, we need to use this
+            // |ref ao_grp_id| self.children_entry_uuids(ao_grp_id),
+        )
     }
 
     // Called after xml content is parsed to ensure that AutoOpen group has entry type as AUTO_DB_OPEN

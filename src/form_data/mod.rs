@@ -72,7 +72,7 @@ pub struct DbSettings {
     pub meta: MetaFormData,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone,Serialize, Deserialize, Debug,Default)]
 pub struct KdbxLoaded {
     // Full database uri
     pub db_key: String,
@@ -82,17 +82,6 @@ pub struct KdbxLoaded {
     pub file_name: Option<String>,
     // Full key file uri
     pub key_file_name: Option<String>,
-}
-
-impl KdbxLoaded {
-    pub fn new() -> Self {
-        Self {
-            db_key: String::default(),
-            database_name: String::default(),
-            file_name: None,
-            key_file_name: None,
-        }
-    }
 }
 
 #[derive(Default, Serialize, Deserialize, Debug)]

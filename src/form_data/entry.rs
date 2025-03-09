@@ -193,6 +193,8 @@ pub struct EntryFormData {
 
     pub auto_type: AutoType,
 
+    // This map has keys from kvd key (uppercase) and values are from kvd value that has some
+    // placeholder, parsed and resolved
     #[serde(skip_deserializing)]
     pub parsed_fields: HashMap<String, String>,
 }
@@ -477,6 +479,7 @@ impl EntryFormData {
         entry
     }
 
+    // Resolves all place holders for the entry fields
     pub(crate) fn place_holder_resolved_form_data(root: &Root, entry: &Entry) -> Self {
         let mut form_data = EntryFormData::from_entry(entry);
         form_data.parsed_fields =
@@ -528,6 +531,7 @@ impl Entry {
     pub(crate) fn extract_place_holders(&self) -> HashMap<String, String> {
         let mut entry_fields_with_place_holders: HashMap<String, String> = HashMap::default();
 
+        // Checks whether any one of the entry field contain palce holder variable
         let parsing_required = self.entry_field.fields.values().into_iter().any(|kvd| {
             if !kvd.value.trim().is_empty() {
                 parsing::place_holder_marker_found(&kvd.value)
@@ -537,10 +541,13 @@ impl Entry {
         });
 
         if parsing_required {
+            // All non empty field values are collected to a HashMap irresespective whether the field
+            // contain placeholder or not
             entry_fields_with_place_holders = self.entry_field.fields.values().into_iter().fold(
                 entry_fields_with_place_holders,
                 |mut acc, kvd| {
                     if !kvd.value.trim().is_empty() {
+                        // We make all keys to UpperCase
                         acc.insert(kvd.key.to_uppercase(), kvd.value.to_string());
                     }
                     acc
