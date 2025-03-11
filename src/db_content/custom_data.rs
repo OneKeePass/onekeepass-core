@@ -11,6 +11,8 @@ pub struct CustomData {
     //pub(crate) items: Vec<Item>,
 }
 
+// Common custom data fns
+// Mostly used in entry struct fns
 impl CustomData {
     #[inline]
     pub fn get_item_value(&self, key: &str) -> Option<&str> {
@@ -30,12 +32,12 @@ impl CustomData {
         self
     }
 
+    // Returns the removed item or None
     pub fn remove_item(&mut self, key: &str) -> Option<Item> {
-        // Returns the removed item or None
         self.items.remove(key)
     }
 
-    pub fn insert_items(&mut self, items: Vec<Item>) {
+    fn _insert_items(&mut self, items: Vec<Item>) {
         // self.items.extend(items.iter().map( |i| (i.key.clone(),i.clone())) );
         // The above extend call based also will work
         for item in items {
@@ -47,16 +49,25 @@ impl CustomData {
         self.items.values().collect()
     }
 
-    pub fn get(&self, key: &str) -> Option<&Item> {
+    fn _get(&self, key: &str) -> Option<&Item> {
         self.items.get(key)
     }
 }
 
 // All Meta related custom data
-// TODO: Use Trait
+// TODO: Use Trait ?
 impl CustomData {
-    /// Sets the internal version if not set previously
-    pub fn check_and_set_internal_version(&mut self, version: &str) {
+    // Sets the internal version and overrides any previous version
+    pub fn set_internal_version(&mut self, version: &str) {
+        self.items.insert(
+            OKP_INTERNAL_VERSION.to_string(),
+            Item::from_kv(OKP_INTERNAL_VERSION, version),
+        );
+    }
+
+    // Not yet used
+    // Sets the internal version if not set previously
+    fn _check_and_set_internal_version(&mut self, version: &str) {
         if self.get_item_value(OKP_INTERNAL_VERSION).is_none() {
             self.items.insert(
                 OKP_INTERNAL_VERSION.to_string(),
@@ -65,16 +76,9 @@ impl CustomData {
         }
     }
 
-    /// Sets the internal version and overrides any previous version
-    pub fn set_internal_version(&mut self, version: &str) {
-        self.items.insert(
-            OKP_INTERNAL_VERSION.to_string(),
-            Item::from_kv(OKP_INTERNAL_VERSION, version),
-        );
-    }
-
+    // Not yet used
     // Gets the version from custom data and returns the current FORMAT_VERSION if this is the first time
-    pub fn internal_version(&self) -> i32 {
+    fn _internal_version(&self) -> i32 {
         self.get_item_value(OKP_INTERNAL_VERSION).map_or_else(
             || INTERNAL_VERSION,
             |s| i32::from_str(s).unwrap_or(INTERNAL_VERSION),

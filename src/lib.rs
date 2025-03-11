@@ -1,22 +1,23 @@
+// pub mod callback_service;
 mod constants;
 mod crypto;
 mod db;
 mod form_data;
-mod password_generator;
+mod password_passphrase_generator;
 mod searcher;
 mod xml_parse;
 //mod xml_parse_023;
-
 pub mod error;
 
+pub mod async_service;
 pub mod db_content;
 pub mod db_service;
-pub mod async_service;
 
-
-pub mod util ;
+pub mod util;
 
 pub use crate::util as service_util;
+
+
 
 #[macro_use]
 extern crate slice_as_array;

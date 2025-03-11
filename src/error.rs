@@ -155,6 +155,12 @@ pub enum Error {
     #[error("DuplicateKeyFileName: {0}")]
     DuplicateKeyFileName(String),
 
+    #[error("WordListError: {0}")]
+    WordListError(#[from] chbs::word::WordListError),
+
+    #[error("AutoOpenError: {0}")]
+    AutoOpenError(String),
+
     // See DataError where we can use str
     // UnexpectedError is used where we can use format!
     #[error("{0}")]

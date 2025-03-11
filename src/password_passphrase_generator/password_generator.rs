@@ -122,6 +122,18 @@ pub enum PasswordScore {
     Invulnerable { raw_value: f64, score_text: String },
 }
 
+impl From<&str> for PasswordScore {
+    fn from(password: &str) -> Self  {
+        analyze_password(password).score
+    }
+}
+
+impl From<&String> for PasswordScore {
+    fn from(password: &String) -> Self  {
+        analyze_password(password).score
+    }
+}
+
 impl From<f64> for PasswordScore {
     fn from(raw_value: f64) -> Self {
         if raw_value >= 0.0 && raw_value <= 20.0 {
@@ -170,7 +182,7 @@ impl From<f64> for PasswordScore {
 }
 
 #[allow(dead_code)]
-pub fn analyze_password(password: &str) -> AnalyzedPassword {
+fn analyze_password(password: &str) -> AnalyzedPassword {
     let analyzed = passwords::analyzer::analyze(password);
 
     // A password whose score is,
@@ -205,13 +217,14 @@ pub fn analyze_password(password: &str) -> AnalyzedPassword {
     }
 }
 
-pub fn score_password(password: &str) -> PasswordScore {
-    analyze_password(password).score
-}
+// pub fn score_password(password: &str) -> PasswordScore {
+//     analyze_password(password).score
+// }
 
 #[cfg(test)]
 mod tests {
-    use crate::password_generator::*;
+    
+    use crate::password_passphrase_generator::password_generator::*;
 
     #[test]
     fn verify_password_1() {

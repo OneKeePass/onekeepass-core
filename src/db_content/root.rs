@@ -2,9 +2,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::vec;
 
-use crate::constants::entry_keyvalue_key::TITLE;
+use crate::constants::entry_keyvalue_key::{PASSWORD, TITLE, USER_NAME};
 use crate::constants::general_category_names::FAVORITES;
-use crate::db_content::{move_to_recycle_bin, verify_uuid, AttachmentHashValue, Entry, Group};
+use crate::constants::AUTO_OPEN_GROUP_UC_NAME;
+use crate::db_content::{
+    move_to_recycle_bin, verify_uuid, AttachmentHashValue, Entry, Group, KeyValue,
+};
 use crate::error::{Error, Result};
 use crate::util;
 use log::{debug, error};
@@ -29,23 +32,16 @@ pub struct EntryCloneOption {
     pub new_title: Option<String>,
     pub parent_group_uuid: Uuid,
     pub keep_histories: bool,
+    // The cloned entry's username and password refers to the source entry
+    pub link_by_reference: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize)]
 pub struct AllTags {
     // Unique entry tags set
     entry_tags: HashSet<String>,
     // Unique group tags set
     group_tags: HashSet<String>,
-}
-
-impl AllTags {
-    fn new() -> AllTags {
-        AllTags {
-            entry_tags: HashSet::new(),
-            group_tags: HashSet::new(),
-        }
-    }
 }
 
 impl GroupVisitor for AllTags {
@@ -76,12 +72,13 @@ impl GroupVisitor for InOrderIds {
 
 #[derive(Debug, Clone)]
 pub struct Root {
-    pub(crate) root_uuid: Uuid,
-    pub(crate) recycle_bin_uuid: Uuid,
+    root_uuid: Uuid,
+    recycle_bin_uuid: Uuid,
+    auto_open_group_uuid: Option<Uuid>,
     // All groups data for easy lookup by uuid
-    pub(crate) all_groups: HashMap<Uuid, Group>,
+    all_groups: HashMap<Uuid, Group>,
     // All entries data for easy lookup by uuid
-    pub(crate) all_entries: HashMap<Uuid, Entry>,
+    all_entries: HashMap<Uuid, Entry>,
 }
 
 impl Root {
@@ -89,9 +86,53 @@ impl Root {
         Root {
             root_uuid: Uuid::default(),
             recycle_bin_uuid: Uuid::default(),
+            auto_open_group_uuid: None,
             all_groups: HashMap::new(),
             all_entries: HashMap::new(),
         }
+    }
+
+    pub(crate) fn auto_open_group_uuid(&self) -> Option<Uuid> {
+        self.auto_open_group_uuid
+    }
+
+    pub(crate) fn _set_auto_open_group_uuid(&mut self, uuid: Uuid) {
+        self.auto_open_group_uuid = Some(uuid);
+    }
+
+    pub(crate) fn root_uuid(&self) -> Uuid {
+        self.root_uuid
+    }
+
+    pub(crate) fn set_root_uuid(&mut self, uuid: Uuid) -> &mut Self {
+        self.root_uuid = uuid;
+        self
+    }
+
+    pub(crate) fn recycle_bin_uuid(&self) -> Uuid {
+        self.recycle_bin_uuid
+    }
+
+    pub(crate) fn set_recycle_bin_uuid(&mut self, uuid: Uuid) -> &mut Self {
+        self.recycle_bin_uuid = uuid;
+        self
+    }
+
+    // Called to add to the collection of all groups HashMap for easy lookup
+    // IMPORTANT: This does not verify any data on the passed 'group'
+    pub(crate) fn insert_to_all_groups(&mut self, group: Group) {
+        self.all_groups.insert(group.uuid, group);
+    }
+
+    // Called to add to the collection of all entries HashMap for easy lookup
+    // IMPORTANT: This does not verify any data on the passed 'entry'. Caller side reponsible for validata data
+    pub(crate) fn all_entries(&self) -> &HashMap<Uuid, Entry> {
+        &self.all_entries
+    }
+
+    pub(crate) fn insert_to_all_entries(&mut self, entry: Entry) {
+        //let a:std::sync::Arc<Root>  =  std::sync::Arc::clone(self);
+        self.all_entries.insert(entry.uuid, entry);
     }
 
     pub fn entry_by_id(&self, entry_uuid: &Uuid) -> Option<&Entry> {
@@ -678,11 +719,11 @@ impl Root {
         // Caller needs to ensure that a valid parent group uuid is passed
         verify_uuid!(self, entry_clone_option.parent_group_uuid, all_groups);
 
-        let Some(e) = self.all_entries.get(entry_uuid) else {
+        let Some(source_entry) = self.all_entries.get(entry_uuid) else {
             return Err(Error::NotFound("Entry is not found to clone".into()));
         };
 
-        let mut cloned_entry = e.clone();
+        let mut cloned_entry = source_entry.clone();
         // A new entry uuid is required for the cloned one
         let new_e_uuid = uuid::Uuid::new_v4();
         cloned_entry.uuid = new_e_uuid;
@@ -694,6 +735,27 @@ impl Root {
         if let Some(title) = entry_clone_option.new_title.as_ref() {
             cloned_entry.entry_field.update_value(TITLE, title);
         }
+
+        // Link by reference done for UserName and Password
+        if entry_clone_option.link_by_reference {
+            // Uppercase Uuid string is used as done by other KP implementation
+            let mut buff = Uuid::encode_buffer();
+            let uuid_str = source_entry.uuid.simple().encode_upper(&mut buff);
+
+            // debug!("Source entry uuid_str {} for cloning",uuid_str);
+
+            let mut kv = KeyValue::new();
+            kv.key = USER_NAME.to_string();
+            kv.value = format!("{{REF:U@I:{}}}", uuid_str);
+            cloned_entry.entry_field.insert_key_value(kv);
+
+            let mut kv = KeyValue::new();
+            kv.key = PASSWORD.to_string();
+            kv.value = format!("{{REF:P@I:{}}}", uuid_str);
+            kv.protected = true;
+            cloned_entry.entry_field.insert_key_value(kv);
+        }
+
         // Remove the source entry's histories if required
         if !entry_clone_option.keep_histories {
             // This should remove histories and history realted entry type custom data
@@ -713,10 +775,7 @@ impl Root {
         // Add this new cloned entry to the entries lookup map
         self.all_entries.insert(cloned_entry.uuid, cloned_entry);
 
-        debug!(
-            "Entry uuid {} is cloned and cloned entry uuid is {}",
-            &entry_uuid, &new_e_uuid
-        );
+        // debug!("Entry uuid {} is cloned and cloned entry uuid is {}", &entry_uuid, &new_e_uuid);
 
         Ok(new_e_uuid)
     }
@@ -810,12 +869,14 @@ impl Root {
     //         .for_each(|e| e.after_xml_reading());
     // }
 
+    // Called to set shared meta data to all entries after parsing xml payload data
     pub fn entries_after_xml_reading(&mut self, meta: &Meta) {
         self.all_entries
             .values_mut()
             .for_each(|e| e.after_xml_reading(meta));
     }
 
+    // Called to ensure that any house keeping is required to be done before xml writing
     pub fn entries_before_xml_writing(&mut self) {
         self.all_entries
             .values_mut()
@@ -830,7 +891,7 @@ impl Root {
     //         });
     // }
 
-    pub fn groups_to_custom_data(&mut self) {
+    pub(crate) fn groups_to_custom_data(&mut self) {
         let mut acc = InOrderIds {
             ids: vec![],
             entry_ids_wanted: false,
@@ -848,8 +909,8 @@ impl Root {
         }
     }
 
-    pub fn collect_tags(&self) -> AllTags {
-        let mut all_tags = AllTags::new();
+    pub(crate) fn collect_tags(&self) -> AllTags {
+        let mut all_tags = AllTags::default();
         // First collect all the unique tags used at group levels
         self.root_group_visitor_action(&mut all_tags);
         // Now collect all unique tags used at entry level
@@ -861,13 +922,109 @@ impl Root {
         all_tags
     }
 
-    /// Visit each group starting with the root and do some action using the node group's data
-    pub fn root_group_visitor_action(&self, acc: &mut dyn GroupVisitor) {
+    pub(crate) fn auto_open_group_entries(&self) -> Vec<&Entry> {
+        // auto_open_group_uuid is an Option type as we may or may not have an 'AutoOpen' group
+        // Option<Uuid> -> Option<&Group>
+        self.auto_open_group_uuid
+            .and_then(|ref ao_grp_id| self.group_by_id(ao_grp_id))
+            .map_or_else(
+                // empty vec is returned if there is auto group
+                || vec![],
+                |group| {
+                    let mut acc: Vec<&Entry> = vec![];
+                    for entry_uuid in group.entry_uuids.iter() {
+                        if let Some(entry) = self.entry_by_id(entry_uuid) {
+                            acc.push(entry);
+                        };
+                    }
+                    // acc may be empty if there are no entries for this auto group
+                    acc
+                },
+            )
+    }
+
+    pub(crate) fn auto_open_group_entry_uuids(&self) -> Vec<Uuid> {
+        // Here we are assuming all entries under auto open group are of auto open type
+        self.auto_open_group_uuid.map_or_else(
+            || vec![],
+            |ref ao_grp_id| {
+                // Only top level entry_uuids for this group is returned. The sub groups are not considered 
+                self.group_by_id(ao_grp_id)
+                    .map_or_else(|| vec![], |group| group.entry_uuids.clone())
+            }, 
+            // To include entry_uuids from sub broups of auto_open_group, we need to use this
+            // |ref ao_grp_id| self.children_entry_uuids(ao_grp_id),
+        )
+    }
+
+    // Called after xml content is parsed to ensure that AutoOpen group has entry type as AUTO_DB_OPEN
+    pub(crate) fn adjust_auto_open_group_entries(&mut self) {
+        // Only groups under root are considered
+        let root_child_group_ids = self
+            .all_groups
+            .get(&self.root_uuid)
+            .map_or(vec![], |root_child_group| {
+                root_child_group.group_uuids.clone()
+            });
+
+        let auto_open_entry_type = super::standard_entry_types::auto_open_entry_type();
+
+        for ref grp_id in root_child_group_ids {
+            // Find the AutoOpen group and change the entry type to AUTO_DB_OPEN if required
+            // Here for now we are assuming all entries under this group are meant for auto open purpose only
+            if let Some(ao_group) = self
+                .all_groups
+                .get_mut(grp_id)
+                .filter(|g| g.name.to_uppercase() == AUTO_OPEN_GROUP_UC_NAME)
+            {
+                // Keep this uuid for later use
+                self.auto_open_group_uuid = Some(ao_group.uuid);
+
+                for e_id in &mut ao_group.entry_uuids {
+                    if let Some(entry) = self.all_entries.get_mut(e_id) {
+                        if entry.entry_field.entry_type.uuid != auto_open_entry_type.uuid {
+                            // Though this entry type is not auto open type, we set the type to auto open type 
+                            // only when we find that the url field of this entry starts with kdbx://
+                            if entry.entry_field.has_kdbx_url() {
+                                entry.entry_field.entry_type = auto_open_entry_type.clone();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // let found_opt = self.all_groups.iter_mut().try_for_each(|g| {
+        //     if g.1.name == "AutoOpen" {
+        //         std::ops::ControlFlow::Break(g.1)
+        //     } else {
+        //         std::ops::ControlFlow::Continue(())
+        //     }
+        // });
+
+        // // Move to group
+        // let auto_open_entry_type = super::standard_entry_types::auto_open_entry_type();
+
+        // if let Some(ao_group) = found_opt.break_value() {
+        //     for e_id in &mut ao_group.entry_uuids {
+        //         if let Some(entry) = self.all_entries.get_mut(e_id) {
+        //             if entry.entry_field.entry_type.name != AUTO_DB_OPEN {
+        //                 if let Some(t) = auto_open_entry_type {
+        //                     entry.entry_field.entry_type = t.clone();
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+    }
+
+    // Visit each group starting with the root and do some action using the node group's data
+    fn root_group_visitor_action(&self, acc: &mut dyn GroupVisitor) {
         self.group_visitor_action(&self.root_uuid, acc);
     }
 
     // Gets all sub groups' uuids found under a group with the group_uuid
-    pub(crate) fn children_groups_uuids(&self, group_uuid: &Uuid) -> Vec<Uuid> {
+    fn children_groups_uuids(&self, group_uuid: &Uuid) -> Vec<Uuid> {
         let mut acc = InOrderIds {
             ids: vec![],
             entry_ids_wanted: false,

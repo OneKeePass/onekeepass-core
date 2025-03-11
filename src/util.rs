@@ -86,6 +86,11 @@ pub fn now_utc_seconds() -> i64 {
     now_utc().and_utc().timestamp()
 }
 
+#[inline]
+pub fn now_utc_milli_seconds() -> i64 {
+    now_utc().and_utc().timestamp_millis()
+}
+
 // Formats the now utc time
 #[allow(dead_code)]
 pub fn format_utc_now(format_str: Option<&str>) -> String {
@@ -429,6 +434,8 @@ pub mod from_or_to {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
+#[allow(unused)]
 mod tests {
     use super::*;
     #[test]
@@ -485,7 +492,6 @@ mod tests {
 
     #[allow(dead_code)]
     use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, TimeZone, Utc};
-    use regex::Regex;
 
     #[test]
     fn verify_decode_datetime_b64() {

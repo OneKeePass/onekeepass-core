@@ -25,9 +25,9 @@ pub const EMPTY: &[u8] = &[];
 pub const PAYLOAD_BLOCK_SIZE: u64 = 1048576; // (1MB = 1024 * 1024), 65536  1048576
 
 /*
-    Version 2:
-        Otp changes
- */
+   Version 2:
+       Otp changes
+*/
 pub const INTERNAL_VERSION: i32 = 2;
 
 pub const GENERATOR_NAME: &str = "OneKeyPass";
@@ -35,6 +35,10 @@ pub const GENERATOR_NAME: &str = "OneKeyPass";
 pub const EMPTY_STR: &str = "";
 
 pub const OTP_URL_PREFIX: &str = "otpauth://totp";
+
+// pub const AUTO_OPEN_GROUP_NAME: &str = "AutoOpen";
+
+pub const AUTO_OPEN_GROUP_UC_NAME: &str = "AUTOOPEN";
 
 // All Custom Data keys are of pattern OKP_K*. This is used instead of some descriptive
 // string to reduce number of bytes taken by the key name entries in db and thus overall size of db
@@ -72,8 +76,8 @@ pub mod general_category_names {
 #[allow(dead_code)]
 pub mod standard_in_section_names {
     pub const LOGIN_DETAILS: &str = "Login Details";
-    pub const ADDITIONAL_ONE_TIME_PASSWORDS: &str = "Additional One-Time Passwords" ;
-    pub const CARD_DETAILS: &str = "Card Details" ;
+    pub const ADDITIONAL_ONE_TIME_PASSWORDS: &str = "Additional One-Time Passwords";
+    pub const CARD_DETAILS: &str = "Card Details";
 }
 
 #[allow(dead_code)]
@@ -82,6 +86,9 @@ pub mod entry_type_name {
     pub const WIRELESS_ROUTER: &str = "Wireless Router";
     pub const CREDIT_DEBIT_CARD: &str = "Credit/Debit Card";
     pub const BANK_ACCOUNT: &str = "Bank Account";
+
+    pub const AUTO_DB_OPEN: &str = "Auto Database Open";
+
     pub const PASSPORT: &str = "Passport";
     pub const IDENTITY: &str = "Identity";
     pub const DRIVER_LICENSE: &str = "Driver License";
@@ -94,47 +101,55 @@ pub mod entry_type_name {
 // println!("{}",util::as_hex_array_formatted(uid.as_bytes()));
 // println!("{}",uid.to_string());
 
+// See the test fn 'generate_uuid()' in the mod tests at the bottom
+
 #[allow(dead_code)]
 pub mod entry_type_uuid {
-    //ffef5f51-7efc-4373-9eb5-382d5b501768
+    // ffef5f51-7efc-4373-9eb5-382d5b501768
     pub const LOGIN: &[u8] = &[
         0xFF, 0xEF, 0x5F, 0x51, 0x7E, 0xFC, 0x43, 0x73, 0x9E, 0xB5, 0x38, 0x2D, 0x5B, 0x50, 0x17,
         0x68,
     ];
 
-    //9e644c27-d00b-4aca-8355-5078c5a4fb44
+    // 9e644c27-d00b-4aca-8355-5078c5a4fb44
     pub const WIRELESS_ROUTER: &[u8] = &[
         0x9E, 0x64, 0x4C, 0x27, 0xD0, 0x0B, 0x4A, 0xCA, 0x83, 0x55, 0x50, 0x78, 0xC5, 0xA4, 0xFB,
         0x44,
     ];
 
-    //c83aa78a-3a8c-45fc-b0e1-08002d166544
+    // c83aa78a-3a8c-45fc-b0e1-08002d166544
     pub const CREDIT_DEBIT_CARD: &[u8] = &[
         0xC8, 0x3A, 0xA7, 0x8A, 0x3A, 0x8C, 0x45, 0xFC, 0xB0, 0xE1, 0x08, 0x00, 0x2D, 0x16, 0x65,
         0x44,
     ];
-    //713850b6-9457-45ca-a861-0402db2ca98f
+    // 713850b6-9457-45ca-a861-0402db2ca98f
     pub const BANK_ACCOUNT: &[u8] = &[
         0x71, 0x38, 0x50, 0xB6, 0x94, 0x57, 0x45, 0xCA, 0xA8, 0x61, 0x04, 0x02, 0xDB, 0x2C, 0xA9,
         0x8F,
     ];
 
-    //0ba6d80b-8b8d-4ccd-b0dc-840337951cb0
+    // 0ba6d80b-8b8d-4ccd-b0dc-840337951cb0
     pub const PASSPORT: &[u8] = &[
         0x0B, 0xA6, 0xD8, 0x0B, 0x8B, 0x8D, 0x4C, 0xCD, 0xB0, 0xDC, 0x84, 0x03, 0x37, 0x95, 0x1C,
         0xB0,
     ];
 
-    //e5aff423-1044-40fe-9565-c0e8dde626c2
+    // e5aff423-1044-40fe-9565-c0e8dde626c2
     pub const IDENTITY: &[u8] = &[
         0xE5, 0xAF, 0xF4, 0x23, 0x10, 0x44, 0x40, 0xFE, 0x95, 0x65, 0xC0, 0xE8, 0xDD, 0xE6, 0x26,
         0xC2,
     ];
 
-    //90ac9d76-7ea7-4176-b5d0-fabf8a9a0058
+    // 90ac9d76-7ea7-4176-b5d0-fabf8a9a0058
     pub const DRIVER_LICENSE: &[u8] = &[
         0x90, 0xAC, 0x9D, 0x76, 0x7E, 0xA7, 0x41, 0x76, 0xB5, 0xD0, 0xFA, 0xBF, 0x8A, 0x9A, 0x00,
         0x58,
+    ];
+
+    // 389368a9-73a9-4256-8247-321a2e60b2c7
+    pub const AUTO_DB_OPEN: &[u8] = &[
+        0x38, 0x93, 0x68, 0xA9, 0x73, 0xA9, 0x42, 0x56, 0x82, 0x47, 0x32, 0x1A, 0x2E, 0x60, 0xB2,
+        0xC7,
     ];
 }
 
@@ -148,6 +163,13 @@ pub mod entry_keyvalue_key {
     pub const URL: &str = "URL";
 
     pub const NUMBER: &str = "Number";
+
+    pub const IF_DEVICE: &str = "IfDevice";
+    
+    // pub const ENABLED: &str = "Enabled";
+    // pub const PRIORITY: &str = "Priority";
+    // pub const SKIP_IF_NOT_EXISTS: &str = "SkipIfNotExists";
+    // pub const SKIP_IF_KEY_FILE_NOT_EXISTS: &str = "SkipIfKeyFileNotExists";
 }
 
 //#[allow(non_upper_case_globals)]
@@ -342,4 +364,17 @@ pub mod inner_header_type {
 
     pub const SALSA20_STREAM: u32 = 2; //LE Bytes (2 0 0 0)
     pub const CHACHA20_STREAM: u32 = 3; //LE Bytes (3 0 0 0)
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+#[allow(unused)]
+mod tests {
+
+    #[test]
+    fn generate_uuid() {
+        let uid = uuid::Uuid::new_v4();
+        println!("{}", crate::util::as_hex_array_formatted(uid.as_bytes()));
+        println!("{}", uid.to_string());
+    }
 }

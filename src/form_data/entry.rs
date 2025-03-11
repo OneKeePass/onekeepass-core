@@ -8,15 +8,25 @@ use uuid::Uuid;
 use crate::constants::entry_keyvalue_key::*;
 use crate::constants::entry_type_name::CREDIT_DEBIT_CARD;
 use crate::constants::standard_in_section_names::ADDITIONAL_ONE_TIME_PASSWORDS;
-use crate::password_generator::{score_password, PasswordScore};
+use crate::password_passphrase_generator::PasswordScore;
+
 use crate::util::{self, empty_str};
 
+use crate::error::{Error, Result};
+
 use crate::db_content::{
-    join_tags, split_tags, AutoType, BinaryKeyValue, Entry, EntryField,
-    EntryType, FieldDataType, FieldDef, KeyValue, OtpData, Section,
+    join_tags, split_tags, AutoType, BinaryKeyValue, Entry, EntryField, EntryType, FieldDataType,
+    FieldDef, KeepassFile, KeyValue, OtpData, Root, Section,
 };
 
 pub use crate::db_content::CurrentOtpTokenData;
+
+// #[derive(Debug, Clone, Serialize)]
+// #[serde(tag = "type_name", content = "content")]
+// pub enum KeyValueAdditionalData {
+//     // Entry PlaceHolder Parsed value
+//     Resolved(Option<String>),
+// }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct KeyValueData {
@@ -27,18 +37,28 @@ pub struct KeyValueData {
     pub helper_text: Option<String>,
     pub data_type: FieldDataType,
     pub standard_field: bool,
+
     // TODO: Use select_field name instead of forming options list everytime.
     pub select_field_options: Option<Vec<String>>,
+
+    // Only relevant for PASSWORD field and in other cases it is None
+    // We get the PasswordScore based on the String value of password
+    // Only serialization is enabled so as to send the data to UI
     #[serde(skip_deserializing)]
     pub password_score: Option<PasswordScore>,
+
     // Following are set on otp token generation
+    // Should this also use 'skip_deserializing' ?
     pub current_opt_token: Option<CurrentOtpTokenData>,
+    // Future idea to use instead of adding separate fields as done using 'password_score' and 'current_opt_token' ?
+    // #[serde(skip_deserializing)]
+    // pub additional_data: Option<KeyValueAdditionalData>,
 }
 
 impl From<&KeyValue> for KeyValueData {
     fn from(kv: &KeyValue) -> Self {
         let password_score = if kv.key == PASSWORD {
-            Some(score_password(&kv.value))
+            Some((&kv.value).into())
         } else {
             None
         };
@@ -102,7 +122,7 @@ impl KeyValueData {
     }
 
     // Called to generate an otp token if there is a parsed otp data available for this KV
-    // The data type will be overriden to be 'OneTimePassword' 
+    // The data type will be overriden to be 'OneTimePassword'
     fn _generate_otp_on_check(&mut self, parsed_otp_values: &Option<HashMap<String, OtpData>>) {
         if let Some(m) = parsed_otp_values.as_ref() {
             if m.contains_key(&self.key) {
@@ -115,6 +135,8 @@ impl KeyValueData {
 }
 
 use lazy_static::lazy_static;
+
+use super::{categories, parsing};
 
 lazy_static! {
 
@@ -170,6 +192,11 @@ pub struct EntryFormData {
     pub section_fields: HashMap<String, Vec<KeyValueData>>,
 
     pub auto_type: AutoType,
+
+    // This map has keys from kvd key (uppercase) and values are from kvd value that has some
+    // placeholder, parsed and resolved
+    #[serde(skip_deserializing)]
+    pub parsed_fields: HashMap<String, String>,
 }
 
 impl EntryFormData {
@@ -227,9 +254,9 @@ impl EntryFormData {
                         // Clone values from KeyValue to KeyValueData
                         let mut kvd: KeyValueData = (&kv).into();
 
-                        // Following may be requird when we change a field's protection flag 
-                        // in FieldDef from its earlier definition. 
-                        // May Need more tests to confirm no other issue. 
+                        // Following may be requird when we change a field's protection flag
+                        // in FieldDef from its earlier definition.
+                        // May Need more tests to confirm no other issue.
                         // if kvd.protected != fd.require_protection {
                         //     // Overriding the old protected flag read from db with new value from
                         //     // field definition
@@ -240,7 +267,7 @@ impl EntryFormData {
                         // kvd is populated from them
                         kvd.data_type = fd.data_type;
                         kvd.required = fd.required;
-                        kvd.helper_text = fd.helper_text(); 
+                        kvd.helper_text = fd.helper_text();
                         kvd.standard_field = standard_field_names.contains(&kv.key.as_str());
 
                         // We generate token only if the data type of this field is 'OneTimePassword' type
@@ -270,7 +297,7 @@ impl EntryFormData {
                         // Need to ensure that the field name of this 'fd.name' is NOT yet
                         // added earlier to any other section.
 
-                        // This will happen in a situation when a new field is introduced later in the satndard section with same name as
+                        // This will happen in a situation when a new field is introduced later in the standard section with same name as
                         // in any previously user added custom section
 
                         // For example, let us assume we have a previously user defined section "Section1" with field name "UserName" for
@@ -298,7 +325,6 @@ impl EntryFormData {
                         kvs.push(kvd);
                     }
                 }
-
                 // Add all KVs for a section
                 section_fields.insert(section.name.clone(), kvs);
             }
@@ -334,7 +360,7 @@ impl EntryFormData {
                             // There is a possibility a field may have a valid totp url created in other app
                             // In that case, we need to generate token and set its data type
                             // kvd.generate_otp_on_check(&entry.parsed_otp_values);
-                            
+
                             kv.into()
                         })
                         .collect(),
@@ -374,6 +400,7 @@ impl EntryFormData {
             standard_section_names,
             section_names,
             section_fields,
+            parsed_fields: HashMap::default(),
         }
     }
 
@@ -395,11 +422,11 @@ impl EntryFormData {
         entry_field.fields.insert(TITLE.into(), title_kv);
         entry_field.fields.insert(NOTES.into(), notes_kv);
 
-        // section_names is list of all section names 
+        // section_names is list of all section names
         // Order of section and the fields order within a section are maintained for minimal
         // Entrytype data storage
         // See Entry's 'copy_to_custom_data' call flow where we store only the changed type information
-          
+
         for section_name in entry_form_data.section_names.iter() {
             // For each section name found, we find all KVs and form EntryField
             if let Some(kvds) = entry_form_data.section_fields.get(section_name) {
@@ -452,16 +479,38 @@ impl EntryFormData {
         entry
     }
 
-    // pub fn new_form_entry_by_type(
-    //     entry_type_name: &str,
-    //     custom_entry_type: Option<EntryType>,
-    //     parent_group_uuid: Option<&Uuid>,
-    // ) -> Self {
-    //     //parent_group_uuid.as_ref().as_deref()
-    //     let e =
-    //         &Entry::new_blank_entry_by_type(entry_type_name, custom_entry_type, parent_group_uuid);
-    //     e.into()
-    // }
+    // Resolves all place holders for the entry fields
+    pub(crate) fn place_holder_resolved_form_data(root: &Root, entry: &Entry) -> Self {
+        let mut form_data = EntryFormData::from_entry(entry);
+        form_data.parsed_fields =
+            parsing::EntryPlaceHolderParser::resolve_place_holders(root, entry);
+        form_data
+    }
+
+    // Extracts all entry field values as a map and apply any enrty field palceholder parsing
+    pub(crate) fn entry_key_value_fields(
+        kp: &KeepassFile,
+        entry_uuid: &Uuid,
+    ) -> Result<HashMap<String, String>> {
+        let entry = kp
+            .root
+            .entry_by_id(entry_uuid)
+            .ok_or(Error::NotFound("No entry Entry found for the id".into()))?;
+
+        let mut kvs = entry.field_values();
+        let parsed_fields = parsing::EntryPlaceHolderParser::resolve_place_holders(&kp.root, entry);
+
+        if !parsed_fields.is_empty() {
+            for (field_name, field_value) in kvs.iter_mut() {
+                if let Some(parsed_field_val) = parsed_fields.get(&field_name.to_uppercase()) {
+                    // field_value is &mut String and *field_value is used to update this
+                    *field_value = parsed_field_val.clone();
+                }
+            }
+        }
+
+        Ok(kvs)
+    }
 
     pub fn new_form_entry_by_type_id(
         entry_type_uuid: &Uuid,
@@ -475,6 +524,38 @@ impl EntryFormData {
             parent_group_uuid,
         );
         e.into()
+    }
+}
+
+impl Entry {
+    pub(crate) fn extract_place_holders(&self) -> HashMap<String, String> {
+        let mut entry_fields_with_place_holders: HashMap<String, String> = HashMap::default();
+
+        // Checks whether any one of the entry field contain palce holder variable
+        let parsing_required = self.entry_field.fields.values().into_iter().any(|kvd| {
+            if !kvd.value.trim().is_empty() {
+                parsing::place_holder_marker_found(&kvd.value)
+            } else {
+                false
+            }
+        });
+
+        if parsing_required {
+            // All non empty field values are collected to a HashMap irresespective whether the field
+            // contain placeholder or not
+            entry_fields_with_place_holders = self.entry_field.fields.values().into_iter().fold(
+                entry_fields_with_place_holders,
+                |mut acc, kvd| {
+                    if !kvd.value.trim().is_empty() {
+                        // We make all keys to UpperCase
+                        acc.insert(kvd.key.to_uppercase(), kvd.value.to_string());
+                    }
+                    acc
+                },
+            );
+        }
+
+        entry_fields_with_place_holders
     }
 }
 
@@ -535,7 +616,7 @@ impl EntrySummary {
 
     // Gets the secondary title to show in addition to main title while displaying
     // an entry item in a list - a UI specific thing
-    fn secondary_title(entry: &Entry) -> Option<String> {
+    fn secondary_title(entry: &Entry, parsed_fields: &HashMap<String, String>) -> Option<String> {
         if entry.entry_field.entry_type.name == CREDIT_DEBIT_CARD {
             entry.entry_field.find_key_value(NUMBER).map(|f| {
                 let s = f.value.trim();
@@ -550,7 +631,14 @@ impl EntrySummary {
                 }
             })
         } else if let Some(ref t) = entry.entry_field.entry_type.secondary_title {
-            entry.find_kv_field_value(t)
+            let val = entry.find_kv_field_value(t);
+            if parsed_fields.is_empty() {
+                val
+            } else {
+                parsed_fields
+                    .get(&t.to_uppercase())
+                    .map_or(val, |s| Some(s.to_string()))
+            }
         } else {
             let secondary_title: Option<String> = entry
                 .entry_field
@@ -568,17 +656,34 @@ impl EntrySummary {
                 }) // First field's name
                 .map(|n| entry.entry_field.find_key_value(n))
                 .flatten() // To get Option<Option<&KeyValue>> to Option<&KeyValue>
-                .and_then(|kv| Some(kv.value.clone()));
+                .and_then(|kv| {
+                    if parsed_fields.is_empty() {
+                        Some(kv.value.clone())
+                    } else {
+                        parsed_fields
+                            .get(&kv.key.to_uppercase())
+                            .map_or_else(|| Some(kv.value.clone()), |s| Some(s.to_string()))
+                    }
+                });
 
             secondary_title
         }
     }
-
-    pub fn entry_summary_data(entries: Vec<&Entry>) -> Vec<EntrySummary> {
+    
+    pub fn entry_summary_data<'a>(
+        kp: &'a KeepassFile,
+        entry_category: &'a categories::EntryCategory,
+    ) -> Vec<EntrySummary> {
+        let entries: Vec<&Entry> = categories::entry_by_category(kp, entry_category);
         let mut summary_list: Vec<EntrySummary> = vec![];
+        let title_upper = TITLE.to_uppercase();
         for e in entries {
-            let title = e.find_kv_field_value(TITLE);
-            let secondary_title = EntrySummary::secondary_title(e);
+            let parsed_fields = parsing::EntryPlaceHolderParser::resolve_place_holders(&kp.root, e);
+            let title = parsed_fields
+                .get(&title_upper)
+                .map_or_else(|| e.find_kv_field_value(TITLE), |s| Some(s.to_string())); //e.find_kv_field_value(TITLE);
+
+            let secondary_title = EntrySummary::secondary_title(e, &parsed_fields);
             summary_list.push(Self {
                 uuid: e.uuid.to_string(),
                 title,
@@ -591,6 +696,24 @@ impl EntrySummary {
         }
         summary_list
     }
+
+    // pub fn entry_summary_data(entries: Vec<&Entry>) -> Vec<EntrySummary> {
+    //     let mut summary_list: Vec<EntrySummary> = vec![];
+    //     for e in entries {
+    //         let title = e.find_kv_field_value(TITLE);
+    //         let secondary_title = EntrySummary::secondary_title(e);
+    //         summary_list.push(Self {
+    //             uuid: e.uuid.to_string(),
+    //             title,
+    //             secondary_title,
+    //             icon_id: e.icon_id,
+    //             history_index: None,
+    //             modified_time: Some(e.times.last_modification_time.timestamp()),
+    //             created_time: Some(e.times.creation_time.timestamp()),
+    //         });
+    //     }
+    //     summary_list
+    // }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -656,9 +779,58 @@ impl From<&EntryTypeFormData> for EntryType {
 
 #[cfg(test)]
 mod tests {
+    use crate::constants::entry_keyvalue_key::*;
     use crate::constants::entry_type_uuid;
     use crate::db_content::*;
     use crate::form_data::*;
+
+    #[test]
+    fn verify_place_holder_parsing() {
+        let uuid = uuid::Builder::from_slice(&entry_type_uuid::LOGIN)
+            .unwrap()
+            .into_uuid();
+        let mut entry = Entry::new_blank_entry_by_type_id(&uuid, None, None);
+
+        entry.entry_field.fields.insert(
+            "Title".into(),
+            KeyValue {
+                key: "Title".into(),
+                value: "Test {USERNAME} Title".into(),
+                protected: false,
+                data_type: FieldDataType::default(),
+            },
+        );
+
+        entry
+            .entry_field
+            .update_value(USER_NAME, "My first {URL} name");
+
+        entry
+            .entry_field
+            .update_value(URL, "https://www.oracle.com");
+
+        let mut root = Root::new();
+        root.set_root_uuid(uuid::Uuid::new_v4());
+        let mut root_group = Group::new();
+        root_group.uuid = root.root_uuid();
+        root.insert_to_all_groups(root_group);
+
+        let mut parent_group = Group::new();
+        parent_group.uuid = uuid::Uuid::new_v4();
+        parent_group.parent_group_uuid = root.root_uuid();
+
+        entry.group_uuid = parent_group.uuid;
+
+        root.insert_group(parent_group).unwrap();
+        root.insert_entry(entry.clone()).unwrap();
+
+        let form_data = EntryFormData::place_holder_resolved_form_data(&root, &entry);
+
+        println!("Form data is {:?}", &form_data.parsed_fields);
+
+        let resolved = form_data.parsed_fields.get("USERNAME").unwrap();
+        assert_eq!("My first https://www.oracle.com name", resolved);
+    }
 
     #[test]
     fn verify_creating_display_entry() {
@@ -725,3 +897,105 @@ mod tests {
         );
     }
 }
+
+/*
+fn form_data_from_entry(root: &Root, entry: &Entry) -> Self {
+        let mut form_data = EntryFormData::from_entry(entry);
+
+        let mut entry_fields_with_place_holders: HashMap<String, String> = HashMap::default();
+        let mut parsing_required = false;
+        if parsing::place_holder_marker_found(&form_data.title) {
+            entry_fields_with_place_holders.insert("TITLE".into(), form_data.title.clone());
+        }
+
+        if parsing::place_holder_marker_found(&form_data.notes) {
+            entry_fields_with_place_holders.insert("NOTES".into(), form_data.title.clone());
+        }
+
+        parsing_required = form_data
+            .section_fields
+            .values()
+            .into_iter()
+            .flatten()
+            .any(|kvd| {
+                if let Some(ref val) = kvd.value {
+                    parsing::place_holder_marker_found(val)
+                } else {
+                    false
+                }
+            });
+
+        if parsing_required {
+            entry_fields_with_place_holders = form_data
+                .section_fields
+                .values()
+                .into_iter()
+                .flatten()
+                .fold(entry_fields_with_place_holders, |mut acc, kvd| {
+                    if let Some(ref val) = kvd.value {
+                        if !val.trim().is_empty() {
+                            acc.insert(kvd.key.to_uppercase(), val.to_string());
+                        }
+                    }
+                    acc
+                });
+        }
+        // entry_fields_with_place_holders = form_data
+        //     .section_fields
+        //     .values()
+        //     .into_iter()
+        //     .flatten()
+        //     .fold(entry_fields_with_place_holders, |mut acc, kvd| {
+        //         if let Some(ref val) = kvd.value {
+        //             if parsing::place_holder_marker_found(val) {
+        //                 acc.insert(kvd.key.to_uppercase(), val.to_string());
+        //             }
+        //         }
+        //         acc
+        //     });
+
+        println!(
+            "entry_fields_with_place_holders is {:?}",
+            &entry_fields_with_place_holders
+        );
+
+        if !entry_fields_with_place_holders.is_empty() {
+            let mut ef =
+                parsing::EntryPlaceHolderParser::from(&mut entry_fields_with_place_holders);
+            let r = ef.parse_main();
+            println!(" Called r is {:?} and ef is {:?}", &r, &ef);
+
+            let modified = ef.modified_fields();
+
+            entry_fields_with_place_holders.retain(
+                |k, _v| {
+                    if modified.contains(k) {
+                        true
+                    } else {
+                        false
+                    }
+                },
+            );
+        }
+
+        println!(
+            "2 entry_fields_with_place_holders is {:?}",
+            &entry_fields_with_place_holders
+        );
+
+        form_data.parsed_fields = entry_fields_with_place_holders;
+        form_data
+    }
+
+*/
+
+// pub fn new_form_entry_by_type(
+//     entry_type_name: &str,
+//     custom_entry_type: Option<EntryType>,
+//     parent_group_uuid: Option<&Uuid>,
+// ) -> Self {
+//     //parent_group_uuid.as_ref().as_deref()
+//     let e =
+//         &Entry::new_blank_entry_by_type(entry_type_name, custom_entry_type, parent_group_uuid);
+//     e.into()
+// }

@@ -53,6 +53,7 @@ impl KeyCipher {
 }
 
 
+/* 
 pub struct AeadKeyCipher {
     pub salt:Vec<u8>,
     
@@ -68,3 +69,4 @@ impl AeadKeyCipher {
 
     pub fn decrypt() {}
 }
+*/
