@@ -4,6 +4,7 @@ use std::vec;
 
 use crate::constants::entry_keyvalue_key::{PASSWORD, TITLE, USER_NAME};
 use crate::constants::general_category_names::FAVORITES;
+use crate::constants::AUTO_OPEN_GROUP_UC_NAME;
 use crate::db_content::{
     move_to_recycle_bin, verify_uuid, AttachmentHashValue, Entry, Group, KeyValue,
 };
@@ -943,6 +944,7 @@ impl Root {
     }
 
     pub(crate) fn auto_open_group_entry_uuids(&self) -> Vec<Uuid> {
+        // Here we are assuming all entries under auto open group are of auto open type
         self.auto_open_group_uuid.map_or_else(
             || vec![],
             |ref ao_grp_id| {
@@ -950,7 +952,7 @@ impl Root {
                 self.group_by_id(ao_grp_id)
                     .map_or_else(|| vec![], |group| group.entry_uuids.clone())
             }, 
-            // To include entry_uuids from sun broups of auto_open_group, we need to use this
+            // To include entry_uuids from sub broups of auto_open_group, we need to use this
             // |ref ao_grp_id| self.children_entry_uuids(ao_grp_id),
         )
     }
@@ -973,7 +975,7 @@ impl Root {
             if let Some(ao_group) = self
                 .all_groups
                 .get_mut(grp_id)
-                .filter(|g| g.name == "AutoOpen")
+                .filter(|g| g.name.to_uppercase() == AUTO_OPEN_GROUP_UC_NAME)
             {
                 // Keep this uuid for later use
                 self.auto_open_group_uuid = Some(ao_group.uuid);
@@ -981,7 +983,11 @@ impl Root {
                 for e_id in &mut ao_group.entry_uuids {
                     if let Some(entry) = self.all_entries.get_mut(e_id) {
                         if entry.entry_field.entry_type.uuid != auto_open_entry_type.uuid {
-                            entry.entry_field.entry_type = auto_open_entry_type.clone();
+                            // Though this entry type is not auto open type, we set the type to auto open type 
+                            // only when we find that the url field of this entry starts with kdbx://
+                            if entry.entry_field.has_kdbx_url() {
+                                entry.entry_field.entry_type = auto_open_entry_type.clone();
+                            }
                         }
                     }
                 }

@@ -36,6 +36,10 @@ pub const EMPTY_STR: &str = "";
 
 pub const OTP_URL_PREFIX: &str = "otpauth://totp";
 
+// pub const AUTO_OPEN_GROUP_NAME: &str = "AutoOpen";
+
+pub const AUTO_OPEN_GROUP_UC_NAME: &str = "AUTOOPEN";
+
 // All Custom Data keys are of pattern OKP_K*. This is used instead of some descriptive
 // string to reduce number of bytes taken by the key name entries in db and thus overall size of db
 // Any new key should have the next OKP_Kx.

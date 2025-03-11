@@ -116,6 +116,7 @@ fn system_time() -> Result<u64> {
 }
 
 impl OtpData {
+    #[allow(dead_code)]
     pub fn new(
         algorithm: OtpAlgorithm,
         // expects a base32 encoded string as secret key and will be decoded

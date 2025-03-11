@@ -16,7 +16,7 @@ use crate::util;
 
 use super::meta::MetaShare;
 use super::otp::{CurrentOtpTokenData, OtpData};
-use super::{Meta, Root};
+use super::Meta;
 
 // To carry additional entry field grouping and for easy KV data lookup
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -129,6 +129,14 @@ impl EntryField {
 
     pub fn find_key_value(&self, key: &str) -> Option<&KeyValue> {
         self.fields.values().find(|f| f.key == key)
+    }
+
+    // Checks whether the entry's url field is meant to open as child kdbx database
+    pub fn has_kdbx_url(&self) -> bool {
+        self.fields
+            .values()
+            .find(|f| f.key == URL)
+            .map_or(false, |v| v.value.starts_with("kdbx://"))
     }
 
     // finds a KeyValue from the 'fields' map and updates its 'value' field with the passed value
