@@ -67,7 +67,7 @@ impl PasswordGenerationOptions {
             exclude_similar_characters: self.exclude_similar_characters,
             strict: self.strict,
         };
-        // extern crate passwords returns error as static &str and this is 
+        // extern crate passwords returns error as static &str and this is
         // converted to 'crate::onekeepass_core::error::Error implementing From trait
         Ok(pg.generate_one()?)
     }
@@ -123,13 +123,13 @@ pub enum PasswordScore {
 }
 
 impl From<&str> for PasswordScore {
-    fn from(password: &str) -> Self  {
+    fn from(password: &str) -> Self {
         analyze_password(password).score
     }
 }
 
 impl From<&String> for PasswordScore {
-    fn from(password: &String) -> Self  {
+    fn from(password: &String) -> Self {
         analyze_password(password).score
     }
 }
@@ -223,7 +223,7 @@ fn analyze_password(password: &str) -> AnalyzedPassword {
 
 #[cfg(test)]
 mod tests {
-    
+
     use crate::password_passphrase_generator::password_generator::*;
 
     #[test]

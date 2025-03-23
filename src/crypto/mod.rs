@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 // as botan lib compilation for 'android armv7' platform could not be done
 
 // To use 'rust_crypto_impl/mod.rs' instead of "botan_impl/mod.rs"
-// just remove target_os = "macos" so that the "else" part is enabled 
+// just remove target_os = "macos" so that the "else" part is enabled
 
 cfg_if::cfg_if! {
     if #[cfg(any(target_os = "macos",
@@ -82,8 +82,8 @@ mod tests {
         time::Instant,
     };
 
-    use crate::util::init_test_logging;
     use super::*;
+    use crate::util::init_test_logging;
 
     #[test]
     fn check_hmac_sha256() {

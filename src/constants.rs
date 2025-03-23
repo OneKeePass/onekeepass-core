@@ -165,7 +165,7 @@ pub mod entry_keyvalue_key {
     pub const NUMBER: &str = "Number";
 
     pub const IF_DEVICE: &str = "IfDevice";
-    
+
     // pub const ENABLED: &str = "Enabled";
     // pub const PRIORITY: &str = "Priority";
     // pub const SKIP_IF_NOT_EXISTS: &str = "SkipIfNotExists";

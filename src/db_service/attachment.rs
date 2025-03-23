@@ -105,7 +105,9 @@ pub fn save_attachment_as_temp_file(
             .ok_or_else(|| "Invalid temp file".into())
             .map(|s| s.into())
     } else {
-        Err(Error::UnexpectedError("No valid attachment data is found".into()))
+        Err(Error::UnexpectedError(
+            "No valid attachment data is found".into(),
+        ))
     }
 }
 

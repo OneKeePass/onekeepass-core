@@ -517,7 +517,7 @@ impl<'a> XmlReader<'a> {
         );
         // TODO: We may need to ensure all Entries of this group has its group_uuid is set to this group's UUID. See above comments in 'ENTRY'
         let gid = group.uuid; // copy to return
-    
+
         root.insert_to_all_groups(group);
         Ok(gid)
     }
@@ -557,11 +557,7 @@ impl<'a> XmlReader<'a> {
         Ok(entry)
     }
 
-    fn read_entry(
-        &mut self,
-        group_uuid: uuid::Uuid,
-        root: &mut Root,
-    ) -> Result<uuid::Uuid> {
+    fn read_entry(&mut self, group_uuid: uuid::Uuid, root: &mut Root) -> Result<uuid::Uuid> {
         let mut entry = self.read_entry_data()?; //Entry::new();
         entry.group_uuid = group_uuid;
         let eid = entry.uuid;
@@ -955,11 +951,7 @@ impl<W: Write> XmlWriter<W> {
         Ok(())
     }
 
-    fn write_group(
-        &mut self,
-        group_uuid: &uuid::Uuid,
-        root:&Root,
-    ) -> Result<()> {
+    fn write_group(&mut self, group_uuid: &uuid::Uuid, root: &Root) -> Result<()> {
         let group_tag = std::str::from_utf8(GROUP)?;
         if let Some(group) = root.group_by_id(group_uuid) {
             self.writer
@@ -1123,10 +1115,7 @@ impl<W: Write> XmlWriter<W> {
         let tag_element = std::str::from_utf8(ROOT)?;
         self.writer
             .write_event(Event::Start(BytesStart::new(tag_element)))?;
-        self.write_group(
-            &kp.root.root_uuid(),
-            &kp.root,
-        )?;
+        self.write_group(&kp.root.root_uuid(), &kp.root)?;
         self.writer
             .write_event(Event::End(BytesEnd::new(tag_element)))?;
         Ok(())

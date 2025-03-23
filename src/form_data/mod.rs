@@ -72,7 +72,7 @@ pub struct DbSettings {
     pub meta: MetaFormData,
 }
 
-#[derive(Clone,Serialize, Deserialize, Debug,Default)]
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
 pub struct KdbxLoaded {
     // Full database uri
     pub db_key: String,

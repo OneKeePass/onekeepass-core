@@ -1,7 +1,5 @@
-
 use rand::prelude::*;
 use rand_chacha::ChaCha20Rng;
-
 
 struct SecureRandom {
     rng: ChaCha20Rng,

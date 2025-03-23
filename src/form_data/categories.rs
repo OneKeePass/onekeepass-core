@@ -64,7 +64,7 @@ impl From<&str> for EntryCategoryGrouping {
             "Types" => EntryCategoryGrouping::AsTypes,
             "Tags" => EntryCategoryGrouping::AsTags,
             "Categories" | "Group" => EntryCategoryGrouping::AsGroupCategories,
-            _  => EntryCategoryGrouping::AsGroupCategories
+            _ => EntryCategoryGrouping::AsGroupCategories,
         }
     }
 }

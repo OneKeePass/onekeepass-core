@@ -17,8 +17,6 @@ pub mod util;
 
 pub use crate::util as service_util;
 
-
-
 #[macro_use]
 extern crate slice_as_array;
 extern crate lazy_static;

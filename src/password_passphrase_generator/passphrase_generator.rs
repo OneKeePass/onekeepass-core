@@ -317,7 +317,6 @@ fn load_resource_world_list_1<F>(file_name: &str, loader: F) -> Result<word::Wor
     }
  */
 
-
 // Previously the following was used in module callback_service.rs so that
 // onekeepass_core we make use of the 'CoreCommonCallbackService' impl
 // With the new 'WordListLoader' trait use ( passed as arg to 'generate' fn), this is no more
@@ -332,7 +331,7 @@ use crate::error::Result;
 // to be implemented in the calling UI facing rust crate (e.g tauri, db_service_ffi)
 
 
-// IMPORTANT 
+// IMPORTANT
 // Need to be called from the UI facing rust layer (tauri or db_service_ffi crate) crate
 // onetime when the app is starting
 
@@ -353,7 +352,7 @@ pub trait CoreCommonCallbackService: Send + Sync {
 static CALLBACK_PROVIDER: OnceLock<CallbackServiceProvider> = OnceLock::new();
 
 impl CallbackServiceProvider {
-    
+
     fn init(core_common_callback_service: Arc<dyn CoreCommonCallbackService>) {
         let provider = CallbackServiceProvider {
             core_common_callback_service,

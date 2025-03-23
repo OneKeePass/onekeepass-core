@@ -1,7 +1,6 @@
-
-use log::debug;
 use crate::crypto::ContentCipher;
 use crate::error::{Error, Result};
+use log::debug;
 
 impl ContentCipher {
     pub fn try_from(cipher_id: &[u8], enc_iv: &[u8]) -> Result<Self> {

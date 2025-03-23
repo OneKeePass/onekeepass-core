@@ -836,8 +836,6 @@ mod tests {
             //
             r"idrive",
             r"IDrive",
-
-
         ];
 
         let re = regex::RegexSet::new(&FILE_PROVIDER_IDS).unwrap();
@@ -848,10 +846,12 @@ mod tests {
 
         let matches: Vec<_> = re.matches(full_file_name_uri).into_iter().collect();
 
-        println!("Matches {:?}, {:?}", matches, matches.first().map(|n| FILE_PROVIDER_IDS[*n]));
+        println!(
+            "Matches {:?}, {:?}",
+            matches,
+            matches.first().map(|n| FILE_PROVIDER_IDS[*n])
+        );
     }
-
-    
 }
 
 /*

@@ -14,25 +14,24 @@ static KEY_STORE_SERVICE_INSTANCE: OnceCell<KeyStoreServiceType> = OnceCell::new
 pub trait KeyStoreService {
     fn store_key(&mut self, db_key: &str, val: Vec<u8>) -> Result<()>;
     fn get_key(&self, db_key: &str) -> Option<Vec<u8>>;
-    fn delete_key(&mut self, db_key: &str) -> Result<()> ; // Return  Result<()>
+    fn delete_key(&mut self, db_key: &str) -> Result<()>; // Return  Result<()>
     fn copy_key(&mut self, source_db_key: &str, target_db_key: &str) -> Result<()>;
 }
 
 pub struct KeyStoreOperation;
 
 impl KeyStoreOperation {
-
     // Called from the UI facing rust side when the app is initialized
     // See key_secure::init_key_main_store fn in src-tauri and ffi layer for initialization call
-    pub fn init(kss:KeyStoreServiceType) {
+    pub fn init(kss: KeyStoreServiceType) {
         let _r = KEY_STORE_SERVICE_INSTANCE.set(kss);
         debug!("key_secure - init call is completed and KEY_STORE_SERVICE_INSTANCE initalized ");
     }
 
-    fn key_store_service_instance() ->  &'static KeyStoreServiceType {
+    fn key_store_service_instance() -> &'static KeyStoreServiceType {
         KEY_STORE_SERVICE_INSTANCE
-        .get()
-        .expect("Error: KeyStoreService is not initialzed")
+            .get()
+            .expect("Error: KeyStoreService is not initialzed")
     }
 
     // Stores the ecryption key by calling platform specific implementation of key store calls
@@ -56,7 +55,6 @@ impl KeyStoreOperation {
         store_service.copy_key(source_db_key, target_db_key)
     }
 }
-
 
 // pub fn set_key_store_service_instance(kss: &KeyStoreServiceType) {
 //     let _r = KEY_STORE_SERVICE_INSTANCE.set(kss.clone());
