@@ -1,0 +1,29 @@
+name: integration
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  integration:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Ensure `cargo fmt` was run
+      run: cargo fmt --check
+    #- name: Ensure `cargo clippy` is satisfied
+      #run: cargo clippy
+    - name: Build
+      run: cargo build
+    #- name: Test
+      #run: cargo test
