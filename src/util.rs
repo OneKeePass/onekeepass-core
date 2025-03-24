@@ -94,7 +94,7 @@ pub fn now_utc_milli_seconds() -> i64 {
 // Formats the now utc time
 #[allow(dead_code)]
 pub fn format_utc_now(format_str: Option<&str>) -> String {
-    let now:NaiveDateTime = now_utc(); // 2024-11-05 20:01:42
+    let now: NaiveDateTime = now_utc(); // 2024-11-05 20:01:42
     let fmt_str = if let Some(s) = format_str {
         s
     } else {
@@ -702,13 +702,13 @@ mod tests {
     fn verify_system_time_secs() {
         use std::time::SystemTime;
         let s1 = SystemTime::now();
-        println!("S1 is  {:?}",&s1);
+        println!("S1 is  {:?}", &s1);
 
         let secs = system_time_to_seconds(s1);
-        println!("Secs {}",&secs);
+        println!("Secs {}", &secs);
 
         let s2 = super::seconds_to_system_time(secs);
-        println!("S2 is  {:?}",&s2);
+        println!("S2 is  {:?}", &s2);
 
         assert_eq!(
             s1.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),

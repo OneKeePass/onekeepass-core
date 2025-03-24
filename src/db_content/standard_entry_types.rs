@@ -19,7 +19,7 @@ macro_rules! build_uuid {
     };
 }
 
-// IMPORTANT: 
+// IMPORTANT:
 // As we add more standard types, we need to ensure to add that name here
 // In 'STANDARD_TYPE_UUIDS_BY_NAME' and in 'UUID_TO_ENTRY_TYPE_MAP'
 // Also these names are to be added in 'src/main/onekeepass/frontend/constants.cljs'

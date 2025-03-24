@@ -87,7 +87,7 @@ pub struct Meta {
     pub(crate) last_selected_group: Uuid,
     pub(crate) custom_data: CustomData,
     // history_max_items and history_max_size are moved to MetaShare
-    pub(crate) meta_share: Arc<MetaShare>, 
+    pub(crate) meta_share: Arc<MetaShare>,
 }
 
 //As NaiveDateTime does not have default fn, we need to implement "new" or "default" fn for Meta explicitly

@@ -1,4 +1,3 @@
-
 use chacha20::cipher::{NewCipher, StreamCipher};
 use chacha20::ChaCha20;
 use log::error;

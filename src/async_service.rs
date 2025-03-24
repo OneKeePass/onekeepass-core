@@ -281,7 +281,7 @@ pub fn init_entry_channels() -> EntryOtpRx {
 }
 
 // Called by UI layer to start updating all otp fields of an entry periodically
-// Arg 'OtpTokenTtlInfoByField' has the period and ttl info passed from UI for each otp field that has 
+// Arg 'OtpTokenTtlInfoByField' has the period and ttl info passed from UI for each otp field that has
 // parseable otp url - See Entry's parse_all_otp_fields fn and KeyValueData's current_opt_token field
 pub fn start_polling_entry_otp_fields(
     db_key: &str,
@@ -512,8 +512,7 @@ static mut OKP_TOKIO_RUNTIME: Option<Runtime> = None;
 // See src-tauri/src/app_state.rs  AppState::init_app fn
 // See src/udl_uniffi_exports.rs   db_service_initialize fn
 pub fn start_runtime() {
-
-    // This is not expected except during dev time if 'start_runtime' is 
+    // This is not expected except during dev time if 'start_runtime' is
     // called by reloading UI layer code. However, in both tauri layer and in
     // Swift/Kotlin layer, we ensure that this fn is called once
     if let Some(_r) = unsafe { OKP_TOKIO_RUNTIME.as_ref() } {
@@ -536,7 +535,7 @@ pub fn start_runtime() {
     info!("Core OKP_TOKIO_RUNTIME is set...");
 }
 
-// May be called from multiple threads and this Runtime ref is shared 
+// May be called from multiple threads and this Runtime ref is shared
 pub fn async_runtime() -> &'static Runtime {
     unsafe { OKP_TOKIO_RUNTIME.as_ref().unwrap() }
 }

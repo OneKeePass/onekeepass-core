@@ -948,10 +948,10 @@ impl Root {
         self.auto_open_group_uuid.map_or_else(
             || vec![],
             |ref ao_grp_id| {
-                // Only top level entry_uuids for this group is returned. The sub groups are not considered 
+                // Only top level entry_uuids for this group is returned. The sub groups are not considered
                 self.group_by_id(ao_grp_id)
                     .map_or_else(|| vec![], |group| group.entry_uuids.clone())
-            }, 
+            },
             // To include entry_uuids from sub broups of auto_open_group, we need to use this
             // |ref ao_grp_id| self.children_entry_uuids(ao_grp_id),
         )
@@ -983,7 +983,7 @@ impl Root {
                 for e_id in &mut ao_group.entry_uuids {
                     if let Some(entry) = self.all_entries.get_mut(e_id) {
                         if entry.entry_field.entry_type.uuid != auto_open_entry_type.uuid {
-                            // Though this entry type is not auto open type, we set the type to auto open type 
+                            // Though this entry type is not auto open type, we set the type to auto open type
                             // only when we find that the url field of this entry starts with kdbx://
                             if entry.entry_field.has_kdbx_url() {
                                 entry.entry_field.entry_type = auto_open_entry_type.clone();

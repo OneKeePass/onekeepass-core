@@ -1,5 +1,5 @@
-use std::io;
 use reqwest_dav::re_exports::reqwest;
+use std::io;
 use uuid;
 
 use regex::Error as ReError;
@@ -44,15 +44,15 @@ pub enum Error {
     #[error("Header corrupted")] //#[error("Header Hash Check Failed")]
     HeaderHashCheckFailed,
 
-    #[cfg(any(target_os = "ios",target_os = "android"))]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     #[error("InvalidCredentials: Invalid credentials were provided, please try again")]
     HeaderHmacHashCheckFailed,
 
-    #[cfg(any(target_os = "macos",target_os = "windows",target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     #[error("Invalid credentials were provided, please try again")]
     HeaderHmacHashCheckFailed,
 
-    // #[cfg(any(target_os = "ios",target_os = "android"))] 
+    // #[cfg(any(target_os = "ios",target_os = "android"))]
     // Using cfg will only work when this error variant is used behind ios and android target
     // For now, we cannot use the cfg as used in the db_service_ffi crate ( expects macos target?)
     #[error("BiometricCredentialsAuthenticationFailed")]
@@ -80,13 +80,12 @@ pub enum Error {
 
     #[error("{0}")]
     XmlParsingFailed(#[from] quick_xml::Error),
-    
+
     #[error("{0}")]
     XmlEscapeFailed(#[from] quick_xml::escape::EscapeError),
-    
+
     // #[error("{0}")]
     // XmlParsingFailed023(#[from] quick_xml_023::Error),
-
     #[error("{0}")]
     SystemTimeError(#[from] std::time::SystemTimeError),
 
@@ -171,7 +170,6 @@ pub enum Error {
     UnRecoverableError(String),
 
     ////  Remote storage specifc errors
-    
     #[error("RusshError: {0}")]
     RusshError(#[from] russh::Error),
 
@@ -197,7 +195,6 @@ pub enum Error {
     // instead of RemoteStorageCallError(String)
     #[error("RemoteStorageCallError: {0}")]
     RemoteStorageCallError(String),
-
 }
 
 // Tauri main converts App error such as above as "hooks::InvokeError" using serde call and then returns to to the UI

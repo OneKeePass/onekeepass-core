@@ -52,7 +52,7 @@ impl Group {
             // Not sure these are used by keepass at all and it looks like mostly used whatever set in entries
             // None means inherit from parent settings for all entries
             // False if auto type is disabled for entries for this group
-            // True if auto type is enabled for entries for this group 
+            // True if auto type is enabled for entries for this group
             enable_auto_type: None,
             default_auto_type_sequence: None,
 

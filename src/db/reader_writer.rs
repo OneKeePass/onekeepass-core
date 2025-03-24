@@ -233,8 +233,10 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
             // Each Block's hmac key is based on the block index (LE number) which is a 64 bit number
             // and the previously computed hmac_part_key
             let blk_idx_bytes = blk_idx.to_le_bytes();
-            let block_key =
-                crypto::sha512_hash_from_slice_vecs(&[&blk_idx_bytes.to_vec(), self.kdbx_file.hmac_part_key()])?;
+            let block_key = crypto::sha512_hash_from_slice_vecs(&[
+                &blk_idx_bytes.to_vec(),
+                self.kdbx_file.hmac_part_key(),
+            ])?;
 
             // Verify the stored block hmac to the calculated one
             // The data for hmac calc is blk_index + blk_size + blk_data
@@ -448,7 +450,8 @@ impl<'a, W: Read + Write + Seek> KdbxFileWriter<'a, W> {
         let cal_hash = crypto::sha256_hash_from_slice_vecs(&[&header_data])?;
         self.writer.write(&cal_hash)?;
 
-        let header_hmac_hash = crypto::hmac_sha256_from_slices(self.kdbx_file.hmac_key(), &[&header_data])?;
+        let header_hmac_hash =
+            crypto::hmac_sha256_from_slices(self.kdbx_file.hmac_key(), &[&header_data])?;
         self.writer.write(&header_hmac_hash)?;
 
         Ok(())
@@ -468,7 +471,7 @@ impl<'a, W: Read + Write + Seek> KdbxFileWriter<'a, W> {
 
             // Need to set the new index_refs of all attachments after writing the binaries to inner header
             // so that this index is used in Ref attribute of Value tag
-            // See root.set_attachment_index_refs -> entry.set_attachment_index_refs 
+            // See root.set_attachment_index_refs -> entry.set_attachment_index_refs
             kp.before_xml_writing(
                 self.kdbx_file
                     .inner_header
@@ -546,8 +549,10 @@ impl<'a, W: Read + Write + Seek> KdbxFileWriter<'a, W> {
             // block hmac key is based on block index (LE number) which is a 64 bit number and previously
             // computed hmac part key
             let blk_idx_bytes = blk_idx.to_le_bytes();
-            let block_key =
-                crypto::sha512_hash_from_slice_vecs(&[&blk_idx_bytes.to_vec(), self.kdbx_file.hmac_part_key()])?;
+            let block_key = crypto::sha512_hash_from_slice_vecs(&[
+                &blk_idx_bytes.to_vec(),
+                self.kdbx_file.hmac_part_key(),
+            ])?;
 
             let blk_size_in_bytes = (data_read as u32).to_le_bytes();
             let blk_hmac_hash = crypto::hmac_sha256_from_slices(

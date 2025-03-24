@@ -197,7 +197,6 @@ impl Default for SecuredDatabaseKeys {
 }
 
 impl SecuredDatabaseKeys {
-
     // Hashes all incoming credentials data and creates an instance of SecuredDatabaseKeys
     fn from_keys(password: Option<&str>, file_key: &Option<FileKey>) -> Result<Self> {
         let (password_hash, key_file_data_hash, composite_key) = match (password, file_key) {
@@ -243,8 +242,8 @@ impl SecuredDatabaseKeys {
         Ok(sk)
     }
 
-    // IMPORTANT: 
-    // Need to call this to encrypt the keys and store it in a secure store 
+    // IMPORTANT:
+    // Need to call this to encrypt the keys and store it in a secure store
     // This is called after opening a db successfully or after creating a new db.
     // The stored encrypted compsoite key can be used for quick unlock of a database
     // after decryption

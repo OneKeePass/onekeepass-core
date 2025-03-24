@@ -70,8 +70,8 @@ impl FileKey {
         xml_writer.write(&key_file_data)
     }
 
-    // Called to read a keyx xml and extract the hash from <Data> ...</Data> element or 
-    // reads the whole bytes content of  the file and caluclates the hash 
+    // Called to read a keyx xml and extract the hash from <Data> ...</Data> element or
+    // reads the whole bytes content of  the file and caluclates the hash
     fn calculate_hash(file: File) -> Result<Vec<u8>> {
         let mut reader = BufReader::new(file);
         let mut buf = vec![];
@@ -102,7 +102,7 @@ impl FileKey {
         let mut reader = FileKeyXmlReader::new(buf as &[u8]);
         let r = reader.parse()?;
         Ok(r)
-    } 
+    }
 }
 
 #[derive(Default, Debug)]

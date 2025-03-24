@@ -76,7 +76,7 @@ impl EntryTypeV1 {
         // We check only changes in sections of these two EntryType
         // skipping other fields like 'name', secondary_title, icon_name for now as the incoming
         // EntryType instance in EntryFormData do not have these values
-        
+
         // To be equal, both sections should have same number of sections with name and same vec of FieldDefs - order matter
         self.sections != other.sections
     }
@@ -105,7 +105,7 @@ impl EntryTypeV1 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum VersionedEntryType {
-    // Uses MessagePack dataformated EntryType 
+    // Uses MessagePack dataformated EntryType
     RmpV1(EntryTypeV1),
     // Maps the EntryType UUID to the EntryType to store in MessagePack dataformat
     RmpKeyedV1(HashMap<Uuid, EntryTypeV1>),
@@ -214,7 +214,7 @@ impl VersionedEntryType {
         VersionedEntryType::from_encoded(data)
     }
 
-    // Called to consider only non standard fields or new custom sections in an entry type 
+    // Called to consider only non standard fields or new custom sections in an entry type
     // This fn is called when there is a change in the incoming entry type's section data as the 'changed' fn is called before this
     fn modify_entry_type_before_encoding(
         incoming_entry_type: &EntryType,
@@ -243,8 +243,9 @@ impl VersionedEntryType {
                     .find(|s| s.name == predefined_et_section.name);
                 if let Some(incoming_et_section) = incoming_et_section_opt {
                     // Remove all built-in fields from the passed one
-                    incoming_et_section.field_defs
-                        .retain_mut(|f| !predefined_et_section.field_defs.contains(f)) 
+                    incoming_et_section
+                        .field_defs
+                        .retain_mut(|f| !predefined_et_section.field_defs.contains(f))
                 }
             }
             // As we have removed the built-in fields, a section may be empty and drop them from storing
@@ -280,9 +281,10 @@ impl VersionedEntryType {
                 if let Some(built_in_section) = built_in_section_opt {
                     // The section is found in built-in Entrytype and we need to merge the decoded field defs to the
                     // existing fields of the section from the built-in (predefined_et) Entrytype
-                    // Here incoming_section will have only any non prededefined fields and they are added 
-                    // to the end of the existing field defs 
-                    built_in_section.field_defs
+                    // Here incoming_section will have only any non prededefined fields and they are added
+                    // to the end of the existing field defs
+                    built_in_section
+                        .field_defs
                         .extend(incoming_section.field_defs.clone().into_iter())
                 } else {
                     // section is a custom section and move that to the built_in_et (clone of predefined Entrytype)
@@ -300,7 +302,7 @@ impl VersionedEntryType {
     }
 
     // Converts a list of EntryTypes from the 'base64_str_data' to a vec of base64_str where
-    // each member is serilaized entry type  
+    // each member is serilaized entry type
     pub fn encoded_entry_type_list_to_encoded_types(base64_str_data: &str) -> Vec<String> {
         let et_v: Vec<EntryType> = VersionedEntryType::from_encoded(base64_str_data);
         // Note: et_v is a vec of unadjusted EntryType as it the vec was formed earlier with modified EntryType
@@ -395,7 +397,7 @@ where
 }
 
 // Successful decoded binary (base64 encoded data) should be a variant of VersionedEntryType or an error is returned
-fn deserialize_from_base64_str<T,F>(input: &str, decoder: F) -> Result<T>
+fn deserialize_from_base64_str<T, F>(input: &str, decoder: F) -> Result<T>
 where
     F: Fn(&Vec<u8>) -> Result<T>,
 {
@@ -405,7 +407,7 @@ where
 }
 
 // For 'rmp' serialization to work, add any new variant at the end though adding in any place may work
-// When we add a new variant, the FieldDef deserialization works with any previous version without 
+// When we add a new variant, the FieldDef deserialization works with any previous version without
 // introducing FieldDef2. If we remove any variant, it may not work
 
 #[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]

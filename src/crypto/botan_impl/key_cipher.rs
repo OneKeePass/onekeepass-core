@@ -1,4 +1,3 @@
-
 use crate::crypto;
 use crate::error::Result;
 
@@ -52,11 +51,10 @@ impl KeyCipher {
     }
 }
 
-
-/* 
+/*
 pub struct AeadKeyCipher {
     pub salt:Vec<u8>,
-    
+
 }
 
 impl AeadKeyCipher {

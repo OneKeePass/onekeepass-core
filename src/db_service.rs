@@ -131,7 +131,7 @@ impl Default for KdbxContext {
 
 // Here we're using an Arc to share memory among threads, and the data - HashMap<String, KdbxContext> - inside
 // the Arc is protected with a mutex.
-// The keys of inner HashMap are from 'db_key' of each opened database 
+// The keys of inner HashMap are from 'db_key' of each opened database
 type MainStore = Arc<Mutex<HashMap<String, KdbxContext>>>;
 
 fn main_store() -> &'static MainStore {
@@ -753,13 +753,13 @@ pub fn auto_open_group_entries(db_key: &str) -> Result<Vec<EntryFormData>> {
     })
 }
 
-pub fn auto_open_group_entry_uuids(db_key: &str) ->  Result<Vec<Uuid>>  {
+pub fn auto_open_group_entry_uuids(db_key: &str) -> Result<Vec<Uuid>> {
     main_content_action!(db_key, move |k: &KeepassFile| {
         Ok(k.root.auto_open_group_entry_uuids())
     })
 }
 
-pub fn auto_open_group_uuid(db_key: &str) ->  Result<Option<Uuid>>  {
+pub fn auto_open_group_uuid(db_key: &str) -> Result<Option<Uuid>> {
     main_content_action!(db_key, move |k: &KeepassFile| {
         Ok(k.root.auto_open_group_uuid())
     })

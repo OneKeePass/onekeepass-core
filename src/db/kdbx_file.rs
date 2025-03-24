@@ -74,8 +74,11 @@ impl KdbxFile {
     // Called to set a new key file use.
     // Opens the named file, reads and uses its content while computing key
     pub fn set_file_key(&mut self, key_file_name: Option<&str>) -> Result<()> {
-        debug!("set_file_key is called with key_file_name: {:?}",&key_file_name);
-        
+        debug!(
+            "set_file_key is called with key_file_name: {:?}",
+            &key_file_name
+        );
+
         // We need not do anything if the current db does not use key file and the no file name is selected
         // for 'key_file_name'
         if self.file_key.is_none() && key_file_name.is_none() {
@@ -106,25 +109,37 @@ impl KdbxFile {
     }
 
     // Called when both password and key file are changed in settings
-    pub fn set_credentials(&mut self, db_key: &str, password: Option<&str>,key_file_name: Option<&str>) -> Result<()> {
-        debug!("set_credentials is called with password nil?: {}, key_file_name: {:?}",password.is_none(),&key_file_name);
+    pub fn set_credentials(
+        &mut self,
+        db_key: &str,
+        password: Option<&str>,
+        key_file_name: Option<&str>,
+    ) -> Result<()> {
+        debug!(
+            "set_credentials is called with password nil?: {}, key_file_name: {:?}",
+            password.is_none(),
+            &key_file_name
+        );
 
-        self.file_key  = FileKey::from(key_file_name)?;
+        self.file_key = FileKey::from(key_file_name)?;
         let mut keys = SecuredDatabaseKeys::from_keys(password, &self.file_key)?;
         keys.secure_keys(db_key)?;
         self.secured_database_keys = keys;
-        
+
         Ok(())
     }
 
     pub fn set_password(&mut self, password: Option<&str>) -> Result<()> {
-        debug!("set_password called with password nil?: {}",password.is_none());
+        debug!(
+            "set_password called with password nil?: {}",
+            password.is_none()
+        );
         self.secured_database_keys
             .set_password(&self.database_file_name, password)
     }
 
     // Gets whether pasword or/and key file are used in master key or not
-    pub fn credentials_used_state(&self) -> (bool,bool) {
+    pub fn credentials_used_state(&self) -> (bool, bool) {
         self.secured_database_keys.credentials_used_state()
     }
 
@@ -133,7 +148,7 @@ impl KdbxFile {
         self
     }
 
-    // Gets the full file path in desktop app and may be in mobile app  
+    // Gets the full file path in desktop app and may be in mobile app
     pub fn get_database_file_name(&self) -> &str {
         &self.database_file_name
     }
@@ -452,7 +467,7 @@ impl InnerHeader {
                 if let Some(data) = self.entry_attachments.attachments.get(&h) {
                     write_header_with_size!(writer, inner_header_type::BINARY, &data);
                 }
-                // Recreate the 'hash_index_ref' entry 
+                // Recreate the 'hash_index_ref' entry
                 // This index will be used to set in "Ref" attribute of an entry's BinaryKeyValue tag
                 self.entry_attachments
                     .hash_index_ref

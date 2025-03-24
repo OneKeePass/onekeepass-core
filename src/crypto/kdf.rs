@@ -40,7 +40,7 @@ impl Default for Argon2Kdf {
 impl Argon2Kdf {
     // Creates argon2kdf with specific parameters values
     // The arg 'memory' size is in bytes
-    pub fn from(memory: u64,iterations:u64,parallelism: u32) -> Self {
+    pub fn from(memory: u64, iterations: u64, parallelism: u32) -> Self {
         Self {
             memory,
             salt: super::get_random_bytes::<32>(),

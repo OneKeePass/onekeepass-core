@@ -7,7 +7,7 @@ use crate::error::{self, Result};
 
 use super::EntryType;
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct KeepassFile {
     pub(crate) meta: Meta,
     pub(crate) root: Root,

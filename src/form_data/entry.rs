@@ -669,7 +669,7 @@ impl EntrySummary {
             secondary_title
         }
     }
-    
+
     pub fn entry_summary_data<'a>(
         kp: &'a KeepassFile,
         entry_category: &'a categories::EntryCategory,

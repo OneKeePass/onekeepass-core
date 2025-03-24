@@ -5,13 +5,13 @@ use super::{
     kdbx_file::{InnerHeader, MainHeader},
     ContentCipherId, FileKey, KdbxFile, KdfAlgorithm, SecuredDatabaseKeys,
 };
-use crate::{constants::GENERATOR_NAME, crypto::get_random_bytes_2};
 use crate::error::Result;
 use crate::{
     constants::inner_header_type,
     crypto,
     db_content::{Group, KeepassFile},
 };
+use crate::{constants::GENERATOR_NAME, crypto::get_random_bytes_2};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NewDatabase {
@@ -82,10 +82,15 @@ impl NewDatabase {
         //kc.root.root_uuid = root_g.uuid.clone();
         kc.root.set_root_uuid(root_g.uuid);
         kc.root.insert_to_all_groups(root_g);
-        
-        debug!("New database create: password nil? {}, file name {:?}",self.password.is_none(),&self.key_file_name);
 
-        let mut secured_database_keys = SecuredDatabaseKeys::from_keys(self.password.as_deref(), &file_key)?;
+        debug!(
+            "New database create: password nil? {}, file name {:?}",
+            self.password.is_none(),
+            &self.key_file_name
+        );
+
+        let mut secured_database_keys =
+            SecuredDatabaseKeys::from_keys(self.password.as_deref(), &file_key)?;
         // Call to secure the keys and use in subsequent calls
         secured_database_keys.secure_keys(&self.database_file_name)?;
 
