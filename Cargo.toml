@@ -1,6 +1,6 @@
 [package]
 name = "onekeepass-core"
-version = "0.17.0"
+version = "0.18.0"
 authors = ["jeyasankar"]
 edition = "2021"
 
@@ -52,7 +52,7 @@ cfg-if = "1.0"
 
 enum_dispatch = "0.3.13"
 
-quick-xml = "0.30.0"
+quick-xml = "0.37.3"
 ## Removed quick_xml_023 
 ## Leaving it here as an example of using old version package 
 ## quick_xml_023 = { package = "quick-xml", version = "0.23.0" }
@@ -79,14 +79,14 @@ reqwest_dav = {version = "0.1.13", default-features = false,features = ["rustls-
 ## rusqlite = { version = "0.32.0", features = ["bundled"] }
 
 [target."cfg(any(target_os = \"linux\", target_os = \"macos\", target_os = \"windows\"))".dependencies]
-botan = {version = "0.10.7", features = ["vendored"] }
+botan = {version = "0.11.1", features = ["vendored"] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
-#botan = {version = "0.10.7", features = ["botan3"] } 
-botan = {version = "0.10.7", features = ["vendored"] }
+#botan = {version = "0.11.1", features = ["botan3"] } 
+botan = {version = "0.11.1", features = ["vendored"] }
 
 [target.'cfg(all(target_os = "android", target_arch = "aarch64"))'.dependencies]
-botan = {version = "0.10.7", features = ["vendored"] }
+botan = {version = "0.11.1", features = ["vendored"] }
 
 [dependencies.passwords]
 version = "*"

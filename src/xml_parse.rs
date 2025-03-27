@@ -200,7 +200,8 @@ fn bool_to_xml_bool(flag: bool) -> String {
 impl<'a> XmlReader<'a> {
     pub fn new(data: &[u8], cipher: Option<ProtectedContentStreamCipher>) -> XmlReader {
         let mut qxmlreader = QuickXmlReader::from_reader(data);
-        qxmlreader.trim_text(true);
+        qxmlreader.config_mut().trim_text(true);
+        // qxmlreader.trim_text(true);
         XmlReader {
             reader: qxmlreader,
             stream_cipher: cipher,
@@ -1180,11 +1181,12 @@ pub struct FileKeyXmlReader<'a> {
 impl<'a> FileKeyXmlReader<'a> {
     pub fn new(data: &'a [u8]) -> Self {
         let mut qxmlreader = QuickXmlReader::from_reader(data);
-        qxmlreader.trim_text(true);
+        qxmlreader.config_mut().trim_text(true);
+        // qxmlreader.trim_text(true);
         FileKeyXmlReader {
             reader: qxmlreader,
             stream_cipher: None,
-        }
+        } 
     }
 
     pub fn parse(&mut self) -> Result<KeyFileData> {
