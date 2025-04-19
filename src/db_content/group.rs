@@ -1,4 +1,7 @@
-use crate::db_content::{CustomData, Times};
+use crate::{
+    db_content::{CustomData, Times},
+    util,
+};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -26,6 +29,8 @@ pub struct Group {
     pub(crate) default_auto_type_sequence: Option<String>,
     pub(crate) enable_auto_type: Option<bool>,
 
+    pub(crate) custom_icon_uuid: Option<Uuid>,
+
     // Only the child group uuids are kept here and used to do lookup in 'root.all_groups'
     #[serde(default)]
     pub(crate) group_uuids: Vec<Uuid>,
@@ -34,7 +39,39 @@ pub struct Group {
     pub(crate) entry_uuids: Vec<Uuid>,
 }
 
+// Mainly used for testing at this time
 impl Group {
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+
+    pub fn set_name(&mut self, name: &str) -> &mut Self {
+        self.name = name.to_string();
+        self
+    }
+
+    pub fn notes(&self) -> &String {
+        &self.notes
+    }
+
+    pub fn set_notes(&mut self, notes: &str) -> &mut Self {
+        self.notes = notes.to_string();
+        self
+    }
+
+    pub fn set_icon_id(&mut self, icon_id: i32) -> &mut Self {
+        self.icon_id = icon_id;
+        self
+    }
+
+    pub fn update_modification_time(&mut self) -> &mut Self {
+        self.times.update_modification_time();
+        self
+    }
+}
+
+impl Group {
+    // Creates a new group without uuid
     pub fn new() -> Self {
         Group {
             uuid: Uuid::default(),
@@ -46,6 +83,7 @@ impl Group {
             is_expanded: false,
             times: Times::new(),
             custom_data: CustomData::default(),
+            custom_icon_uuid: None,
             last_top_visible_group: Uuid::default(),
             marked_category: true,
 
@@ -59,6 +97,35 @@ impl Group {
             group_uuids: vec![],
             entry_uuids: vec![],
         }
+    }
+
+    // Creates a new group with uuid set
+    pub fn new_with_id() -> Self {
+        let mut g = Group::new();
+        g.uuid = Uuid::new_v4();
+        g
+    }
+
+    pub fn with_parent(group_uuid: &Uuid) -> Self {
+        let mut g = Group::new_with_id();
+        g.parent_group_uuid = *group_uuid;
+        g
+    }
+
+    pub(crate) fn get_uuid(&self) -> &Uuid {
+        &self.uuid
+    }
+
+    pub(crate) fn parent_group_uuid(&self) -> &Uuid {
+        &self.parent_group_uuid
+    }
+
+    pub fn sub_group_uuids(&self) -> &Vec<Uuid> {
+        &self.group_uuids
+    }
+
+    pub fn entry_uuids(&self) -> &Vec<Uuid> {
+        &self.entry_uuids
     }
 
     pub fn custom_data_to_group(&mut self) {

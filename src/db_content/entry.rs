@@ -169,6 +169,8 @@ pub struct Entry {
 
     pub custom_data: CustomData,
 
+    pub custom_icon_uuid:Option<Uuid>,
+
     pub auto_type: AutoType,
 
     pub history: History,
@@ -192,6 +194,7 @@ impl Entry {
             //key_values: vec![],
             binary_key_values: vec![],
             custom_data: CustomData::default(),
+            custom_icon_uuid:None,
             auto_type: AutoType::default(),
             //history has a list of previous entries and those entries listed will have its 'history' empty
             history: History::default(),
@@ -202,6 +205,10 @@ impl Entry {
 
     pub(crate) fn get_uuid(&self) -> &Uuid {
         &self.uuid
+    }
+
+    pub(crate) fn parent_group_uuid(&self) -> &Uuid {
+        &self.group_uuid
     }
 
     pub fn new_blank_entry_by_type_id(
@@ -314,7 +321,7 @@ impl Entry {
     }
 
     // Called to create entry level custom data fields when an entry is updated or a new entry inserted
-    // Currently mainly Entrytype definition info is stored
+    // For now mainly the Entrytype definition info is stored
     // We store entry type uuid if there is no change and type is not LOGIN or the changed entry type's serialized
     // data when custom fields or sections are added to the predefined entry type
     pub(crate) fn copy_to_custom_data(&mut self) {
@@ -433,6 +440,10 @@ impl Entry {
         for e in &self.history.entries {
             e.get_attachment_hashes(hashes);
         }
+    }
+
+    pub fn title(&self,) -> Option<String>{
+        self.find_kv_field_value(TITLE)
     }
 
     // Finds a field's value from KeyValue
@@ -696,7 +707,7 @@ impl Entry {
     }
 
     // This ensures we do not serilaize the current Entry Type in OKP_ENTRY_TYPE_LIST_DATA
-    // This is  generally this is not required. Only happens if the user restores any previously
+    // This is generally not required. Only happens if the user restores any previously
     // entry from history that uses old entry type data
     fn adjust_history_entries_entry_type_indexes(&mut self) {
         let types_list = self.encoded_entry_types(false);

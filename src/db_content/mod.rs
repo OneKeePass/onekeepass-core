@@ -20,7 +20,8 @@ pub use self::keepass::KeepassFile;
 pub use self::meta::Meta;
 pub use self::otp::{CurrentOtpTokenData, OtpAlgorithm, OtpSettings};
 
-pub use self::root::{AllTags, EntryCloneOption, GroupSortCriteria, Root};
+pub(crate) use self::root::DeletedObject;
+pub use self::root::{AllTags, EntryCloneOption, GroupSortCriteria, Root,};
 pub use self::standard_entry_types::{
     standard_type_uuids_names_ordered_by_id, standard_types_ordered_by_id,
 };
@@ -68,6 +69,7 @@ pub struct Icon {
     pub(crate) uuid: Uuid,
     pub(crate) data: Vec<u8>,
     pub(crate) name: Option<String>, //KDBX 4.1
+    pub(crate) last_modification_time:NaiveDateTime,
 }
 
 // Called to verify a given entry's or group's uuid is a valid value (i.e not default one) and this
@@ -135,4 +137,11 @@ impl Times {
             usage_count: i32::default(),
         }
     }
+
+    pub fn update_modification_time(&mut self,) {
+        let n = util::now_utc();
+        self.last_modification_time = n;
+        self.last_access_time = n;
+    }
+
 }

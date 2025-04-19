@@ -17,7 +17,7 @@ use crate::crypto::ProtectedContentStreamCipher;
 use crate::db::KeyFileData;
 use crate::db_content::*;
 use crate::error::{Error, Result};
-use crate::util;
+use crate::util::{self, empty_str};
 use log::{debug, error, info};
 
 pub struct XmlReader<'a> {
@@ -318,8 +318,17 @@ impl<'a> XmlReader<'a> {
                 RECYCLE_BIN_UUID => (
                     |content:String, _,  _| meta.recycle_bin_uuid = content_to_uuid(&content)
                 ),
+                DEFAULT_USER_NAME => (
+                    |content:String, _,  _| meta.default_user_name = content
+                ),
                 DATABASE_NAME_CHANGED => (
                     |content:String, _,  _|  meta.database_name_changed = content_to_dt(content)
+                ),
+                DATABASE_DESCRIPTION_CHANGED => (
+                    |content:String, _,  _|  meta.database_description_changed = content_to_dt(content)
+                ),
+                DEFAULT_USER_NAME_CHANGED => (
+                    |content:String, _,  _|  meta.default_user_name_changed = content_to_dt(content)
                 ),
                 SETTINGS_CHANGED => (
                     |content:String, _,  _| meta.settings_changed = content_to_dt(content)
@@ -395,8 +404,10 @@ impl<'a> XmlReader<'a> {
                         icon.data = d;
                     }
                 }),
-                NAME => (|content:String, _,  _|  icon.name = Some(content))
-
+                NAME => (|content:String, _,  _|  icon.name = Some(content)),
+                LAST_MODIFICATION_TIME => (
+                    |content:String, _,  _| icon.last_modification_time = content_to_dt(content)
+                )
             },
             start_tag_blks {},
             empty_tags{},
@@ -457,11 +468,44 @@ impl<'a> XmlReader<'a> {
                     // root.root_uuid = self.read_group(None,root)?;
                     let uuid = self.read_group(None,root)?;
                     root.set_root_uuid(uuid);
+                },
+                DELETED_OBJECTS => {
+                    self.read_deleted_objects(root)?;
                 }
             },
             empty_tags {},
             ROOT
         );
+        Ok(())
+    }
+
+    fn read_deleted_objects(&mut self, root: &mut Root) -> Result<()> {
+        // Reads all DeletedObject tags under the parent tag 'DeletedObjects'
+        read_tags!(self,start_tag_fns {},
+            start_tag_blks {
+                DELETED_OBJECT => {
+                    self.read_deleted_object(root)?;
+                }
+            },
+            empty_tags {},
+            DELETED_OBJECTS
+        );
+        Ok(())
+    }
+
+    // Reads one or more element <DeletedObject> ..</DeletedObject> and its child tgas
+    fn read_deleted_object(&mut self, root: &mut Root) -> Result<()> {
+        let mut deleted_object = DeletedObject::default();
+        read_tags!(self,
+            start_tag_fns {
+                UUID => (|content:String, _,  _| deleted_object.uuid = content_to_uuid(&content)),
+                DELETION_TIME => (|content:String, _,  _| deleted_object.deletion_time = content_to_dt(content))
+            },
+            start_tag_blks {},
+            empty_tags {},
+            DELETED_OBJECT
+        );
+        root.add_deleted_object(deleted_object);
         Ok(())
     }
 
@@ -490,7 +534,13 @@ impl<'a> XmlReader<'a> {
                     } else {
                         group.enable_auto_type = Some(content_to_bool(content))
                     }
-                })
+                }),
+                CUSTOM_ICON_UUID => (|content:String, _,  _|
+                    group.custom_icon_uuid = if content.is_empty() {
+                                                    None
+                                                } else {
+                                                    Some(content_to_uuid(&content))
+                                                } )
             },
             start_tag_blks {
                 TIMES => {
@@ -498,6 +548,7 @@ impl<'a> XmlReader<'a> {
                 },
                 GROUP => {
                     // Recursive child group call
+                    // IMPORTANT: It is assumed group.uuid is already read and set. See comments below for ENTRY
                     group.group_uuids.push(self.read_group(Some(group.uuid),root)?);
                 },
                 ENTRY => {
@@ -529,6 +580,12 @@ impl<'a> XmlReader<'a> {
             start_tag_fns {
                 UUID => (|content:String, _,  _| entry.uuid = content_to_uuid(&content)),
                 ICON_ID => (|content:String, _,  _| entry.icon_id = content_to_int(content)),
+                CUSTOM_ICON_UUID => (|content:String, _,  _|
+                        entry.custom_icon_uuid = if content.is_empty() {
+                                                        None
+                                                    } else {
+                                                        Some(content_to_uuid(&content))
+                                                    } ),
                 TAGS => (|content:String, _,  _| entry.tags = content)
             },
             start_tag_blks {
@@ -807,6 +864,10 @@ pub fn parse(data: &[u8], cipher: Option<ProtectedContentStreamCipher>) -> Resul
 
 ///////   All XML writing related //////////
 
+// NOTE:
+// The tags are written in the order  write_* macros are called for a Group or an entry.
+// If we want change the order of tags, then call the write_* macros in that required sequences accordingly
+
 macro_rules! write_tags {
     ($self:ident, $($tag_name:expr, $txt:expr),*) => {
         // Write empty tag if the content passed in $txt is a empty string
@@ -817,6 +878,45 @@ macro_rules! write_tags {
             if val.is_empty() {
                 $self.writer.write_event(Event::Empty(BytesStart::new(name_of_tag)))?;
             } else {
+                $self.writer.write_event(Event::Start(BytesStart::new(name_of_tag)))?;
+                // Creates a new BytesText from a string. The string is expected not to be escaped
+                // quick_xml escapes the text content internally
+                $self.writer.write_event(Event::Text(BytesText::new(val)))?;
+                $self.writer.write_event(Event::End(BytesEnd::new(name_of_tag)))?;
+            }
+        )*
+    };
+}
+
+// Skips the tag wriiting if the content is empty
+macro_rules! write_tags_or_skip_empty {
+    ($self:ident, $($tag_name:expr, $txt:expr),*) => {
+        // Skips the tag if the content passed in $txt is a empty string
+        // $txt should be evaluated once and reuse. Otherwise it will be evaluated
+        // each time it is used
+        $( let val = &$txt; // $txt evaluates to a String
+            if !val.is_empty() {
+                let name_of_tag  = std::str::from_utf8($tag_name)?;
+                $self.writer.write_event(Event::Start(BytesStart::new(name_of_tag)))?;
+                // Creates a new BytesText from a string. The string is expected not to be escaped
+                // quick_xml escapes the text content internally
+                $self.writer.write_event(Event::Text(BytesText::new(val)))?;
+                $self.writer.write_event(Event::End(BytesEnd::new(name_of_tag)))?;
+
+            }
+        )*
+    };
+}
+
+// Skips the tag wriiting if the content is None
+macro_rules! write_opt_val_tags_or_skip {
+    ($self:ident, $($tag_name:expr, $txt:expr),*) => {
+        // Skips the tag if the content passed in $txt is None
+        // $txt should be evaluated once and reuse. Otherwise it will be evaluated
+        // each time it is used
+        $( if let Some(ref val ) = $txt {
+                // $txt evaluates to an Option
+                let name_of_tag  = std::str::from_utf8($tag_name)?;
                 $self.writer.write_event(Event::Start(BytesStart::new(name_of_tag)))?;
                 // Creates a new BytesText from a string. The string is expected not to be escaped
                 // quick_xml escapes the text content internally
@@ -882,13 +982,36 @@ impl<W: Write> XmlWriter<W> {
         }
     }
 
+    fn write_deleted_objects(&mut self, root: &Root) -> Result<()> {
+        if root.deleted_objects().is_empty() {
+            return Ok(());
+        }
+
+        let deleted_objects_tags = std::str::from_utf8(DELETED_OBJECTS)?;
+        self.writer
+            .write_event(Event::Start(BytesStart::new(deleted_objects_tags)))?;
+
+        for deleted_object in root.deleted_objects().iter() {
+            write_parent_child_tags! { self,
+               DELETED_OBJECT,
+               UUID, util::encode_uuid(&deleted_object.uuid),
+               DELETION_TIME, util::encode_datetime(&deleted_object.deletion_time)
+            };
+        }
+
+        self.writer
+            .write_event(Event::End(BytesEnd::new(deleted_objects_tags)))?;
+
+        Ok(())
+    }
+
     fn write_meta(&mut self, keepass_file: &KeepassFile) -> Result<()> {
         let meta_tag = std::str::from_utf8(META)?;
         self.writer
             .write_event(Event::Start(BytesStart::new(meta_tag)))?;
 
         write_tags! { self,
-            GENERATOR,GENERATOR_NAME, //keepass_file.meta.generator,
+            GENERATOR,GENERATOR_NAME,
             DATABASE_NAME,keepass_file.meta.database_name,
             DATABASE_DESCRIPTION, keepass_file.meta.database_description,
             HISTORY_MAX_ITEMS,keepass_file.meta.meta_share.history_max_items().to_string(),
@@ -896,10 +1019,16 @@ impl<W: Write> XmlWriter<W> {
             MAINTENANCE_HISTORY_DAYS, keepass_file.meta.maintenance_history_days.to_string(),
             RECYCLE_BIN_ENABLED, if keepass_file.meta.recycle_bin_enabled {"True"} else {"False"},
             RECYCLE_BIN_UUID, util::encode_uuid(&keepass_file.meta.recycle_bin_uuid),
+            DEFAULT_USER_NAME, keepass_file.meta.default_user_name,
+            DATABASE_NAME_CHANGED,util::encode_datetime(&keepass_file.meta.database_name_changed),
+            DATABASE_DESCRIPTION_CHANGED,util::encode_datetime(&keepass_file.meta.database_description_changed),
+            DEFAULT_USER_NAME_CHANGED,util::encode_datetime(&keepass_file.meta.default_user_name_changed),
             SETTINGS_CHANGED, util::encode_datetime(&keepass_file.meta.settings_changed)
         };
 
         self.write_custom_data(&keepass_file.meta.custom_data)?;
+
+        self.write_custom_icons(&keepass_file.meta.custom_icons)?;
 
         self.writer
             .write_event(Event::End(BytesEnd::new(meta_tag)))?;
@@ -914,6 +1043,7 @@ impl<W: Write> XmlWriter<W> {
             LAST_MODIFICATION_TIME, util::encode_datetime(&times.last_modification_time),
             CREATION_TIME, util::encode_datetime(&times.creation_time),
             LAST_ACCESS_TIME,util::encode_datetime(&times.last_access_time),
+            LOCATION_CHANGED,util::encode_datetime(&times.location_changed),
             EXPIRY_TIME, util::encode_datetime(&times.expiry_time),
             EXPIRES, if times.expires {"True"} else {"False"},
             USAGE_COUNT,times.usage_count.to_string()
@@ -922,7 +1052,36 @@ impl<W: Write> XmlWriter<W> {
         Ok(())
     }
 
+    fn write_custom_icons(&mut self, custom_icons: &CustomIcons) -> Result<()> {
+        if custom_icons.icons.is_empty() {
+            return Ok(());
+        }
+
+        let custom_icons_tag = std::str::from_utf8(CUSTOM_ICONS)?;
+        self.writer
+            .write_event(Event::Start(BytesStart::new(custom_icons_tag)))?;
+        for icon in custom_icons.icons.iter() {
+            write_parent_child_tags! {
+                self,
+                ICON,
+                UUID, util::encode_uuid(&icon.uuid),
+                NAME, &icon.name.as_ref().map_or_else(||util::empty_str(), |s| s.to_string()),
+                DATA,  util::base64_encode(&icon.data),
+                LAST_MODIFICATION_TIME, util::encode_datetime(&icon.last_modification_time)
+            };
+        }
+
+        self.writer
+            .write_event(Event::End(BytesEnd::new(custom_icons_tag)))?;
+
+        Ok(())
+    }
+
     fn write_custom_data(&mut self, custom_data: &CustomData) -> Result<()> {
+        if custom_data.get_items().is_empty() {
+            return Ok(());
+        }
+
         let custom_data_tag = std::str::from_utf8(CUSTOM_DATA)?;
         self.writer
             .write_event(Event::Start(BytesStart::new(custom_data_tag)))?;
@@ -957,14 +1116,28 @@ impl<W: Write> XmlWriter<W> {
         if let Some(group) = root.group_by_id(group_uuid) {
             self.writer
                 .write_event(Event::Start(BytesStart::new(group_tag)))?;
+
+            // The tags are written in this order. If we want change the order of tags, then
+            // call the write_* macros in that required sequences accordingly
+
             write_tags! { self,
                 NAME, group.name,
-                UUID,util::encode_uuid(&group.uuid), //group.uuid.to_string(),
+                UUID,util::encode_uuid(&group.uuid),
                 ICON_ID,group.icon_id.to_string(),
-                TAGS,group.tags,
                 NOTES, group.notes,
                 IS_EXPANDED, if group.is_expanded {"True"} else {"False"}
             };
+
+            write_tags_or_skip_empty! { self,TAGS,group.tags};
+
+            // write_tags_or_skip_empty! { self,
+            //     TAGS,group.tags,
+            //     CUSTOM_ICON_UUID, group.custom_icon_uuid.map_or_else(||empty_str(),|uuid|util::encode_uuid(&uuid))
+            // };
+
+            write_opt_val_tags_or_skip! { self,
+                CUSTOM_ICON_UUID, group.custom_icon_uuid.map(|uuid|util::encode_uuid(&uuid))
+            }
 
             self.write_times(&group.times)?;
 
@@ -1022,11 +1195,17 @@ impl<W: Write> XmlWriter<W> {
         let tag_element = std::str::from_utf8(ENTRY)?;
         self.writer
             .write_event(Event::Start(BytesStart::new(tag_element)))?;
+
         write_tags! { self,
             UUID, util::encode_uuid(&entry.uuid), //entry.uuid.to_string(),
             ICON_ID,entry.icon_id.to_string(),
             TAGS,entry.tags
         };
+
+        write_tags_or_skip_empty! {
+            self,
+            CUSTOM_ICON_UUID, entry.custom_icon_uuid.map_or_else(||empty_str(),|uuid|util::encode_uuid(&uuid))
+        }
 
         // Times tag and the children
         self.write_times(&entry.times)?;
@@ -1117,6 +1296,8 @@ impl<W: Write> XmlWriter<W> {
         self.writer
             .write_event(Event::Start(BytesStart::new(tag_element)))?;
         self.write_group(&kp.root.root_uuid(), &kp.root)?;
+
+        self.write_deleted_objects(&kp.root)?;
         self.writer
             .write_event(Event::End(BytesEnd::new(tag_element)))?;
         Ok(())
@@ -1186,7 +1367,7 @@ impl<'a> FileKeyXmlReader<'a> {
         FileKeyXmlReader {
             reader: qxmlreader,
             stream_cipher: None,
-        } 
+        }
     }
 
     pub fn parse(&mut self) -> Result<KeyFileData> {
@@ -1776,3 +1957,30 @@ mod tests {
         assert!(r1.verify_checksum().is_ok());
     }
 }
+
+// If the content ($txt) is a string with value "NO_TAG", not even an empty tag is written
+// Instead of using NO_Tag, we may pass vec of tags for which no empty tag is written if $txt.isEmpty()
+
+// const NO_TAG: &str = "NO_TAG";
+
+// macro_rules! write_tags_or_skip_tag {
+//     ($self:ident, $($tag_name:expr, $txt:expr),*) => {
+//         // Write empty tag if the content passed in $txt is a empty string
+//         // $txt should be evaluated once and reuse. Otherwise it will be evaluated
+//         // each time it is used
+//         $( let val = &$txt; // $txt evaluates to a String
+//             if val != NO_TAG {
+//                 let name_of_tag  = std::str::from_utf8($tag_name)?;
+//                 if val.is_empty() {
+//                     $self.writer.write_event(Event::Empty(BytesStart::new(name_of_tag)))?;
+//                 } else {
+//                     $self.writer.write_event(Event::Start(BytesStart::new(name_of_tag)))?;
+//                     // Creates a new BytesText from a string. The string is expected not to be escaped
+//                     // quick_xml escapes the text content internally
+//                     $self.writer.write_event(Event::Text(BytesText::new(val)))?;
+//                     $self.writer.write_event(Event::End(BytesEnd::new(name_of_tag)))?;
+//                 }
+//             }
+//         )*
+//     };
+// }

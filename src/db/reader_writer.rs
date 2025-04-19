@@ -340,12 +340,13 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
         // TODO:
         // Following are used for any debugging to see the XML content during development.
         // This should be removed after making some command line program
+        // Need to introduce cargo 'feature' to do this automatically on demand during dev test time
 
         /*
-        // Dumps the raw xml content
-        let dump_xml_file_name = temp_raw_xml_dump_file_name("test_read.xml");
-        super::write_xml_to_file(&dump_xml_file_name,xml_bytes).unwrap();
-        println!("Wrote the raw xml to the file {}",&dump_xml_file_name);
+         // Dumps the raw xml content that has been decrypted
+         let dump_xml_file_name = temp_raw_xml_dump_file_name("test_read.xml");
+         super::write_xml_to_file(&dump_xml_file_name,xml_bytes).unwrap();
+         println!("Wrote the raw xml to the file {}",&dump_xml_file_name);
         */
 
         //println!("xml: {}", std::str::from_utf8(xml_bytes).expect("utf conversion failed"));

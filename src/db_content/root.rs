@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::vec;
@@ -70,13 +71,23 @@ impl GroupVisitor for InOrderIds {
     }
 }
 
+#[derive(Debug, Default, Clone)]
+pub(crate) struct DeletedObject {
+    pub(crate) uuid: Uuid,
+    pub(crate) deletion_time: NaiveDateTime,
+}
+
 #[derive(Debug, Clone)]
 pub struct Root {
     root_uuid: Uuid,
     recycle_bin_uuid: Uuid,
     auto_open_group_uuid: Option<Uuid>,
+
+    deleted_objects: Vec<DeletedObject>,
+
     // All groups data for easy lookup by uuid
     all_groups: HashMap<Uuid, Group>,
+
     // All entries data for easy lookup by uuid
     all_entries: HashMap<Uuid, Entry>,
 }
@@ -86,10 +97,26 @@ impl Root {
         Root {
             root_uuid: Uuid::default(),
             recycle_bin_uuid: Uuid::default(),
+            deleted_objects: vec![],
             auto_open_group_uuid: None,
             all_groups: HashMap::new(),
             all_entries: HashMap::new(),
         }
+    }
+
+    pub(crate) fn add_deleted_object(&mut self, deleted_object: DeletedObject) {
+        self.deleted_objects.push(deleted_object);
+    }
+
+    pub(crate) fn add_deleted_object_by_id(&mut self, uuid: Uuid) {
+        self.deleted_objects.push(DeletedObject {
+            uuid,
+            deletion_time: util::now_utc(),
+        });
+    }
+
+    pub(crate) fn deleted_objects(&self) -> &Vec<DeletedObject> {
+        self.deleted_objects.as_ref()
     }
 
     pub(crate) fn auto_open_group_uuid(&self) -> Option<Uuid> {
@@ -181,6 +208,22 @@ impl Root {
         self.all_groups.get_mut(group_uuid)
     }
 
+    pub fn group_by_name(&self, name: &str) -> Option<&Group> {
+        // Returns the first matching group
+        self.all_groups.values().find(|g| g.name == name)
+    }
+
+    pub fn group_by_name_mut(&mut self, name: &str) -> Option<&mut Group> {
+        // Returns the first matching group
+        let g_opt = self
+            .all_groups
+            .values()
+            .find(|g| g.name == name)
+            .map(|g| g.uuid);
+
+        g_opt.map(|id| self.all_groups.get_mut(&id)).flatten()
+    }
+
     // Gets all entries. The flag exclude determines whether to include or exclude entries from the special groups in the list
     // TODO: intead of 'exclude', accept the list of group ids to exclude. See comments in 'KeepassFile'
     pub(crate) fn get_all_entries<'a>(&'a self, exclude: bool) -> Vec<&'a Entry> {
@@ -264,8 +307,8 @@ impl Root {
     /// is created and a ref that group is returned
     pub fn recycle_bin_group(&mut self) -> Option<&Group> {
         if self.recycle_bin_uuid == Uuid::default() {
-            let mut g = Group::new();
-            g.uuid = Uuid::new_v4();
+            let mut g = Group::new_with_id();
+            // g.uuid = Uuid::new_v4();
             g.parent_group_uuid = self.root_uuid; // Recycle parent is root group
             g.name = "Recycle Bin".into();
             g.icon_id = 43;
@@ -502,6 +545,7 @@ impl Root {
             self.all_entries
                 .remove(&eid)
                 .ok_or("The recycled entry is not found in All Entries map")?;
+            self.add_deleted_object_by_id(eid);
         }
 
         // This will remove all deleted groups. The groups' entries have been deleted
@@ -510,6 +554,7 @@ impl Root {
             self.all_groups
                 .remove(&gid)
                 .ok_or("The recycled group is not found in All Groups map")?;
+            self.add_deleted_object_by_id(gid);
         }
 
         let recycle_group = self
@@ -565,6 +610,8 @@ impl Root {
             old_parent.group_uuids.retain(|&id| id != group_uuid);
         }
 
+        self.add_deleted_object_by_id(group_uuid);
+
         Ok(())
     }
 
@@ -588,6 +635,9 @@ impl Root {
         if let Some(old_parent) = self.all_groups.get_mut(&e.group_uuid) {
             old_parent.entry_uuids.retain(|&id| id != e.uuid);
         }
+
+        self.add_deleted_object_by_id(entry_uuid);
+
         Ok(())
     }
 
@@ -607,6 +657,8 @@ impl Root {
                 return Err(Error::DataError("The new parent is the same as the old parent for this group and move is not done"));
             }
             grp.parent_group_uuid = new_parent_id;
+            // At this time we are changing only 'location_changed' time.
+            grp.times.location_changed = util::now_utc();
         }
 
         // If the new parent is root group, we need to keep the recycle bin group as the last one in root's group_uuids
@@ -665,6 +717,7 @@ impl Root {
         }
 
         entry.group_uuid = new_parent_id;
+        entry.times.location_changed = util::now_utc();
 
         // Add this entry id to the new parent entry uuids. For now it is added to the end
         self.all_groups

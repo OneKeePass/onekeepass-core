@@ -77,8 +77,7 @@ pub struct Meta {
     pub(crate) generator: String,
     pub(crate) database_name: String,
     pub(crate) database_description: String,
-    pub(crate) database_name_changed: NaiveDateTime,
-    pub(crate) settings_changed: NaiveDateTime,
+    pub(crate) default_user_name: String,
     pub(crate) maintenance_history_days: i32,
     pub(crate) recycle_bin_enabled: bool,
     pub(crate) recycle_bin_uuid: Uuid,
@@ -86,6 +85,12 @@ pub struct Meta {
     pub(crate) custom_icons: CustomIcons,
     pub(crate) last_selected_group: Uuid,
     pub(crate) custom_data: CustomData,
+
+    pub(crate) database_name_changed: NaiveDateTime,
+    pub(crate) database_description_changed: NaiveDateTime,
+    pub(crate) default_user_name_changed: NaiveDateTime,
+    pub(crate) settings_changed: NaiveDateTime,
+
     // history_max_items and history_max_size are moved to MetaShare
     pub(crate) meta_share: Arc<MetaShare>,
 }
@@ -93,12 +98,12 @@ pub struct Meta {
 //As NaiveDateTime does not have default fn, we need to implement "new" or "default" fn for Meta explicitly
 impl Meta {
     pub fn new() -> Meta {
+        let current_time = util::now_utc();
         Meta {
             generator: GENERATOR_NAME.into(), //String::default(),
             database_name: String::default(),
             database_description: String::default(),
-            database_name_changed: util::now_utc(),
-            settings_changed: util::now_utc(),
+            default_user_name: String::default(),
             maintenance_history_days: 365, //365
             recycle_bin_enabled: false,
             recycle_bin_uuid: Uuid::default(),
@@ -106,20 +111,36 @@ impl Meta {
             custom_icons: Default::default(),
             last_selected_group: Uuid::default(),
             custom_data: CustomData::default(),
+
+            default_user_name_changed: current_time,
+            database_name_changed: current_time,
+            database_description_changed: current_time,
+            settings_changed: current_time,
+
             meta_share: Arc::default(),
         }
     }
 
     // The incoming Meta instance 'other' is partially filled from db_service::MetaFormData and passed it here
     pub fn update(&mut self, other: Meta) -> Result<()> {
+        let current_time = util::now_utc();
+
         // For now, only the relevant fields that need to be updated are copied from other to self
-        self.database_name = other.database_name;
-        self.database_description = other.database_description;
+        if self.database_name != other.database_name {
+            self.database_name = other.database_name;
+            self.database_name_changed = current_time;
+        }
+
+        if self.database_description != other.database_description {
+            self.database_description = other.database_description;
+            self.database_description_changed = current_time;
+        }
+
         self.recycle_bin_enabled = other.recycle_bin_enabled;
         //self.history_max_items = other.history_max_items;
         //self.history_max_size = other.history_max_size;
         self.maintenance_history_days = other.maintenance_history_days;
-        self.settings_changed = util::now_utc();
+        self.settings_changed = current_time;
         Ok(())
     }
 

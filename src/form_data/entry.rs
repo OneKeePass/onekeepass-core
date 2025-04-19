@@ -811,12 +811,12 @@ mod tests {
 
         let mut root = Root::new();
         root.set_root_uuid(uuid::Uuid::new_v4());
-        let mut root_group = Group::new();
-        root_group.uuid = root.root_uuid();
+        let root_group = Group::new_with_id();
+        // root_group.uuid = root.root_uuid();
         root.insert_to_all_groups(root_group);
 
-        let mut parent_group = Group::new();
-        parent_group.uuid = uuid::Uuid::new_v4();
+        let mut parent_group = Group::new_with_id();
+        // parent_group.uuid = uuid::Uuid::new_v4();
         parent_group.parent_group_uuid = root.root_uuid();
 
         entry.group_uuid = parent_group.uuid;

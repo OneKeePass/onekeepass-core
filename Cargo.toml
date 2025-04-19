@@ -89,11 +89,8 @@ version = "*"
 features = ["common-password"]
 
 [dev-dependencies]
-env_logger = "0.8.4"
-mockall = "0.10.2"
-rstest = "0.18.1"
-directories = "5.0.1"
-toml = "0.8.19"
+env_logger = "0.11.8"
+test-context = "=0.4.1"
 
 
 

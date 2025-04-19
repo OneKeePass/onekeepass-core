@@ -2,6 +2,7 @@
 mod constants;
 mod crypto;
 mod db;
+mod db_merge;
 mod form_data;
 mod password_passphrase_generator;
 mod searcher;

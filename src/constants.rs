@@ -172,8 +172,12 @@ pub mod entry_keyvalue_key {
     // pub const SKIP_IF_KEY_FILE_NOT_EXISTS: &str = "SkipIfKeyFileNotExists";
 }
 
-//#[allow(non_upper_case_globals)]
 
+// Note: 
+// At this time mainly some essential xml elements are used in OKP app
+// For example, tags such as Color, ForegroundColor, BackgroundColor ect are not considered
+
+//#[allow(non_upper_case_globals)]
 #[allow(dead_code)]
 pub mod xml_element {
     pub const KEEPASS_FILE: &[u8] = b"KeePassFile";
@@ -183,11 +187,15 @@ pub mod xml_element {
     //Meta
     pub const GENERATOR: &[u8] = b"Generator";
     pub const DATABASE_NAME: &[u8] = b"DatabaseName";
+    pub const DATABASE_NAME_CHANGED: &[u8] = b"DatabaseNameChanged"; //date time
     pub const DATABASE_DESCRIPTION: &[u8] = b"DatabaseDescription";
+    pub const DATABASE_DESCRIPTION_CHANGED: &[u8] = b"DatabaseDescriptionChanged";
     pub const SETTINGS_CHANGED: &[u8] = b"SettingsChanged";
 
+    pub const DEFAULT_USER_NAME :&[u8]  = b"DefaultUserName";
+    pub const DEFAULT_USER_NAME_CHANGED :&[u8]  = b"DefaultUserNameChanged";
+
     //pub const :&[u8]  = b"MasterKeyChanged";
-    pub const DATABASE_NAME_CHANGED: &[u8] = b"DatabaseNameChanged"; //date time
     pub const RECYCLE_BIN_ENABLED: &[u8] = b"RecycleBinEnabled";
     pub const RECYCLE_BIN_UUID: &[u8] = b"RecycleBinUUID";
     pub const RECYCLE_BIN_CHANGED: &[u8] = b"RecycleBinChanged";
@@ -206,7 +214,18 @@ pub mod xml_element {
     pub const CUSTOM_ICONS: &[u8] = b"CustomIcons";
     pub const ICON: &[u8] = b"Icon";
     pub const DATA: &[u8] = b"Data";
+    // NAME and LAST_MODIFICATION_TIME are added in VERSION_41 of CUSTOM_ICONS
 
+    // It seems, 'KeePass' removes an entry or group completely and writes its UUID
+    // here. This happens when RECYCLE_BIN_ENABLED is false ( By default it is false in KeePass app)
+    // OneKeePass and other implementation like KeePassXC uses RECYCLE_BIN_ENABLED = true and 
+    // Gives the user an option later to empty recycle bin or undo
+    // However, when groups or entries are deleted permanently, the uuids of those objectes
+    // are added under DeletedObjects after removing the groups/entries content from db
+    pub const DELETED_OBJECTS: &[u8] = b"DeletedObjects";
+    pub const DELETED_OBJECT: &[u8] = b"DeletedObject";
+    pub const DELETION_TIME: &[u8] = b"DeletionTime";
+    
     //Some Common tags
 
     //Custom Data
@@ -243,6 +262,8 @@ pub mod xml_element {
     pub const KEY: &[u8] = b"Key";
     pub const VALUE: &[u8] = b"Value"; //
     pub const HISTORY: &[u8] = b"History";
+    pub const CUSTOM_ICON_UUID: &[u8] = b"CustomIconUUID"; 
+    
 
     // AutoKey related
     // Entry level

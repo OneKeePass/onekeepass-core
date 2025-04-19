@@ -36,13 +36,14 @@ impl Default for NewDatabase {
             file_name: None,
             kdf: KdfAlgorithm::Argon2(crypto::kdf::Argon2Kdf::default()),
             cipher_id: ContentCipherId::Aes256,
-            password: Some("ThisIsTest".into()),
+            password: Some("ss".into()),
             key_file_name: None,
         }
     }
 }
 
 impl NewDatabase {
+
     /// Creates a blank database with some intial values. The database is not yet saved
     pub fn create(&self) -> Result<KdbxFile> {
         let file_key = match &self.key_file_name {
@@ -76,8 +77,8 @@ impl NewDatabase {
             .as_ref()
             .unwrap_or(&"New Database".into())
             .to_string();
-        let mut root_g = Group::new();
-        root_g.uuid = uuid::Uuid::new_v4();
+        let mut root_g = Group::new_with_id();
+        //root_g.uuid = uuid::Uuid::new_v4();
         root_g.name = kc.meta.database_name.clone();
         //kc.root.root_uuid = root_g.uuid.clone();
         kc.root.set_root_uuid(root_g.uuid);

@@ -996,8 +996,8 @@ pub fn new_entry_form_data_by_id(
 }
 
 pub fn new_blank_group(mark_as_category: bool) -> Group {
-    let mut group = Group::new();
-    group.uuid = uuid::Uuid::new_v4();
+    let mut group = Group::new_with_id();
+    // group.uuid = uuid::Uuid::new_v4();
     if mark_as_category {
         group.mark_as_category();
         //group.custom_data.mark_as_category();

@@ -7,12 +7,12 @@ fn verify_read_db_file() {
     common::init_logging();
     common::init_key_main_store();
     //let r = load_kdbx("/Users/jeyasankar/Documents/OneKeePass/KP/Test1-KP254-Attachment.kdbx", "ss", None); //
-    let r = load_kdbx(
-        "/Users/jeyasankar/Documents/OneKeePass/JeyFix/TJ-fixit.kdbx",
-        Some("ss"),
-        None,
-    );
-    //let r = load_kdbx("/Users/jeyasankar/Documents/OneKeePass/Test-OTP1.kdbx", Some("ss"), None);
+    // let r = load_kdbx(
+    //     "/Users/jeyasankar/Documents/OneKeePass/JeyFix/TJ-fixit.kdbx",
+    //     Some("ss"),
+    //     None,
+    // );
+    let r = load_kdbx("/Users/jeyasankar/Documents/OneKeePass/TextXC1.kdbx", Some("ss"), None);
 
     println!("load_kdbx is called r is  {}", r.is_ok());
     if r.is_err() {
@@ -25,7 +25,8 @@ fn verify_read_db_and_export_xml() {
     common::init_logging();
     common::init_key_main_store();
 
-    let db_key = "/Users/jeyasankar/Documents/OneKeePass/Test-OTP3.kdbx";
+    let db_key = "/Users/jeyasankar/Documents/OneKeePass/TextXC1-1.kdbx";
+    // let db_key = "/Users/jeyasankar/Documents/OneKeePass/MyOTP1-kp2.kdbx";
     let r = load_kdbx(db_key, Some("ss"), None);
 
     if r.is_err() {
