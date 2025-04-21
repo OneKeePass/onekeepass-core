@@ -5,7 +5,7 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, str::FromStr};
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize,PartialEq)]
 pub struct CustomData {
     items: HashMap<String, Item>,
     //pub(crate) items: Vec<Item>,
@@ -129,7 +129,7 @@ impl CustomData {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize,PartialEq)]
 pub struct Item {
     pub(crate) key: String,
     pub(crate) value: String,

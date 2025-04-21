@@ -200,6 +200,29 @@ impl Root {
         self.all_entries.get_mut(entry_uuid)
     }
 
+    // Finds an entry that has a matching value in a given key field
+    pub fn entry_by_matching_kv(&self, key: &str, value: &str) -> Option<&Entry> {
+        // First match is returned
+        self.all_entries.values().find(|e| {
+            if let Some(ref v) = e.find_kv_field_value(key) {
+                v == value
+            } else {
+                false
+            }
+        })
+    }
+
+    pub fn entry_by_matching_kv_mut(&mut self, key: &str, value: &str) -> Option<&mut Entry> {
+        // First match is returned
+        self.all_entries.values_mut().find(|e| {
+            if let Some(ref v) = e.find_kv_field_value(key) {
+                v == value
+            } else {
+                false
+            }
+        })
+    }
+
     pub fn group_by_id(&self, group_uuid: &Uuid) -> Option<&Group> {
         self.all_groups.get(group_uuid)
     }
@@ -723,6 +746,7 @@ impl Root {
         self.all_groups
             .entry(new_parent_id.clone())
             .and_modify(|g| g.entry_uuids.push(entry_uuid));
+        
         // Remove this entry id from entry_uuids of previous parent group
         if let Some(old_parent) = self.all_groups.get_mut(&old_parent_id) {
             old_parent.entry_uuids.retain(|&id| id != entry_uuid);

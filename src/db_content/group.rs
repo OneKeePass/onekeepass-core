@@ -3,6 +3,7 @@ use crate::{
     util,
 };
 
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -54,17 +55,22 @@ impl Group {
         &self.notes
     }
 
-    pub fn set_notes(&mut self, notes: &str) -> &mut Self {
+    #[inline]
+    pub(crate) fn last_modification_time(&self) -> NaiveDateTime {
+        self.times.last_modification_time
+    }
+
+    pub(crate) fn set_notes(&mut self, notes: &str) -> &mut Self {
         self.notes = notes.to_string();
         self
     }
 
-    pub fn set_icon_id(&mut self, icon_id: i32) -> &mut Self {
+    pub(crate) fn set_icon_id(&mut self, icon_id: i32) -> &mut Self {
         self.icon_id = icon_id;
         self
     }
 
-    pub fn update_modification_time(&mut self) -> &mut Self {
+    pub(crate) fn update_modification_time(&mut self) -> &mut Self {
         self.times.update_modification_time();
         self
     }

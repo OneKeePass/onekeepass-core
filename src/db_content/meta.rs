@@ -13,7 +13,7 @@ use uuid::Uuid;
 use super::entry_type::VersionedEntryType;
 use super::Item;
 
-#[derive(Debug)]
+#[derive(Debug,PartialEq)]
 pub(crate) struct HistoryItemsMeta {
     pub(crate) history_max_items: i32,
     pub(crate) history_max_size: i32,

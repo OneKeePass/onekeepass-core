@@ -23,7 +23,7 @@ pub use self::otp::{CurrentOtpTokenData, OtpAlgorithm, OtpSettings};
 pub(crate) use self::root::DeletedObject;
 pub use self::root::{AllTags, EntryCloneOption, GroupSortCriteria, Root,};
 pub use self::standard_entry_types::{
-    standard_type_uuids_names_ordered_by_id, standard_types_ordered_by_id,
+    standard_type_uuids_names_ordered_by_id, standard_types_ordered_by_id,standard_type_uuid_by_name,
 };
 
 use chrono::NaiveDateTime;
@@ -112,8 +112,8 @@ pub(crate) use move_to_recycle_bin;
 // and thus in UTC timezone and represented as NaiveDateTime.
 // NaiveDateTime just has year,month,day,hour,minute,second and milliseconds
 // The UI side is responbile to know the timezone and convert the NaiveDateTime accordingly to display
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Times {
+#[derive(Debug, Clone, Serialize, Deserialize,PartialEq)]
+pub(crate) struct Times {
     pub(crate) last_modification_time: NaiveDateTime,
     pub(crate) creation_time: NaiveDateTime,
     pub(crate) last_access_time: NaiveDateTime,
@@ -125,7 +125,7 @@ pub struct Times {
 }
 
 impl Times {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let n = util::now_utc();
         Times {
             last_modification_time: n,
@@ -138,7 +138,7 @@ impl Times {
         }
     }
 
-    pub fn update_modification_time(&mut self,) {
+    pub(crate) fn update_modification_time(&mut self,) {
         let n = util::now_utc();
         self.last_modification_time = n;
         self.last_access_time = n;

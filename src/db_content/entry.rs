@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -19,7 +20,7 @@ use super::otp::{CurrentOtpTokenData, OtpData};
 use super::Meta;
 
 // To carry additional entry field grouping and for easy KV data lookup
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EntryField {
     // Grouping of fields as sections maintained in EntryType
     pub(crate) entry_type: EntryType,
@@ -154,26 +155,26 @@ pub struct Entry {
     pub(crate) uuid: Uuid,
 
     //The parent group uuid to refer back the group if required
-    pub group_uuid: Uuid,
+    pub(crate) group_uuid: Uuid,
 
-    pub icon_id: i32,
+    pub(crate) icon_id: i32,
 
-    pub times: Times,
+    pub(crate) times: Times,
 
-    pub tags: String,
+    pub(crate) tags: String,
 
     // entry_field contains all KeyValues
-    pub entry_field: EntryField,
+    pub(crate) entry_field: EntryField,
 
-    pub binary_key_values: Vec<BinaryKeyValue>,
+    pub(crate) binary_key_values: Vec<BinaryKeyValue>,
 
-    pub custom_data: CustomData,
+    pub(crate) custom_data: CustomData,
 
-    pub custom_icon_uuid:Option<Uuid>,
+    pub(crate) custom_icon_uuid: Option<Uuid>,
 
-    pub auto_type: AutoType,
+    pub(crate) auto_type: AutoType,
 
-    pub history: History,
+    pub(crate) history: History,
 
     // Need to use #[serde(skip)] if we use Entry 'Serialize'
     pub(crate) meta_share: Arc<MetaShare>,
@@ -182,8 +183,27 @@ pub struct Entry {
     pub(crate) parsed_otp_values: Option<HashMap<String, OtpData>>,
 }
 
+impl PartialEq for Entry {
+    fn eq(&self, other: &Self) -> bool {
+        self.uuid == other.uuid
+            && self.group_uuid == other.group_uuid
+            && self.icon_id == other.icon_id
+            && self.times == other.times
+            && self.tags == other.tags
+            && self.entry_field == other.entry_field
+            && self.binary_key_values == other.binary_key_values
+            && self.custom_data == other.custom_data
+            && self.custom_icon_uuid == other.custom_icon_uuid
+            && self.auto_type == other.auto_type
+            && self.history.entries.len() == other.history.entries.len()
+            && self.history == other.history
+            // && self.meta_share == other.meta_share
+            && self.parsed_otp_values == other.parsed_otp_values
+    }
+}
+
 impl Entry {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Entry {
             uuid: Uuid::default(),
             group_uuid: Uuid::default(),
@@ -194,7 +214,7 @@ impl Entry {
             //key_values: vec![],
             binary_key_values: vec![],
             custom_data: CustomData::default(),
-            custom_icon_uuid:None,
+            custom_icon_uuid: None,
             auto_type: AutoType::default(),
             //history has a list of previous entries and those entries listed will have its 'history' empty
             history: History::default(),
@@ -203,15 +223,38 @@ impl Entry {
         }
     }
 
+    #[inline]
     pub(crate) fn get_uuid(&self) -> &Uuid {
         &self.uuid
     }
 
+    #[allow(unused)]
+    #[inline]
     pub(crate) fn parent_group_uuid(&self) -> &Uuid {
         &self.group_uuid
     }
 
-    pub fn new_blank_entry_by_type_id(
+    #[allow(unused)]
+    #[inline]
+    pub(crate) fn last_modification_time(&self) -> NaiveDateTime {
+        self.times.last_modification_time
+    }
+
+    pub(crate) fn update_modification_time(&mut self) -> &mut Self {
+        self.times.update_modification_time();
+        self
+    }
+
+    pub(crate) fn histories(&self) -> &Vec<Entry> {
+        &self.history.entries
+    }
+
+    pub(crate) fn set_histories(&mut self, history_entries: &Vec<Entry>) -> &mut Self {
+        self.history.entries = history_entries.clone();
+        self
+    }
+
+    pub(crate) fn new_blank_entry_by_type_id(
         entry_type_uuid: &Uuid,
         custom_entry_type: Option<EntryType>,
         parent_group_uuid: Option<&Uuid>,
@@ -229,8 +272,9 @@ impl Entry {
     }
 
     // Any entry specific custom data parsing and setting in Entry to be done here
-    pub fn after_xml_reading(&mut self, meta: &Meta) {
+    pub(crate) fn after_xml_reading(&mut self, meta: &Meta) {
         self.meta_share = Arc::clone(&meta.meta_share);
+
         // Create EntryType from custom data
         let etype = self.deserialize_to_entry_type();
         self.entry_field.entry_type = etype;
@@ -242,7 +286,7 @@ impl Entry {
         self.parse_all_otp_fields();
     }
 
-    pub fn before_xml_writing(&mut self) {
+    pub(crate) fn before_xml_writing(&mut self) {
         // Any entry customized data should copied back to custom data here so that we can persist in db
         // For now all custom data writing is already taken care of while modifiing the entry itself
         // See entry.update -> entry.copy_to_custom_data()
@@ -277,7 +321,7 @@ impl Entry {
         }
     }
 
-    pub fn update(&mut self, mut updated_entry: Entry) {
+    pub(crate) fn update(&mut self, mut updated_entry: Entry) {
         // The 'updated_entry' created in EntryDataForm will not have meta_share set
         // and we need to set it here
         updated_entry.meta_share = Arc::clone(&self.meta_share);
@@ -289,6 +333,7 @@ impl Entry {
         // Only expiry related information is copied from the incoming updated_entry.times
         self.times.expires = updated_entry.times.expires;
         self.times.expiry_time = updated_entry.times.expiry_time;
+
         let now = util::now_utc();
         self.times.last_access_time = now;
         self.times.last_modification_time = now;
@@ -386,7 +431,7 @@ impl Entry {
     }
 
     // Called after loading the db file and xml is parsed
-    pub fn set_attachment_hashes(
+    pub(crate) fn set_attachment_hashes(
         &mut self,
         attachment_hash_indexed: &HashMap<i32, (AttachmentHashValue, usize)>,
     ) {
@@ -429,7 +474,7 @@ impl Entry {
     }
 
     // Gets the hash values of all attachments from this entry and the entries found in history field
-    pub fn get_attachment_hashes(&self, hashes: &mut Vec<u64>) {
+    pub(crate) fn get_attachment_hashes(&self, hashes: &mut Vec<u64>) {
         // First we collect all hashes from an entry followed by the entries found in its history
         //let mut hashes = vec![];
         for bv in &self.binary_key_values {
@@ -442,19 +487,19 @@ impl Entry {
         }
     }
 
-    pub fn title(&self,) -> Option<String>{
+    pub(crate) fn title(&self) -> Option<String> {
         self.find_kv_field_value(TITLE)
     }
 
     // Finds a field's value from KeyValue
-    pub fn find_kv_field_value(&self, name: &str) -> Option<String> {
+    pub(crate) fn find_kv_field_value(&self, name: &str) -> Option<String> {
         self.entry_field
             .find_key_value(name)
             .map(|x| x.value.clone())
     }
 
     // Collects all entry field names and values (not in any particular order)
-    pub fn field_values(&self) -> HashMap<String, String> {
+    pub(crate) fn field_values(&self) -> HashMap<String, String> {
         self.entry_field
             .get_key_values()
             .into_iter()
@@ -492,7 +537,10 @@ impl Entry {
         }
     }
 
-    pub fn current_otp_token_data(&self, otp_field_name: &str) -> Option<CurrentOtpTokenData> {
+    pub(crate) fn current_otp_token_data(
+        &self,
+        otp_field_name: &str,
+    ) -> Option<CurrentOtpTokenData> {
         // as_ref() is to get Option<&HashMap<String, OtpData>>
         // first flatten Option<Option<&OtpData>> -> Option<&OtpData>
         // second flatten Option<Option<CurrentOtpTokenData>> -> Option<CurrentOtpTokenData>
@@ -518,7 +566,7 @@ impl Entry {
 impl Entry {
     // Called to recreate the history entries. The existing entry before update is
     // added to the history and returned
-    fn create_histories(&mut self) -> Vec<Entry> {
+    pub(crate) fn create_histories(&mut self) -> Vec<Entry> {
         let mut existing_entry_copy: Entry = self.clone();
 
         // Remove any history related list of entry types. The existing_entry_copy will continue to have
@@ -528,7 +576,7 @@ impl Entry {
             .custom_data
             .remove_item(OKP_ENTRY_TYPE_LIST_DATA);
 
-        //Make a copy of the existing history entries
+        // Make a copy of the existing history entries
         let mut histories: Vec<Entry> = existing_entry_copy.history.entries;
         // We keep the max_items histories only
         let max_items_allowed = self.meta_share.history_max_items() as usize;
@@ -545,7 +593,7 @@ impl Entry {
         // TODO: Should we add removing all history entries that exceeds certain size ?
         // Or just do not add to the history any entry that exceeds certain size ?
 
-        //existing_entry_copy should not have any history entries before adding to h
+        // The existing_entry_copy should not have any history entries before adding to h
         existing_entry_copy.history.entries = vec![];
 
         // Add the existing_entry_copy as last item in the history list
@@ -556,7 +604,7 @@ impl Entry {
     }
 
     // Gets a history entry
-    pub fn history_entry_by_index(&self, index: i32) -> Option<Entry> {
+    pub(crate) fn history_entry_by_index(&self, index: i32) -> Option<Entry> {
         let he = self.history.entries.get(index as usize).cloned();
         he.map(|mut e1| {
             // Need to set the appropriate group uuid to the history entry
@@ -568,7 +616,7 @@ impl Entry {
         })
     }
 
-    pub fn delete_history_entry_by_index(&mut self, index: i32) {
+    pub(crate) fn delete_history_entry_by_index(&mut self, index: i32) {
         let idx = index as usize;
         if idx < self.history.entries.len() {
             let e = self.history.entries.remove(idx); // e is the deleted history entry
@@ -629,7 +677,7 @@ impl Entry {
     }
 
     // Deletes all the history entries of an entry
-    pub fn delete_history_entries(&mut self) {
+    pub(crate) fn delete_history_entries(&mut self) {
         self.history.entries.clear();
         // Remove OKP_ENTRY_TYPE_LIST_DATA that were used for history entries' entry type deserialization
         self.custom_data.remove_item(OKP_ENTRY_TYPE_LIST_DATA);
@@ -809,16 +857,16 @@ impl Entry {
 // We may need to add additional entry field specific
 // information here - field data type, length restriction etc and need to be
 // transfered from and to Entry CustomData
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct KeyValue {
-    pub key: String,
-    pub value: String,
-    pub protected: bool,
-    pub data_type: FieldDataType,
+    pub(crate) key: String,
+    pub(crate) value: String,
+    pub(crate) protected: bool,
+    pub(crate) data_type: FieldDataType,
 }
 
 impl KeyValue {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         KeyValue {
             key: String::default(),
             value: String::default(),
@@ -826,22 +874,30 @@ impl KeyValue {
             data_type: FieldDataType::default(),
         }
     }
+
+    pub fn key(&self) -> &String {
+        &self.key
+    }
+
+    pub fn value(&self) -> &String {
+        &self.value
+    }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BinaryKeyValue {
     /// Attachment name
-    pub key: String,
+    pub(crate) key: String,
     /// An empty tag with Ref attribute
-    pub value: String,
+    pub(crate) value: String,
     /// This is the index into the Inner header Binaries collection for this attachment
-    pub index_ref: i32,
+    pub(crate) index_ref: i32,
     #[serde(with = "util::from_or_to::string")]
-    pub data_hash: AttachmentHashValue,
-    pub data_size: usize,
+    pub(crate) data_hash: AttachmentHashValue,
+    pub(crate) data_size: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AutoType {
     pub(crate) enabled: bool,
     // None means inherits the parent group's sequence if enabled
@@ -860,13 +916,13 @@ impl Default for AutoType {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Association {
     pub(crate) window: String,
     pub(crate) key_stroke_sequence: Option<String>,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 //#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct History {
     // History has a list of previous entries
