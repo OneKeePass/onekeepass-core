@@ -11,9 +11,9 @@ use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 use super::entry_type::VersionedEntryType;
-use super::Item;
+use super::{Icon, Item};
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct HistoryItemsMeta {
     pub(crate) history_max_items: i32,
     pub(crate) history_max_size: i32,
@@ -81,15 +81,22 @@ pub struct Meta {
     pub(crate) maintenance_history_days: i32,
     pub(crate) recycle_bin_enabled: bool,
     pub(crate) recycle_bin_uuid: Uuid,
+
+    pub(crate) last_selected_group: Uuid,
+    pub(crate) entry_template_group: Uuid,
+
     pub(crate) memory_protection: MemoryProtection,
     pub(crate) custom_icons: CustomIcons,
-    pub(crate) last_selected_group: Uuid,
     pub(crate) custom_data: CustomData,
+
 
     pub(crate) database_name_changed: NaiveDateTime,
     pub(crate) database_description_changed: NaiveDateTime,
     pub(crate) default_user_name_changed: NaiveDateTime,
     pub(crate) settings_changed: NaiveDateTime,
+
+    pub(crate) master_key_changed: NaiveDateTime,
+    pub(crate) entry_template_group_changed: NaiveDateTime,
 
     // history_max_items and history_max_size are moved to MetaShare
     pub(crate) meta_share: Arc<MetaShare>,
@@ -105,17 +112,22 @@ impl Meta {
             database_description: String::default(),
             default_user_name: String::default(),
             maintenance_history_days: 365, //365
+            
             recycle_bin_enabled: false,
             recycle_bin_uuid: Uuid::default(),
+            last_selected_group: Uuid::default(),
+            entry_template_group:Uuid::default(),
+            
             memory_protection: MemoryProtection::default(),
             custom_icons: Default::default(),
-            last_selected_group: Uuid::default(),
             custom_data: CustomData::default(),
 
             default_user_name_changed: current_time,
             database_name_changed: current_time,
             database_description_changed: current_time,
             settings_changed: current_time,
+            master_key_changed:current_time,
+            entry_template_group_changed:current_time,
 
             meta_share: Arc::default(),
         }
@@ -170,7 +182,11 @@ impl Meta {
         if !s.is_empty() {
             if let Some(data) = VersionedEntryType::encode_entry_types_by_id(&s) {
                 self.custom_data
-                    .insert_item(Item::from_kv(OKP_ENTRY_TYPE_MAP_DATA, &data));
+                    .insert_item(Item::from_kv_with_modification_time(
+                        OKP_ENTRY_TYPE_MAP_DATA,
+                        &data,
+                        util::now_utc(),
+                    ));
                 debug!("Custom entrypes saved to custom data");
             }
         }
@@ -236,4 +252,95 @@ impl Meta {
     //         ..other  //.. specifies that the remaining fields not explicitly set should have the same value as the fields in the given instance.
     //     }
     // }
+}
+
+impl Meta {
+    pub fn merge(&mut self, other: &Meta) -> Result<()> {
+        let current_time = util::now_utc();
+        if self.settings_changed < other.settings_changed {
+            if self.database_name != other.database_name {
+                self.database_name = other.database_name.clone();
+                self.database_name_changed = current_time;
+            }
+            if self.database_description != other.database_description {
+                self.database_description = other.database_description.clone();
+                self.database_description_changed = current_time;
+            }
+
+            if self.maintenance_history_days != other.maintenance_history_days {
+                self.maintenance_history_days = other.maintenance_history_days.clone();
+            }
+
+            self.memory_protection = other.memory_protection.clone();
+            self.entry_template_group = other.entry_template_group.clone();
+            self.master_key_changed = other.master_key_changed.clone();
+
+            if self.default_user_name != other.default_user_name {
+                self.default_user_name = other.default_user_name.clone();
+                self.default_user_name_changed = current_time;
+            }
+        }
+
+        if self.custom_icons != other.custom_icons {
+            for other_icon in other.custom_icons.icons.iter() {
+                if let Some(this_icon) = self
+                    .custom_icons
+                    .icons
+                    .iter_mut()
+                    .find(|i| i.uuid == other_icon.uuid)
+                {
+                    // A matching custom icon is found
+                    // TODO: Use this_icon.last_modification_time ?
+                    if this_icon.data != other_icon.data {
+                        this_icon.name = other_icon.name.clone();
+                        this_icon.data = other_icon.data.clone();
+                    }
+                } else {
+                    // No matching custom icon is found and added
+                    self.custom_icons.icons.push(other_icon.clone());
+                }
+            }
+            // Need to drop any custom icons that are not found in source should be removed from target
+        }
+
+        if self.custom_data != other.custom_data {
+            for other_item in other.custom_data.get_items() {
+                if let Some(this_item) = self.custom_data.get_item_mut(&other_item.key) {
+                    // Found a matching item
+                    // TODO: Use this_item.last_modification_time ?
+                    if this_item.value != other_item.value {
+                        this_item.value = other_item.value.clone();
+                        this_item.last_modification_time = Some(current_time);
+                    }
+                } else {
+                    // No matching item found, create a new one
+                    self.custom_data
+                        .insert_item(Item::from_kv_with_modification_time(
+                            &other_item.key,
+                            &other_item.value,
+                            current_time,
+                        ));
+                }
+            }
+            // Need to drop any custom data item that are not found in source should be removed from target
+        }
+
+        Ok(())
+    }
+
+    #[allow(unused)]
+    #[cfg(test)]
+    pub(crate) fn add_custom_icon(&mut self,icon_data:&Vec<u8>) {
+        let mut icon = Icon::default();
+        icon.uuid = Uuid::new_v4();
+        icon.data = icon_data.clone();
+        icon.last_modification_time = util::now_utc();
+        self.custom_icons.icons.push(icon);
+    }
+
+    #[allow(unused)]
+    #[cfg(test)]
+    pub(crate) fn all_custom_icons(&self) -> &Vec<Icon> {
+        &self.custom_icons.icons
+    }
 }

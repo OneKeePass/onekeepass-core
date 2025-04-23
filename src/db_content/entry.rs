@@ -240,15 +240,21 @@ impl Entry {
         self.times.last_modification_time
     }
 
+    #[allow(unused)]
+    #[inline]
     pub(crate) fn update_modification_time(&mut self) -> &mut Self {
         self.times.update_modification_time();
         self
     }
 
+    #[allow(unused)]
+    #[inline]
     pub(crate) fn histories(&self) -> &Vec<Entry> {
         &self.history.entries
     }
 
+    #[allow(unused)]
+    #[inline]
     pub(crate) fn set_histories(&mut self, history_entries: &Vec<Entry>) -> &mut Self {
         self.history.entries = history_entries.clone();
         self
@@ -553,6 +559,73 @@ impl Entry {
     }
 }
 
+impl Entry {
+    pub(crate) fn create_histories_to_merge(&mut self) -> Vec<Entry> {
+        // Adds the current entry to the existing histories
+        let histories = self.create_histories();
+        // history custom data index to custom data entry type
+        self.replace_index_by_entry_types_data(histories)
+    }
+
+    pub(crate) fn histories_to_merge(&mut self) -> Vec<Entry> {
+        let histories = self.histories().clone();
+        self.replace_index_by_entry_types_data(histories)
+    }
+
+    pub(crate) fn set_merged_histories(&mut self, history_entries: &Vec<Entry>) {
+        // Collect all entry type data from the passed history_entries of merged one
+        let encoded_entry_types = Self::collect_history_entry_types_data(history_entries);
+
+        // This entry's OKP_ENTRY_TYPE_LIST_DATA is set
+        self.update_encoded_entry_type_list_data(encoded_entry_types);
+
+        self.history.entries = history_entries.clone();
+
+        let mut encoded_entry_types = self.encoded_entry_types(false);
+        let current_entry_type = self.custom_data.get_item_value(OKP_ENTRY_TYPE_DATA);
+
+        // Repalce each entry's entry type data with index
+        self.history.entries.iter_mut().for_each(|he| {
+            Self::replace_history_entry_type_data_by_index(
+                he,
+                &mut encoded_entry_types,
+                current_entry_type,
+            );
+        });
+
+        self.adjust_history_entries_entry_type_indexes();
+    }
+
+    fn replace_index_by_entry_types_data(&self, histories: Vec<Entry>) -> Vec<Entry> {
+        let mut histories = histories.clone();
+        // Encoded Entry types list
+        let entry_types = self.encoded_entry_types(true);
+        let histories_with_et_data = histories
+            .iter_mut()
+            .map(|he| {
+                // Each entry's OKP_ENTRY_TYPE_DATA is set from entry_types vec using its OKP_ENTRY_TYPE_DATA_INDEX
+                Entry::replace_entry_type_index_by_type_data(he, &entry_types);
+                he.clone()
+            })
+            .collect::<Vec<Entry>>();
+
+        histories_with_et_data
+    }
+
+    fn collect_history_entry_types_data(histories: &Vec<Entry>) -> Vec<String> {
+        histories.iter().fold(vec![], |mut acc, e| {
+            if let Some(s) = e.custom_data.get_item_value(OKP_ENTRY_TYPE_DATA) {
+                let name = s.to_string();
+                // Collect the unique values 
+                if !acc.contains(&name) {
+                    acc.push(name);
+                }
+            }
+            acc
+        })
+    }
+}
+
 // All history entries related methods implemented on Entry are organized separately
 // here for easy maintenance
 //
@@ -754,8 +827,8 @@ impl Entry {
         history_entry.entry_field.entry_type = history_entry.deserialize_to_entry_type();
     }
 
-    // This ensures we do not serilaize the current Entry Type in OKP_ENTRY_TYPE_LIST_DATA
-    // This is generally not required. Only happens if the user restores any previously
+    // This ensures we do not serialize the current Entry Type in OKP_ENTRY_TYPE_LIST_DATA
+    // This is generally not required. Only happens if the user restores any previously modified
     // entry from history that uses old entry type data
     fn adjust_history_entries_entry_type_indexes(&mut self) {
         let types_list = self.encoded_entry_types(false);
@@ -775,6 +848,7 @@ impl Entry {
                     .filter(|s| *s != et)
                     .map(|s| s.clone())
                     .collect(); //vec![];
+
                 self.history.entries.iter_mut().for_each(|he| {
                     Entry::replace_history_entry_type_data_by_index(
                         he,
@@ -838,6 +912,7 @@ impl Entry {
         // debug!("Last history_entry Begin Entry's encoded_entry_types is {:?}",encoded_entry_types);
 
         let current_entry_type = self.custom_data.get_item_value(OKP_ENTRY_TYPE_DATA);
+
         // Get the recently inserted history entry
         if let Some(he) = self.history.entries.last_mut() {
             Entry::replace_history_entry_type_data_by_index(

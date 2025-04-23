@@ -195,14 +195,20 @@ pub mod xml_element {
     pub const DEFAULT_USER_NAME :&[u8]  = b"DefaultUserName";
     pub const DEFAULT_USER_NAME_CHANGED :&[u8]  = b"DefaultUserNameChanged";
 
-    //pub const :&[u8]  = b"MasterKeyChanged";
+    pub const MASTER_KEY_CHANGED :&[u8]  = b"MasterKeyChanged";
     pub const RECYCLE_BIN_ENABLED: &[u8] = b"RecycleBinEnabled";
+    
     pub const RECYCLE_BIN_UUID: &[u8] = b"RecycleBinUUID";
     pub const RECYCLE_BIN_CHANGED: &[u8] = b"RecycleBinChanged";
+
+    pub const ENTRY_TEMPLATE_GROUP: &[u8] = b"EntryTemplatesGroup";
+    pub const ENTRY_TEMPLATE_GROUP_CHANGED: &[u8] = b"EntryTemplatesGroupChanged";
+
     pub const HISTORY_MAX_ITEMS: &[u8] = b"HistoryMaxItems";
     pub const MAINTENANCE_HISTORY_DAYS: &[u8] = b"MaintenanceHistoryDays";
     pub const HISTORY_MAX_SIZE: &[u8] = b"HistoryMaxSize";
     pub const LAST_SELECTED_GROUP: &[u8] = b"LastSelectedGroup";
+
 
     pub const MEMORY_PROTECTION: &[u8] = b"MemoryProtection";
     pub const PROTECT_TITLE: &[u8] = b"ProtectTitle";

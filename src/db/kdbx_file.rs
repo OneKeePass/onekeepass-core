@@ -12,11 +12,28 @@ pub struct KdbxFile {
     pub(crate) main_header: MainHeader,
     pub(crate) inner_header: InnerHeader,
     pub(crate) secured_database_keys: SecuredDatabaseKeys,
+    // keepass_main_content is an Option type as it will be set to some value omly after xml content extraction
     pub(crate) keepass_main_content: Option<KeepassFile>,
     pub(crate) checksum_hash: Vec<u8>,
 }
 
 impl KdbxFile {
+    // For now used in unit tests
+    #[allow(unused)]
+    #[cfg(test)]
+    pub(crate) fn keepass_main_content(&self) -> &KeepassFile {
+        // CAUTION: This unwrap may Panic
+        self.keepass_main_content.as_ref().unwrap()
+    }
+
+    // For now used in unit tests
+    #[allow(unused)]
+    #[cfg(test)]
+    pub(crate) fn keepass_main_content_mut(&mut self) -> &mut KeepassFile {
+        // CAUTION: This unwrap may Panic
+        self.keepass_main_content.as_mut().unwrap()
+    }
+
     #[inline]
     pub fn hmac_part_key(&self) -> &Vec<u8> {
         &self.secured_database_keys.hmac_part_key
@@ -105,6 +122,10 @@ impl KdbxFile {
         self.secured_database_keys
             .set_file_key(&self.database_file_name, self.file_key.as_ref())?;
 
+        if let Some(k) = self.keepass_main_content.as_mut() {
+            k.meta.master_key_changed = util::now_utc();
+        }
+
         Ok(())
     }
 
@@ -126,6 +147,10 @@ impl KdbxFile {
         keys.secure_keys(db_key)?;
         self.secured_database_keys = keys;
 
+        if let Some(k) = self.keepass_main_content.as_mut() {
+            k.meta.master_key_changed = util::now_utc();
+        }
+
         Ok(())
     }
 
@@ -134,6 +159,9 @@ impl KdbxFile {
             "set_password called with password nil?: {}",
             password.is_none()
         );
+        if let Some(k) = self.keepass_main_content.as_mut() {
+            k.meta.master_key_changed = util::now_utc();
+        }
         self.secured_database_keys
             .set_password(&self.database_file_name, password)
     }

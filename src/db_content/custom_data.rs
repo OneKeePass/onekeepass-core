@@ -5,14 +5,14 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, str::FromStr};
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize,PartialEq)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CustomData {
     items: HashMap<String, Item>,
     //pub(crate) items: Vec<Item>,
 }
 
 // Common custom data fns
-// Mostly used in entry struct fns
+// These Impl fns mostly used in entry struct fns
 impl CustomData {
     #[inline]
     pub fn get_item_value(&self, key: &str) -> Option<&str> {
@@ -49,8 +49,13 @@ impl CustomData {
         self.items.values().collect()
     }
 
-    fn _get(&self, key: &str) -> Option<&Item> {
+    #[allow(unused)]
+    pub(crate) fn get_item(&self, key: &str) -> Option<&Item> {
         self.items.get(key)
+    }
+
+    pub(crate) fn get_item_mut(&mut self, key: &str) -> Option<&mut Item> {
+        self.items.get_mut(key)
     }
 }
 
@@ -61,7 +66,7 @@ impl CustomData {
     pub fn set_internal_version(&mut self, version: &str) {
         self.items.insert(
             OKP_INTERNAL_VERSION.to_string(),
-            Item::from_kv(OKP_INTERNAL_VERSION, version),
+            Item::from_kv_with_modification_time(OKP_INTERNAL_VERSION, version,util::now_utc()),
         );
     }
 
@@ -129,7 +134,7 @@ impl CustomData {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize,PartialEq)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Item {
     pub(crate) key: String,
     pub(crate) value: String,
@@ -142,6 +147,18 @@ impl Item {
             key: key.to_string(),
             value: value.to_string(),
             last_modification_time: None,
+        }
+    }
+
+    pub fn from_kv_with_modification_time(
+        key: &str,
+        value: &str,
+        modification_time: NaiveDateTime,
+    ) -> Self {
+        Self {
+            key: key.to_string(),
+            value: value.to_string(),
+            last_modification_time: Some(modification_time),
         }
     }
 }

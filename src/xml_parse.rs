@@ -318,6 +318,12 @@ impl<'a> XmlReader<'a> {
                 RECYCLE_BIN_UUID => (
                     |content:String, _,  _| meta.recycle_bin_uuid = content_to_uuid(&content)
                 ),
+                ENTRY_TEMPLATE_GROUP => (
+                    |content:String, _,  _| meta.entry_template_group = content_to_uuid(&content)
+                ),
+                ENTRY_TEMPLATE_GROUP_CHANGED => (
+                    |content:String, _,  _| meta.entry_template_group_changed = content_to_dt(content)
+                ),
                 DEFAULT_USER_NAME => (
                     |content:String, _,  _| meta.default_user_name = content
                 ),
@@ -332,6 +338,9 @@ impl<'a> XmlReader<'a> {
                 ),
                 SETTINGS_CHANGED => (
                     |content:String, _,  _| meta.settings_changed = content_to_dt(content)
+                ),
+                MASTER_KEY_CHANGED => (
+                    |content:String, _,  _| meta.master_key_changed = content_to_dt(content)
                 )
 
             },
@@ -1019,11 +1028,14 @@ impl<W: Write> XmlWriter<W> {
             MAINTENANCE_HISTORY_DAYS, keepass_file.meta.maintenance_history_days.to_string(),
             RECYCLE_BIN_ENABLED, if keepass_file.meta.recycle_bin_enabled {"True"} else {"False"},
             RECYCLE_BIN_UUID, util::encode_uuid(&keepass_file.meta.recycle_bin_uuid),
+            ENTRY_TEMPLATE_GROUP, util::encode_uuid(&keepass_file.meta.entry_template_group),
+            ENTRY_TEMPLATE_GROUP_CHANGED,util::encode_datetime(&keepass_file.meta.entry_template_group_changed),
             DEFAULT_USER_NAME, keepass_file.meta.default_user_name,
             DATABASE_NAME_CHANGED,util::encode_datetime(&keepass_file.meta.database_name_changed),
             DATABASE_DESCRIPTION_CHANGED,util::encode_datetime(&keepass_file.meta.database_description_changed),
             DEFAULT_USER_NAME_CHANGED,util::encode_datetime(&keepass_file.meta.default_user_name_changed),
-            SETTINGS_CHANGED, util::encode_datetime(&keepass_file.meta.settings_changed)
+            SETTINGS_CHANGED, util::encode_datetime(&keepass_file.meta.settings_changed),
+            MASTER_KEY_CHANGED, util::encode_datetime(&keepass_file.meta.master_key_changed)
         };
 
         self.write_custom_data(&keepass_file.meta.custom_data)?;

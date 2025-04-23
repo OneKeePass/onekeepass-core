@@ -59,12 +59,12 @@ pub struct MemoryProtection {
     pub(crate) protect_password: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize,PartialEq)]
 pub struct CustomIcons {
     pub(crate) icons: Vec<Icon>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize,PartialEq)]
 pub struct Icon {
     pub(crate) uuid: Uuid,
     pub(crate) data: Vec<u8>,

@@ -2,7 +2,7 @@ mod common;
 
 use crate::{
     constants::{self, entry_keyvalue_key::TITLE, entry_type_name},
-    db::NewDatabase,
+    db::{KdbxFile, NewDatabase},
     db_content::{standard_type_uuid_by_name, Entry, Group, KeepassFile},
     util,
 };
@@ -29,6 +29,41 @@ impl TestContext for MergeTestContext {
 #[test_context(MergeTestContext)]
 #[test]
 fn verify_new_group(_ctx: &mut MergeTestContext) {
+    let (mut source, mut target) = create_test_dbs_4();
+
+    let source_db = source.keepass_main_content.as_mut().unwrap();
+    let target_db = target.keepass_main_content.as_mut().unwrap();
+
+    let mut group1 = Group::with_parent(&source_db.root.root_uuid());
+    group1.set_name("S_G1_db1");
+    source_db.root.insert_group(group1).unwrap();
+
+    let mut group1 = Group::with_parent(&target_db.root.root_uuid());
+    group1.set_name("T_G1_db2");
+    target_db.root.insert_group(group1).unwrap();
+
+    Merger::from_kdbx_file(&source, &mut target)
+        .merge()
+        .unwrap();
+
+    let groups = target
+        .keepass_main_content
+        .as_ref()
+        .unwrap()
+        .root
+        .get_all_groups(false)
+        .iter()
+        .map(|g| g.name.clone())
+        .collect::<Vec<String>>();
+
+    // println!("groups in final target db are {:?}", &groups);
+
+    assert_eq!(groups.contains(&"S_G1_db1".to_string()), true);
+}
+
+#[test_context(MergeTestContext)]
+#[test]
+fn verify_new_group_1(_ctx: &mut MergeTestContext) {
     // let d1 = now_utc();
     // println!("d1 is {}", d1);
     // util::test_clock::init_datetime(2020, 1, 1, 12, 10, 20);
@@ -228,7 +263,7 @@ fn verify_entry_simple_update(_ctx: &mut MergeTestContext) {
 
     let before_histories = e1.histories().clone();
     // println!("before_histories {:?}", &before_histories.len());
-    assert_eq!(before_histories.len() == 0,true);
+    assert_eq!(before_histories.len() == 0, true);
 
     util::test_clock::advance_by(1);
 
@@ -238,12 +273,35 @@ fn verify_entry_simple_update(_ctx: &mut MergeTestContext) {
     let e1 = target_db.root.entry_by_id(&e1_uuid).unwrap().clone();
     let target_entry_before_histories = e1.histories().clone();
     // println!("target target_entry_before_histories {:?}", &target_entry_before_histories.len());
-    assert_eq!(target_entry_before_histories.len() == 0,true);
+    assert_eq!(target_entry_before_histories.len() == 0, true);
 
     Merger::from(&source_db, &mut target_db).merge().unwrap();
 
     let e1 = target_db.root.entry_by_id(&e1_uuid).unwrap().clone();
     let target_entry_after_histories = e1.histories().clone();
     // println!("target target_entry_after_histories {:?}", &target_entry_after_histories.len());
-    assert_eq!(target_entry_after_histories.len() == 1,true);
+    assert_eq!(target_entry_after_histories.len() == 1, true);
+}
+
+#[test_context(MergeTestContext)]
+#[test]
+fn verify_meta_add_custom_icon(_ctx: &mut MergeTestContext) {
+    let (mut source, mut target) = create_test_dbs_4();
+
+    let source_db = source.keepass_main_content.as_mut().unwrap();
+    let target_db = target.keepass_main_content.as_ref().unwrap();
+
+    let dummy_icon_data: Vec<u8> = vec![1, 2, 55, 67];
+    source_db.meta.add_custom_icon(&dummy_icon_data);
+
+    assert_eq!(target_db.meta.all_custom_icons().len() == 0, true);
+
+    Merger::from_kdbx_file(&source, &mut target)
+        .merge()
+        .unwrap();
+
+    assert_eq!(
+        target.keepass_main_content().meta.all_custom_icons().len() == 1,
+        true
+    );
 }

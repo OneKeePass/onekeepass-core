@@ -1,6 +1,6 @@
 use crate::{
     constants::{entry_keyvalue_key::TITLE, entry_type_name},
-    db::NewDatabase,
+    db::{KdbxFile, NewDatabase},
     db_content::{standard_type_uuid_by_name, Entry, Group, KeepassFile},util,
 };
 ////
@@ -80,6 +80,39 @@ pub(crate) fn create_test_dbs_3() -> (KeepassFile, KeepassFile) {
 
     (source_db, target_db)
 }
+
+pub(crate) fn create_test_dbs_4() -> (KdbxFile,KdbxFile) {
+    let ndb = NewDatabase::default();
+    let mut source = ndb.create().unwrap();
+    
+    let source_db = source.keepass_main_content.as_mut().unwrap();
+
+    let mut group1 = Group::with_parent(&source_db.root.root_uuid());
+    let group1_uuid = group1.get_uuid().clone();
+    group1.set_name("group1");
+    source_db.root.insert_group(group1).unwrap();
+
+    let mut group2 = Group::with_parent(&source_db.root.root_uuid());
+    let group2_uuid = group2.get_uuid().clone();
+    group2.set_name("group2");
+    source_db.root.insert_group(group2).unwrap();
+
+    let entry_type_uuid = standard_type_uuid_by_name(entry_type_name::LOGIN);
+    let mut entry1 = Entry::new_blank_entry_by_type_id(entry_type_uuid, None, Some(&group1_uuid));
+    entry1.entry_field.update_value(TITLE, "entry1");
+    source_db.root.insert_entry(entry1).unwrap();
+
+    let entry_type_uuid = standard_type_uuid_by_name(entry_type_name::LOGIN);
+    let mut entry2 = Entry::new_blank_entry_by_type_id(entry_type_uuid, None, Some(&group2_uuid));
+    entry2.entry_field.update_value(TITLE, "entry2");
+    source_db.root.insert_entry(entry2).unwrap();
+
+    let target = source.clone();
+
+    (source, target)
+
+}
+
 ////
 
 // Copied from /onekeepass-core/tests/common/mod.rs
