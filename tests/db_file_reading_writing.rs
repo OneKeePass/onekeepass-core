@@ -43,6 +43,38 @@ fn verify_read_db_and_export_xml() {
 }
 
 #[test]
+fn verify_db_merge() {
+    common::init_logging();
+    common::init_key_main_store();
+
+    let target_db_key = "/Users/jeyasankar/Documents/OneKeePass/TextXC1.kdbx";
+    // let db_key = "/Users/jeyasankar/Documents/OneKeePass/MyOTP1-kp2.kdbx";
+    let r = load_kdbx(target_db_key, Some("ss"), None);
+
+    if r.is_err() {
+        println!("load_kdbx is error is   {:?}", r);
+    }
+
+    assert!(r.is_ok());
+
+    let source_db_key = "/Users/jeyasankar/Documents/OneKeePass/TextXC1-1.kdbx";
+    // let db_key = "/Users/jeyasankar/Documents/OneKeePass/MyOTP1-kp2.kdbx";
+    let r = load_kdbx(source_db_key, Some("ss"), None);
+
+    if r.is_err() {
+        println!("load_kdbx is error is   {:?}", r);
+    }
+
+    assert!(r.is_ok());
+    
+    // let target_db_key = "not found";
+    
+    db_service::merge_databases(target_db_key, source_db_key, Some("ss"), None).unwrap();
+
+    assert!(true);
+}
+
+#[test]
 fn verify_read_save_as_db_file() {
     common::init_key_main_store();
     let db_key = "/Users/jeyasankar/Documents/OneKeePass/Test1-Auto.kdbx";

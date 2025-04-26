@@ -14,6 +14,7 @@ mod io;
 
 use crate::db::KdbxFile;
 use crate::db_content::{standard_types_ordered_by_id, Entry, KeepassFile, OtpData};
+use crate::db_merge;
 use crate::form_data;
 use crate::searcher;
 use crate::util;
@@ -1019,63 +1020,63 @@ pub fn new_blank_group_with_parent(
     Ok(group)
 }
 
-/*
+pub fn merge_databases(
+    target_db_key: &str,
+    source_db_key: &str,
+    password: Option<&str>,
+    key_file_name: Option<&str>,
+) -> Result<()> {
+    if target_db_key == source_db_key {
+        return Err(error::Error::UnexpectedError(format!("Both source and target are the same databses. Please select a different database to merge")));
+    }
 
-// Deprecated; Use entry_type_headers
-pub fn entry_type_names(db_key: &str) -> Result<EntryTypeNames> {
-    main_content_action!(db_key, |k: &KeepassFile| {
-        k.meta
-            .custom_entry_type_names_by_id()
-            .sort_by(|a, b| a.1.cmp(&b.1));
-        //let mut sn = standard_type_names();
-        let mut sn = standard_types_ordered_by_id()
-            .into_iter()
-            .map(|e| e.name.clone())
-            .collect::<Vec<String>>();
-        //let mut sn = standard_type_uuids_names_ordered_by_id();
-        sn.sort();
-        let type_names = EntryTypeNames {
-            custom: k
-                .meta
-                .custom_entry_type_names_by_id()
-                .into_iter()
-                .map(|(_, s)| s)
-                .collect(), //entries.sort_unstable_by(|a, b| a.title.cmp(&b.title));
-            //standard: sn.into_iter().map(|(_,s)| s).collect(),
-            standard: sn,
-        };
-        Ok(type_names)
-    })
-}
+    // IMPORTANT:
+    // We need to call all the calls 'main_store().lock()' to access the shared cache in a {} block
+    // so that the Mutex guard is unlocked while leaving the block and can then called again in another block or fn
+    // If not done this way, the deadlock will happen when we make calls to 'main_store().lock()' before unlocking the previous call
 
-
-
-// Deprecate - See below fn comment
-// A macro to query the db store for an entry or group by id
-macro_rules! query_main_content_by_id {
-    ($db_key:expr, $uuid:expr, $coll_name:tt) => {
-        main_content_action!(
-            $db_key,
-            (|k: &KeepassFile| match Uuid::parse_str($uuid) {
-                Ok(p_uuid) => {
-                    if let Some(g) = k.root.$coll_name(&p_uuid) {
-                        return Ok(g.clone());
-                    } else {
-                        return Err(Error::NotFound(
-                            "No entry Entry/Group found for the id".into(),
-                        ));
-                    }
-                }
-                Err(e) => Err(Error::UuidCoversionFailed(e)),
-            })
-        )
+    let source_already_opened = {
+        let store = main_store().lock().unwrap();
+        store.contains_key(source_db_key)
     };
+
+    log::debug!("source_already_openned is {}", source_already_opened);
+
+    let source_loaded = if !source_already_opened {
+        load_kdbx(source_db_key, password, key_file_name)?;
+        log::debug!("source is opened");
+        true
+    } else {
+        false
+    };
+
+    {
+        let mut store = main_store().lock().unwrap();
+        let [target, source] = store.get_disjoint_mut([target_db_key, source_db_key]);
+        log::debug!("Got refs for source and target");
+
+        let target_kdbx = &mut target
+            .ok_or_else(|| "Target database key is not found")?
+            .kdbx_file;
+        let source_kdbx = &source
+            .as_ref()
+            .ok_or_else(|| "Source database key is not found")?
+            .kdbx_file;
+        db_merge::Merger::from_kdbx_file(source_kdbx, target_kdbx).merge()?;
+        log::debug!("Dbs are merged");
+
+        // if target.is_some() && source.is_some() {
+        //     let target_kdbx = &mut target.unwrap().kdbx_file;
+        //     let source_kdbx = &source.unwrap().kdbx_file;
+        //     db_merge::Merger::from_kdbx_file(source_kdbx, target_kdbx).merge()?;
+        //     log::debug!("Dbs are merged");
+        // }
+    }
+
+    if source_loaded {
+        close_kdbx(source_db_key)?;
+        log::debug!("source_db_key closed as it was opened only for merging");
+    }
+
+    Ok(())
 }
-
-// Deprecate after using get_group_by_id in Mobile
-pub fn query_group_by_id(db_key: &str, group_uuid: &str) -> Result<Group> {
-    query_main_content_by_id!(db_key, group_uuid, group_by_id)
-}
-
-
-*/

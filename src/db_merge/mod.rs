@@ -8,7 +8,7 @@ use crate::error::{Error, Result};
 #[cfg(test)]
 mod merge_tests;
 
-struct Merger<'a> {
+pub(crate) struct Merger<'a> {
     source_db: &'a KeepassFile,
     target_db: &'a mut KeepassFile,
 }
@@ -21,14 +21,17 @@ impl<'a> Merger<'a> {
         }
     }
 
-    fn from_kdbx_file(source_kdbx: &'a KdbxFile, target_kdbx: &'a mut KdbxFile) -> Self {
+    pub(crate) fn from_kdbx_file(source_kdbx: &'a KdbxFile, target_kdbx: &'a mut KdbxFile) -> Self {
+
+        // TODO: Copy any attacments related hash and content details from source to target
+
         Self::from(
             &source_kdbx.keepass_main_content.as_ref().unwrap(),
             target_kdbx.keepass_main_content.as_mut().unwrap(),
         )
     }
 
-    fn merge(&mut self) -> Result<()> {
+    pub(crate) fn merge(&mut self) -> Result<()> {
         let source_root_group = self
             .source_db
             .root
@@ -49,15 +52,27 @@ impl<'a> Merger<'a> {
                 // Target root group's content is changed with source db's root group's content
                 // This 'update_group' call updates the target group's modification time
                 self.target_db.root.update_group(source_root_group.clone());
-            } else {
-                // Here we need to add the source root group to the target. Then the subsequent calls
-                // will add all subgroups and entries to the target
             }
-        }
+            self.merge_meta()?;
+            self.merge_groups(source_root_group)?;
+            self.merge_deleted_objects()?;
+        } else {
+            // Source and target dbs are different 
+            // Here we need to add the source root group to the target. Then the subsequent calls
+            // will add all subgroups and entries to the target
 
-        self.merge_meta()?; 
-        self.merge_groups(source_root_group)?;
-        self.merge_deleted_objects()?;
+            let mut group_from_source_root = source_root_group.clone();
+            group_from_source_root.set_parent_group_uuid(target_root_group.get_uuid());
+            self.target_db.root.insert_group(group_from_source_root)?;
+
+            self.merge_groups(source_root_group)?;
+
+            // TODO:
+            // Need to move all groups and entries found in source's recycle bin group to target's recycle bin group
+            // Copy any custom entry type definitions stored in custom data of source meta to meta's custom data of target
+
+            // Copy all deleted objects from sourc db  to target 
+        }
 
         Ok(())
     }

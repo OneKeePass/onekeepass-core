@@ -305,3 +305,26 @@ fn verify_meta_add_custom_icon(_ctx: &mut MergeTestContext) {
         true
     );
 }
+
+#[test_context(MergeTestContext)]
+#[test]
+fn verify_merge_different_databases(_ctx: &mut MergeTestContext) {
+
+    let (mut source, mut target) = create_test_dbs_5();
+
+    let source_db = source.keepass_main_content.as_mut().unwrap();
+    let target_db = target.keepass_main_content.as_mut().unwrap();
+
+    println!("target_db groups {:?}" , target_db.root.get_all_groups(false).iter().map(|g| g.name.clone()).collect::<String>());
+
+    Merger::from_kdbx_file(&source, &mut target)
+        .merge()
+        .unwrap();
+
+    let target_db = target.keepass_main_content.as_mut().unwrap();
+
+    println!("target_db groups {:?}" , target_db.root.get_all_groups(false).iter().map(|g| g.name.clone()).collect::<String>());
+
+}
+
+

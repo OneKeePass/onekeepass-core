@@ -8,3 +8,5 @@ Cargo.lock
 .clj-kondo
 
 /test_data/
+
+Test1.xml

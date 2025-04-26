@@ -126,6 +126,11 @@ impl Group {
         &self.parent_group_uuid
     }
 
+    pub(crate) fn set_parent_group_uuid(&mut self,group_uuid: &Uuid) -> &mut Self{
+        self.parent_group_uuid = *group_uuid;
+        self
+    }
+
     pub fn sub_group_uuids(&self) -> &Vec<Uuid> {
         &self.group_uuids
     }
