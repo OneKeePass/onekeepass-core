@@ -9,8 +9,8 @@ use crate::constants::custom_data_key::{
     OKP_ENTRY_TYPE, OKP_ENTRY_TYPE_DATA, OKP_ENTRY_TYPE_DATA_INDEX, OKP_ENTRY_TYPE_LIST_DATA,
 };
 
-use crate::constants::entry_keyvalue_key::*;
 use crate::constants::OTP_URL_PREFIX;
+use crate::constants::{entry_keyvalue_key::*, EMPTY_STR};
 use crate::db_content::{entry_type::*, Item};
 use crate::db_content::{AttachmentHashValue, CustomData, Times};
 use crate::util;
@@ -228,23 +228,25 @@ impl Entry {
         &self.uuid
     }
 
-    #[allow(unused)]
     #[inline]
     pub(crate) fn parent_group_uuid(&self) -> &Uuid {
         &self.group_uuid
     }
 
-    #[allow(unused)]
     #[inline]
     pub(crate) fn last_modification_time(&self) -> NaiveDateTime {
         self.times.last_modification_time
     }
 
-    #[allow(unused)]
     #[inline]
     pub(crate) fn update_modification_time(&mut self) -> &mut Self {
         self.times.update_modification_time();
         self
+    }
+
+    #[inline]
+    pub(crate) fn location_changed(&self) -> NaiveDateTime {
+        self.times.location_changed
     }
 
     #[allow(unused)]
@@ -493,8 +495,12 @@ impl Entry {
         }
     }
 
-    pub(crate) fn title(&self) -> Option<String> {
+    // May return empty string if no title is present
+    pub(crate) fn title(&self) -> String {
         self.find_kv_field_value(TITLE)
+            .as_ref()
+            .map_or_else(|| EMPTY_STR, |s| s)
+            .to_string()
     }
 
     // Finds a field's value from KeyValue
@@ -616,7 +622,7 @@ impl Entry {
         histories.iter().fold(vec![], |mut acc, e| {
             if let Some(s) = e.custom_data.get_item_value(OKP_ENTRY_TYPE_DATA) {
                 let name = s.to_string();
-                // Collect the unique values 
+                // Collect the unique values
                 if !acc.contains(&name) {
                     acc.push(name);
                 }

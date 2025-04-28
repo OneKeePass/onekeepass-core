@@ -104,6 +104,7 @@ impl Root {
         }
     }
 
+    // Called during xml read time
     pub(crate) fn add_deleted_object(&mut self, deleted_object: DeletedObject) {
         self.deleted_objects.push(deleted_object);
     }
@@ -609,9 +610,13 @@ impl Root {
             self.remove_entry_permanently(eid)?;
         }
 
+        // Now all entries of this group and its subgroups are removed 
+
+        // Get all subgroups recursively 
         let sub_group_ids = self.children_groups_uuids(&group_uuid);
 
-        // Remove all sub groups
+        
+        // Remove all sub groups. Entries are already removed
         for gid in sub_group_ids {
             self.all_groups
                 .remove(&gid)
@@ -633,6 +638,8 @@ impl Root {
             old_parent.group_uuids.retain(|&id| id != group_uuid);
         }
 
+        // Add the uuid to the "DeletedObjects" to mark permanent removal of this group
+        // Useful during merging dbs
         self.add_deleted_object_by_id(group_uuid);
 
         Ok(())

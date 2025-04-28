@@ -40,7 +40,7 @@ pub struct Group {
     pub(crate) entry_uuids: Vec<Uuid>,
 }
 
-// Mainly used for testing at this time
+// Mainly used for testing or during the databse merging 
 impl Group {
     pub fn name(&self) -> &String {
         &self.name
@@ -55,11 +55,6 @@ impl Group {
         &self.notes
     }
 
-    #[inline]
-    pub(crate) fn last_modification_time(&self) -> NaiveDateTime {
-        self.times.last_modification_time
-    }
-
     pub(crate) fn set_notes(&mut self, notes: &str) -> &mut Self {
         self.notes = notes.to_string();
         self
@@ -70,9 +65,19 @@ impl Group {
         self
     }
 
+    #[inline]
+    pub(crate) fn last_modification_time(&self) -> NaiveDateTime {
+        self.times.last_modification_time
+    }
+
     pub(crate) fn update_modification_time(&mut self) -> &mut Self {
         self.times.update_modification_time();
         self
+    }
+
+    #[inline]
+    pub(crate) fn location_changed(&self) -> NaiveDateTime {
+        self.times.location_changed
     }
 }
 

@@ -25,8 +25,9 @@ fn verify_read_db_and_export_xml() {
     common::init_logging();
     common::init_key_main_store();
 
-    let db_key = "/Users/jeyasankar/Documents/OneKeePass/TextXC1-1.kdbx";
+    // let db_key = "/Users/jeyasankar/Documents/OneKeePass/Test-Obj-del-OKP1.kdbx";
     // let db_key = "/Users/jeyasankar/Documents/OneKeePass/MyOTP1-kp2.kdbx";
+    let db_key = "/Users/jeyasankar/Documents/OneKeePass/KP/KP-Database1.kdbx";
     let r = load_kdbx(db_key, Some("ss"), None);
 
     if r.is_err() {

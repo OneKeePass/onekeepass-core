@@ -11,7 +11,7 @@ use common::*;
 
 use test_context::{test_context, TestContext};
 
-use super::Merger;
+use crate::db_merge::merger::Merger;
 
 struct MergeTestContext {}
 
@@ -157,7 +157,10 @@ fn verify_group_location_changed(_ctx: &mut MergeTestContext) {
     let g3_uuid = group3.get_uuid().clone();
     source_db.root.insert_group(group3).unwrap();
 
-    // Move the group1 as child of group3
+    // Need to enusre that the following group move is happens in some later time
+    util::test_clock::advance_by(1);
+
+    // Move the group1 as child of group3 in the source
     let g1_uuid = source_db
         .root
         .group_by_name("group1")
@@ -211,6 +214,9 @@ fn verify_root_group_updated(_ctx: &mut MergeTestContext) {
 #[test]
 fn verify_entry_location_changed(_ctx: &mut MergeTestContext) {
     let (mut source_db, mut target_db) = create_test_dbs_2();
+
+    // Need to enusre that the following entry move is happens in some later time
+    util::test_clock::advance_by(1);
 
     // Move the entry to group2 as child in source db
     let g2 = source_db.root.group_by_name("group2").unwrap().clone();

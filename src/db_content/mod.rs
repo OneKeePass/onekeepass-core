@@ -119,8 +119,13 @@ pub(crate) struct Times {
     pub(crate) last_access_time: NaiveDateTime,
     pub(crate) expires: bool,
     pub(crate) expiry_time: NaiveDateTime,
-    // This is not written back to xml. Not sure at this time how this is used
+    
+    // location_changed was not used in earlier versions.
+    // Only in v0.18.0 both reading and writing added. This datetime is updated 
+    // whenever an entry or a group is moved one parent group to another parent group
+    // This helps while merging two databases
     pub(crate) location_changed: NaiveDateTime,
+    
     pub(crate) usage_count: i32,
 }
 
