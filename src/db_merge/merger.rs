@@ -1,8 +1,11 @@
+use std::collections::HashMap;
+
+use chrono::NaiveDateTime;
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::db::KdbxFile;
-use crate::db_content::{Entry, Group, KeepassFile};
+use crate::db_content::{DeletedObject, Entry, Group, KeepassFile};
 
 use crate::error::Result;
 
@@ -10,8 +13,8 @@ use crate::error::Result;
 struct GroupInfo {
     name: String,
     uuid: Uuid,
-    // parent_uuid:Option<Uuid>,
-    // previous_parent_uuid:Option<Uuid>,
+    parent_group_uuid: Option<Uuid>,
+    previous_parent_group_uuid: Option<Uuid>,
 }
 
 impl GroupInfo {
@@ -19,6 +22,8 @@ impl GroupInfo {
         Self {
             name: name.to_string(),
             uuid,
+            parent_group_uuid: None,
+            previous_parent_group_uuid: None,
         }
     }
 }
@@ -27,7 +32,8 @@ impl GroupInfo {
 struct EntryInfo {
     name: String,
     uuid: Uuid,
-    parent_uuid: Option<Uuid>,
+    parent_group_uuid: Option<Uuid>,
+    previous_parent_group_uuid: Option<Uuid>,
 }
 
 impl EntryInfo {
@@ -35,7 +41,8 @@ impl EntryInfo {
         Self {
             name: name.to_string(),
             uuid,
-            parent_uuid: None,
+            parent_group_uuid: None,
+            previous_parent_group_uuid: None,
         }
     }
 }
@@ -62,7 +69,7 @@ pub struct Merger<'a> {
 }
 
 impl<'a> Merger<'a> {
-    pub(crate) fn from(source_db: &'a KeepassFile, target_db: &'a mut KeepassFile) -> Self {
+    fn from(source_db: &'a KeepassFile, target_db: &'a mut KeepassFile) -> Self {
         Self {
             source_db,
             target_db,
@@ -97,6 +104,12 @@ impl<'a> Merger<'a> {
             .push(GroupInfo::from(name, uuid));
     }
 
+    fn record_group_deleted(&mut self, name: &str, uuid: Uuid) {
+        self.merge_result
+            .permanently_deleted_groups
+            .push(GroupInfo::from(name, uuid));
+    }
+
     fn record_entry_updated(&mut self, name: &str, uuid: Uuid) {
         self.merge_result
             .updated_entries
@@ -112,6 +125,12 @@ impl<'a> Merger<'a> {
     fn record_entry_moved(&mut self, name: &str, uuid: Uuid) {
         self.merge_result
             .parent_changed_entries
+            .push(EntryInfo::from(name, uuid));
+    }
+
+    fn record_entry_deleted(&mut self, name: &str, uuid: Uuid) {
+        self.merge_result
+            .permanently_deleted_entries
             .push(EntryInfo::from(name, uuid));
     }
 
@@ -367,6 +386,127 @@ impl<'a> Merger<'a> {
     }
 
     fn merge_deleted_objects(&mut self) -> Result<()> {
+        // We collect all deleted objects found in the target and source dbs into a Hashmap for easy lookup
+        let mut merged_deleted_objects_m = self
+            .target_db
+            .root
+            .deleted_objects()
+            .iter()
+            .map(|d| (d.uuid, d.clone()))
+            .collect::<HashMap<_, _>>();
+
+        self.source_db
+            .root
+            .deleted_objects()
+            .iter()
+            .for_each(|source_do| {
+                if let Some(td) = merged_deleted_objects_m.get_mut(&source_do.uuid) {
+                    // Source deletion time is the latest and update the deletion time
+                    if td.deletion_time < source_do.deletion_time {
+                        td.deletion_time = source_do.deletion_time;
+                    }
+                } else {
+                    // This deletion object is found only in source db's deleted objects and added to the merged_deleted_objects
+                    merged_deleted_objects_m.insert(source_do.uuid, source_do.clone());
+                }
+            });
+
+        // These are groups that exist in merged target db, but also found in merged_deleted_objects_m
+        let mut deleted_object_groups: Vec<(Uuid, NaiveDateTime)> = vec![];
+
+        // These are entries that exist in merged target db, but also found in merged_deleted_objects_m
+        let mut deleted_object_entries: Vec<(Uuid, NaiveDateTime)> = vec![];
+
+        // These are uuids from deleted objects that are not found in the merged target db
+        let mut deleted_objects: Vec<DeletedObject> = vec![];
+
+        for deleted @ DeletedObject { uuid, .. } in merged_deleted_objects_m.values() {
+            // Collect all groups in DeletedObject that are also found in the merged target db
+            if let Some(group) = self.target_db.root.group_by_id(&uuid) {
+                deleted_object_groups.push((*group.get_uuid(), group.last_modification_time()));
+                continue;
+            }
+            // Collect all entries in DeletedObject that are also found in the merged target db
+            if let Some(entry) = self.target_db.root.entry_by_id(&uuid) {
+                deleted_object_entries.push((*entry.get_uuid(), entry.last_modification_time()));
+                continue;
+            }
+
+            // These are deleted objects for which we do not find a group or an entry in the merged target db
+            // That means they are deleted objects both in source and in the target db
+            deleted_objects.push(deleted.clone());
+        }
+
+        for (uuid, last_modification_time) in deleted_object_entries {
+            if let Some(d) = merged_deleted_objects_m.get(&uuid) {
+                if last_modification_time < d.deletion_time {
+                    let name = self
+                        .target_db
+                        .root
+                        .entry_by_id(&uuid)
+                        .map_or_else(|| "".to_string(), |e| e.title());
+
+                    self.target_db
+                        .root
+                        .remove_entry_on_merge_deleted_objects(uuid)?;
+                    // Add to the deleted objects
+                    deleted_objects.push(DeletedObject::with_uuid(uuid, None));
+
+                    self.record_entry_deleted(&name, uuid);
+                }
+            }
+        }
+
+        while !deleted_object_groups.is_empty() {
+            let data = deleted_object_groups.remove(0);
+            let (uuid, last_modification_time) = data;
+
+            if let Some(group) = self.target_db.root.group_by_id(&uuid) {
+                if !group.sub_group_uuids().is_empty() {
+                    let uuids: Vec<&Uuid> =
+                        deleted_object_groups.iter().map(|(uuid, _)| uuid).collect();
+
+                    // This group's sub group is in deleted_object_groups
+                    if group
+                        .sub_group_uuids()
+                        .iter()
+                        .find(|g| uuids.contains(g))
+                        .is_some()
+                    {
+                        // Keep this deleted data till its subgroups are deleted
+                        deleted_object_groups.push(data);
+                        continue;
+                    }
+                }
+            }
+
+            if let Some(d) = merged_deleted_objects_m.get(&uuid) {
+                // This group is modified later in one db after deletion in another db
+                // Skip this group from deletion
+                if last_modification_time > d.deletion_time {
+                    continue;
+                }
+
+                if let Some(g) = self.target_db.root.group_by_id(&uuid) {
+                    // This group has some entries or some subgroups
+                    if !g.entry_uuids().is_empty() || !g.sub_group_uuids().is_empty() {
+                        continue;
+                    }
+
+                    // Delete permanently this group
+                    self.target_db
+                        .root
+                        .remove_group_on_merge_deleted_objects(uuid)?;
+                    // Add to the deleted objects
+                    deleted_objects.push(DeletedObject::with_uuid(uuid, None));
+
+                    //self.record_group_deleted(name, uuid);
+                }
+            }
+        }
+
+        self.target_db.root.set_deleted_objects(deleted_objects);
+
         Ok(())
     }
 }

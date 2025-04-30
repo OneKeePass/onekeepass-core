@@ -1,7 +1,10 @@
+use uuid::Uuid;
+
 use crate::{
     constants::{entry_keyvalue_key::TITLE, entry_type_name},
     db::{KdbxFile, NewDatabase},
-    db_content::{standard_type_uuid_by_name, Entry, Group, KeepassFile},util,
+    db_content::{standard_type_uuid_by_name, Entry, Group, KeepassFile},
+    util,
 };
 ////
 
@@ -70,9 +73,9 @@ pub(crate) fn create_test_dbs_3() -> (KeepassFile, KeepassFile) {
     let (mut source_db, mut target_db) = create_test_dbs_2();
 
     let e1 = source_db
-    .root
-    .entry_by_matching_kv_mut(TITLE, "entry1")
-    .unwrap();
+        .root
+        .entry_by_matching_kv_mut(TITLE, "entry1")
+        .unwrap();
 
     util::test_clock::advance_by(1);
 
@@ -81,10 +84,10 @@ pub(crate) fn create_test_dbs_3() -> (KeepassFile, KeepassFile) {
     (source_db, target_db)
 }
 
-pub(crate) fn create_test_dbs_4() -> (KdbxFile,KdbxFile) {
+pub(crate) fn create_test_dbs_4() -> (KdbxFile, KdbxFile) {
     let ndb = NewDatabase::default();
     let mut source = ndb.create().unwrap();
-    
+
     let source_db = source.keepass_main_content.as_mut().unwrap();
 
     let mut group1 = Group::with_parent(&source_db.root.root_uuid());
@@ -110,13 +113,12 @@ pub(crate) fn create_test_dbs_4() -> (KdbxFile,KdbxFile) {
     let target = source.clone();
 
     (source, target)
-
 }
 
-pub(crate) fn create_test_dbs_5() -> (KdbxFile,KdbxFile) {
+pub(crate) fn create_test_dbs_5() -> (KdbxFile, KdbxFile) {
     let ndb = NewDatabase::default();
     let mut source = ndb.create().unwrap();
-    
+
     let source_db = source.keepass_main_content.as_mut().unwrap();
 
     let mut group1 = Group::with_parent(&source_db.root.root_uuid());
@@ -139,11 +141,9 @@ pub(crate) fn create_test_dbs_5() -> (KdbxFile,KdbxFile) {
     entry2.entry_field.update_value(TITLE, "entry2");
     source_db.root.insert_entry(entry2).unwrap();
 
-   
-
     let ndb = NewDatabase::default();
     let mut target = ndb.create().unwrap();
-    
+
     let target_db = target.keepass_main_content.as_mut().unwrap();
 
     let mut group1 = Group::with_parent(&target_db.root.root_uuid());
@@ -152,10 +152,68 @@ pub(crate) fn create_test_dbs_5() -> (KdbxFile,KdbxFile) {
     target_db.root.insert_group(group1).unwrap();
 
     (source, target)
-
 }
 
+pub(crate) fn create_group(
+    keepassfile: &mut KeepassFile,
+    name: &str,
+    parent_group_uuid: &Uuid,
+) -> Group {
+    let mut group = Group::with_parent(parent_group_uuid);
+    group.set_name(name);
+    keepassfile.root.insert_group(group.clone()).unwrap();
+    group
+}
 
+pub(crate) fn create_entry(keepassfile: &mut KeepassFile, title: &str, group_uuid: &Uuid) -> Entry {
+    let entry_type_uuid = standard_type_uuid_by_name(entry_type_name::LOGIN);
+    let mut entry = Entry::new_blank_entry_by_type_id(entry_type_uuid, None, Some(&group_uuid));
+    entry.entry_field.update_value(TITLE, title);
+    keepassfile.root.insert_entry(entry.clone()).unwrap();
+    entry
+}
+
+pub(crate) fn delete_entry_permanently(keepassfile: &mut KeepassFile, entry_uuid: &Uuid) {
+    // First move to recycle bin
+    keepassfile
+        .root
+        .move_entry_to_recycle_bin(*entry_uuid)
+        .unwrap();
+    // Delete the entry that is moved to recycle bin
+    keepassfile
+        .root
+        .remove_entry_permanently(*entry_uuid)
+        .unwrap();
+}
+
+pub(crate) fn delete_group_permanently(keepassfile: &mut KeepassFile, group_uuid: &Uuid) {
+    // First move to recycle bin
+    keepassfile
+        .root
+        .move_group_to_recycle_bin(*group_uuid)
+        .unwrap();
+    // Delete the group that is moved to recycle bin
+    keepassfile
+        .root
+        .remove_group_permanently(*group_uuid)
+        .unwrap();
+}
+
+pub(crate) fn update_entry(keepassfile: &mut KeepassFile, entry:&mut Entry,key:&str, value:&str) {
+    entry.entry_field.update_value(key, value);
+    keepassfile.root.update_entry(entry.clone()).unwrap();
+}
+
+pub(crate) fn find_update_entry(keepassfile: &mut KeepassFile, title:&str,key:&str, value:&str) -> Entry {
+    let mut entry = keepassfile
+        .root
+        .entry_by_matching_kv(TITLE, title)
+        .unwrap()
+        .clone();
+    entry.entry_field.update_value(key, value);
+    keepassfile.root.update_entry(entry.clone()).unwrap();
+    entry
+}
 
 ////
 

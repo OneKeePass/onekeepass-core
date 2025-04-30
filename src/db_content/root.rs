@@ -71,10 +71,19 @@ impl GroupVisitor for InOrderIds {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub(crate) struct DeletedObject {
     pub(crate) uuid: Uuid,
     pub(crate) deletion_time: NaiveDateTime,
+}
+
+impl DeletedObject {
+    pub(crate) fn with_uuid(uuid: Uuid, deletion_time: Option<NaiveDateTime>) -> Self {
+        Self {
+            uuid,
+            deletion_time: deletion_time.map_or_else(|| util::now_utc(), |d| d),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -118,6 +127,10 @@ impl Root {
 
     pub(crate) fn deleted_objects(&self) -> &Vec<DeletedObject> {
         self.deleted_objects.as_ref()
+    }
+
+    pub(crate) fn set_deleted_objects(&mut self, deleted_objects: Vec<DeletedObject>) {
+        self.deleted_objects = deleted_objects;
     }
 
     pub(crate) fn auto_open_group_uuid(&self) -> Option<Uuid> {
@@ -201,7 +214,7 @@ impl Root {
         self.all_entries.get_mut(entry_uuid)
     }
 
-    // Finds an entry that has a matching value in a given key field
+    // Finds the first entry that has a matching value in a given key field
     pub fn entry_by_matching_kv(&self, key: &str, value: &str) -> Option<&Entry> {
         // First match is returned
         self.all_entries.values().find(|e| {
@@ -246,6 +259,15 @@ impl Root {
             .map(|g| g.uuid);
 
         g_opt.map(|id| self.all_groups.get_mut(&id)).flatten()
+    }
+
+    pub(crate) fn is_group_empty(&self, group_uuid: &Uuid) -> Result<bool> {
+        let group = self
+            .all_groups
+            .get(&group_uuid)
+            .ok_or_else(|| "The group is not found in All groups")?;
+
+        Ok(group.entry_uuids().is_empty() && group.sub_group_uuids().is_empty())
     }
 
     // Gets all entries. The flag exclude determines whether to include or exclude entries from the special groups in the list
@@ -610,12 +632,11 @@ impl Root {
             self.remove_entry_permanently(eid)?;
         }
 
-        // Now all entries of this group and its subgroups are removed 
+        // Now all entries of this group and its subgroups are removed
 
-        // Get all subgroups recursively 
+        // Get all subgroups recursively
         let sub_group_ids = self.children_groups_uuids(&group_uuid);
 
-        
         // Remove all sub groups. Entries are already removed
         for gid in sub_group_ids {
             self.all_groups
@@ -645,6 +666,35 @@ impl Root {
         Ok(())
     }
 
+    pub fn remove_group_on_merge_deleted_objects(&mut self, group_uuid: Uuid) -> Result<()> {
+        verify_uuid!(self, group_uuid, all_groups);
+
+        // As we have already verified group_uuid above, we can use unwrap also
+        let group = self
+            .all_groups
+            .get(&group_uuid)
+            .ok_or_else(|| "The group is not found in All groups")?;
+
+        if !group.entry_uuids.is_empty() || !group.group_uuids.is_empty() {
+            return Err(Error::DataError(
+                "Group is not empty. The group should not have any entry or subgroup",
+            ));
+        }
+
+        // Remove the group from all_groups map
+        let group = self
+            .all_groups
+            .remove(&group_uuid)
+            .ok_or_else(|| "The group is not found in All groups")?;
+
+        // Remove this group id from group_uuids of its parent group.
+        if let Some(old_parent) = self.all_groups.get_mut(&group.parent_group_uuid) {
+            old_parent.group_uuids.retain(|&id| id != group_uuid);
+        }
+
+        Ok(())
+    }
+
     pub fn remove_entry_permanently(&mut self, entry_uuid: Uuid) -> Result<()> {
         verify_uuid!(self, entry_uuid, all_entries);
 
@@ -667,6 +717,23 @@ impl Root {
         }
 
         self.add_deleted_object_by_id(entry_uuid);
+
+        Ok(())
+    }
+
+    pub fn remove_entry_on_merge_deleted_objects(&mut self, entry_uuid: Uuid) -> Result<()> {
+        verify_uuid!(self, entry_uuid, all_entries);
+
+        // Remove the entry from all_groups map
+        let entry = self
+            .all_entries
+            .remove(&entry_uuid)
+            .ok_or_else(|| "The entry is not found in All entries")?;
+
+        // Remove this entry id from entry_uuids of its parent group.
+        if let Some(old_parent) = self.all_groups.get_mut(&entry.group_uuid) {
+            old_parent.entry_uuids.retain(|&id| id != entry.uuid);
+        }
 
         Ok(())
     }
@@ -753,7 +820,7 @@ impl Root {
         self.all_groups
             .entry(new_parent_id.clone())
             .and_modify(|g| g.entry_uuids.push(entry_uuid));
-        
+
         // Remove this entry id from entry_uuids of previous parent group
         if let Some(old_parent) = self.all_groups.get_mut(&old_parent_id) {
             old_parent.entry_uuids.retain(|&id| id != entry_uuid);

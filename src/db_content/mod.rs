@@ -21,9 +21,10 @@ pub use self::meta::Meta;
 pub use self::otp::{CurrentOtpTokenData, OtpAlgorithm, OtpSettings};
 
 pub(crate) use self::root::DeletedObject;
-pub use self::root::{AllTags, EntryCloneOption, GroupSortCriteria, Root,};
+pub use self::root::{AllTags, EntryCloneOption, GroupSortCriteria, Root};
 pub use self::standard_entry_types::{
-    standard_type_uuids_names_ordered_by_id, standard_types_ordered_by_id,standard_type_uuid_by_name,
+    standard_type_uuid_by_name, standard_type_uuids_names_ordered_by_id,
+    standard_types_ordered_by_id,
 };
 
 use chrono::NaiveDateTime;
@@ -59,17 +60,17 @@ pub struct MemoryProtection {
     pub(crate) protect_password: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize,PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct CustomIcons {
     pub(crate) icons: Vec<Icon>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize,PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Icon {
     pub(crate) uuid: Uuid,
     pub(crate) data: Vec<u8>,
     pub(crate) name: Option<String>, //KDBX 4.1
-    pub(crate) last_modification_time:NaiveDateTime,
+    pub(crate) last_modification_time: NaiveDateTime,
 }
 
 // Called to verify a given entry's or group's uuid is a valid value (i.e not default one) and this
@@ -112,20 +113,30 @@ pub(crate) use move_to_recycle_bin;
 // and thus in UTC timezone and represented as NaiveDateTime.
 // NaiveDateTime just has year,month,day,hour,minute,second and milliseconds
 // The UI side is responbile to know the timezone and convert the NaiveDateTime accordingly to display
-#[derive(Debug, Clone, Serialize, Deserialize,PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Times {
+    // The modification time is changed whenever an entry or a group fileds are changed
+    // KeepassXC changes modification time of group/entry and its parent group when an entry or group is moved in addition to 
+    // location_changed
     pub(crate) last_modification_time: NaiveDateTime,
+
+    // Only when an entry or group is first time created
     pub(crate) creation_time: NaiveDateTime,
+
+    // KeePass changes access time when an entry or group is moved 
+    // in addition to location_changed 
+    // KeePass may also change access time when an entry or group is accessed (check this?)
     pub(crate) last_access_time: NaiveDateTime,
+
     pub(crate) expires: bool,
     pub(crate) expiry_time: NaiveDateTime,
-    
+
     // location_changed was not used in earlier versions.
-    // Only in v0.18.0 both reading and writing added. This datetime is updated 
+    // Only in v0.18.0 both reading and writing added. This datetime is updated
     // whenever an entry or a group is moved one parent group to another parent group
     // This helps while merging two databases
     pub(crate) location_changed: NaiveDateTime,
-    
+
     pub(crate) usage_count: i32,
 }
 
@@ -143,10 +154,9 @@ impl Times {
         }
     }
 
-    pub(crate) fn update_modification_time(&mut self,) {
+    pub(crate) fn update_modification_time(&mut self) {
         let n = util::now_utc();
         self.last_modification_time = n;
         self.last_access_time = n;
     }
-
 }
