@@ -144,6 +144,12 @@ impl AttachmentSet {
         key
     }
 
+    fn insert_or_update_with_attachmentset(&mut self, other: &AttachmentSet) {
+        other.attachments.iter().for_each(|(k, v)| {
+            self.attachments.insert(k.clone(), v.clone());
+        });
+    }
+
     // Generates a hash key based on the attachment bytes data
     fn to_hash(data: &[u8]) -> AttachmentHashValue {
         let mut hasher = DefaultHasher::new();

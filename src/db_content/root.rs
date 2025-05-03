@@ -241,6 +241,13 @@ impl Root {
         self.all_groups.get(group_uuid)
     }
 
+    pub fn group_by_id_ok(&self, group_uuid: &Uuid) -> Result<&Group> {
+        Ok(self
+            .all_groups
+            .get(group_uuid)
+            .ok_or_else(|| "The group is not found in All groups")?)
+    }
+
     pub fn group_by_id_mut(&mut self, group_uuid: &Uuid) -> Option<&mut Group> {
         self.all_groups.get_mut(group_uuid)
     }
@@ -349,8 +356,27 @@ impl Root {
         entries
     }
 
-    /// Gets an existing recycle bin group referece. If there is no recycle bin group, a new one
-    /// is created and a ref that group is returned
+    // TODO: Combine set_recycle_bin_group_on_merge and recycle_bin_group
+
+    pub(crate) fn set_recycle_bin_group_on_merge(&mut self, source_recycle_bin_uuid: Uuid) {
+        if source_recycle_bin_uuid != Uuid::default() && self.recycle_bin_uuid == Uuid::default() {
+            debug!("Recycle bin is set from source db ");
+
+            let mut g = Group::new();
+            g.uuid = source_recycle_bin_uuid;
+            g.parent_group_uuid = self.root_uuid; // Recycle parent is root group
+            g.name = "Recycle Bin".into();
+            g.icon_id = 43;
+            // This recycle_bin_uuid is copied to Meta while writing the db. See share_root_to_meta method of KeepassFile struct
+            self.recycle_bin_uuid = g.uuid;
+            // This adds the recycle group to the 'root' group's group_uuids and also inserts to 'all_groups' map
+            let _r = self.insert_group(g);
+        }
+    }
+
+    // Gets an existing recycle bin group referece. 
+    // If there is no recycle bin group, a new one is created and a ref that group is returned
+    // This fn is used in the macro 'move_to_recycle_bin!' while calling move_group or with move_entry
     pub fn recycle_bin_group(&mut self) -> Option<&Group> {
         if self.recycle_bin_uuid == Uuid::default() {
             let mut g = Group::new_with_id();
@@ -437,7 +463,7 @@ impl Root {
     }
 
     #[inline]
-    fn root_group_as_mut(&mut self) -> Option<&mut Group> {
+    pub(crate) fn root_group_as_mut(&mut self) -> Option<&mut Group> {
         self.all_groups.get_mut(&self.root_uuid)
     }
 
@@ -475,14 +501,16 @@ impl Root {
         Ok(())
     }
 
-    pub fn update_group(&mut self, group: Group) {
-        //TODO: Need return error if this group is not present
+    pub fn update_group(&mut self, group: Group,group_modification_time_used:bool) {
+        //TODO: Need return error if this group is not present in all_groups map
 
         if let Some(g) = self.all_groups.get_mut(&group.uuid) {
-            let mut times = g.times.clone();
-            times.last_access_time = util::now_utc();
-            times.last_modification_time = times.last_access_time.clone();
-
+            if group_modification_time_used {
+                g.times = group.times.clone();
+            } else {
+                g.times.update_modification_time_now();
+            }
+            
             g.name = group.name;
             g.notes = group.notes;
             g.tags = group.tags;

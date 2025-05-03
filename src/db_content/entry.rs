@@ -224,13 +224,19 @@ impl Entry {
     }
 
     #[inline]
-    pub(crate) fn get_uuid(&self) -> &Uuid {
-        &self.uuid
+    pub(crate) fn get_uuid(&self) -> Uuid {
+        self.uuid
     }
 
     #[inline]
-    pub(crate) fn parent_group_uuid(&self) -> &Uuid {
-        &self.group_uuid
+    pub(crate) fn parent_group_uuid(&self) -> Uuid {
+        self.group_uuid
+    }
+
+    #[inline]
+    pub(crate) fn set_parent_group_uuid(&mut self,parent_group_uuid:&Uuid) -> &mut Self {
+        self.group_uuid = *parent_group_uuid;
+        self 
     }
 
     #[inline]
@@ -238,9 +244,17 @@ impl Entry {
         self.times.last_modification_time
     }
 
+    #[allow(unused)]
     #[inline]
-    pub(crate) fn update_modification_time(&mut self) -> &mut Self {
-        self.times.update_modification_time();
+    pub(crate) fn update_modification_time_now(&mut self) -> &mut Self {
+        self.times.update_modification_time_now();
+        self
+    }
+
+    #[allow(unused)]
+    #[inline]
+    pub(crate) fn update_modification_time(&mut self,modification_time: NaiveDateTime) -> &mut Self {
+        self.times.update_modification_time(modification_time);
         self
     }
 
@@ -432,9 +446,10 @@ impl Entry {
                     OKP_ENTRY_TYPE,
                     &util::encode_uuid(&self.entry_field.entry_type.uuid),
                 ));
-            } else {
-                log::debug!("The entry is default one and its uuid is not saved");
-            }
+            } 
+            // else {
+            //     log::debug!("The entry type is default one and its uuid is not saved");
+            // }
         }
     }
 

@@ -1,14 +1,13 @@
-use crate::constants::{custom_data_key::*, INTERNAL_VERSION};
+use crate::constants::custom_data_key::*;
 
 use crate::util;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, str::FromStr};
+use std::collections::HashMap;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CustomData {
     items: HashMap<String, Item>,
-    //pub(crate) items: Vec<Item>,
 }
 
 // Common custom data fns
@@ -56,38 +55,6 @@ impl CustomData {
 
     pub(crate) fn get_item_mut(&mut self, key: &str) -> Option<&mut Item> {
         self.items.get_mut(key)
-    }
-}
-
-// All Meta related custom data
-// TODO: Use Trait ?
-impl CustomData {
-    // Sets the internal version and overrides any previous version
-    pub fn set_internal_version(&mut self, version: &str) {
-        self.items.insert(
-            OKP_INTERNAL_VERSION.to_string(),
-            Item::from_kv_with_modification_time(OKP_INTERNAL_VERSION, version,util::now_utc()),
-        );
-    }
-
-    // Not yet used
-    // Sets the internal version if not set previously
-    fn _check_and_set_internal_version(&mut self, version: &str) {
-        if self.get_item_value(OKP_INTERNAL_VERSION).is_none() {
-            self.items.insert(
-                OKP_INTERNAL_VERSION.to_string(),
-                Item::from_kv(OKP_GROUP_AS_CATEGORY, version),
-            );
-        }
-    }
-
-    // Not yet used
-    // Gets the version from custom data and returns the current FORMAT_VERSION if this is the first time
-    fn _internal_version(&self) -> i32 {
-        self.get_item_value(OKP_INTERNAL_VERSION).map_or_else(
-            || INTERNAL_VERSION,
-            |s| i32::from_str(s).unwrap_or(INTERNAL_VERSION),
-        )
     }
 }
 
@@ -162,3 +129,40 @@ impl Item {
         }
     }
 }
+
+
+/* 
+// For now keeping it here as commented and may be used in any future time
+// TODO: Use Trait ?
+impl CustomData {
+    // Not yet used
+    // Sets the internal version and overrides any previous version
+    pub fn _set_internal_version(&mut self, version: &str) {
+        // Need to do insert or update and set modification_time accordingly
+        self.items.insert(
+            OKP_INTERNAL_VERSION.to_string(),
+            Item::from_kv_with_modification_time(OKP_INTERNAL_VERSION, version,util::now_utc()),
+        );
+    }
+
+    // Not yet used
+    // Sets the internal version if not set previously
+    fn _check_and_set_internal_version(&mut self, version: &str) {
+        if self.get_item_value(OKP_INTERNAL_VERSION).is_none() {
+            self.items.insert(
+                OKP_INTERNAL_VERSION.to_string(),
+                Item::from_kv(OKP_GROUP_AS_CATEGORY, version),
+            );
+        }
+    }
+
+    // Not yet used
+    // Gets the version from custom data and returns the current FORMAT_VERSION if this is the first time
+    fn _internal_version(&self) -> i32 {
+        self.get_item_value(OKP_INTERNAL_VERSION).map_or_else(
+            || INTERNAL_VERSION,
+            |s| i32::from_str(s).unwrap_or(INTERNAL_VERSION),
+        )
+    }
+}
+*/

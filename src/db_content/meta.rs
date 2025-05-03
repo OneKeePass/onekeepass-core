@@ -1,5 +1,5 @@
 use crate::constants::custom_data_key::OKP_ENTRY_TYPE_MAP_DATA;
-use crate::constants::{GENERATOR_NAME, INTERNAL_VERSION};
+use crate::constants::GENERATOR_NAME;
 use crate::db_content::EntryType;
 use crate::db_content::{CustomData, CustomIcons, MemoryProtection};
 use crate::error::Result;
@@ -89,7 +89,6 @@ pub struct Meta {
     pub(crate) custom_icons: CustomIcons,
     pub(crate) custom_data: CustomData,
 
-
     pub(crate) database_name_changed: NaiveDateTime,
     pub(crate) database_description_changed: NaiveDateTime,
     pub(crate) default_user_name_changed: NaiveDateTime,
@@ -112,12 +111,12 @@ impl Meta {
             database_description: String::default(),
             default_user_name: String::default(),
             maintenance_history_days: 365, //365
-            
+
             recycle_bin_enabled: false,
             recycle_bin_uuid: Uuid::default(),
             last_selected_group: Uuid::default(),
-            entry_template_group:Uuid::default(),
-            
+            entry_template_group: Uuid::default(),
+
             memory_protection: MemoryProtection::default(),
             custom_icons: Default::default(),
             custom_data: CustomData::default(),
@@ -126,8 +125,8 @@ impl Meta {
             database_name_changed: current_time,
             database_description_changed: current_time,
             settings_changed: current_time,
-            master_key_changed:current_time,
-            entry_template_group_changed:current_time,
+            master_key_changed: current_time,
+            entry_template_group_changed: current_time,
 
             meta_share: Arc::default(),
         }
@@ -162,8 +161,10 @@ impl Meta {
 
     pub fn copy_to_custom_data(&mut self) {
         self.copy_entry_types_to_custom_data();
-        self.custom_data
-            .set_internal_version(&INTERNAL_VERSION.to_string());
+        // TODO: 
+        // Need to read and store this internal version info in meta and should be updated
+        // only when we update the INTERNAL_VERSION or inserted only first time
+        // self.custom_data.set_internal_version(&INTERNAL_VERSION.to_string());
     }
 
     fn copy_entry_types_from_custom_data(&mut self) {
@@ -255,29 +256,55 @@ impl Meta {
 }
 
 impl Meta {
-    pub fn merge(&mut self, other: &Meta) -> Result<()> {
+    pub fn merge(&mut self, other: &Meta) -> Result<bool> {
         let current_time = util::now_utc();
+        let mut modified = false;
+        // debug!("-- META: self.settings_changed {} other.settings_changed {}", &self.settings_changed, &other.settings_changed);
         if self.settings_changed < other.settings_changed {
+            // debug!("-- META: self.settings_changed < other.settings_changed {}",self.settings_changed < other.settings_changed);
             if self.database_name != other.database_name {
                 self.database_name = other.database_name.clone();
                 self.database_name_changed = current_time;
+                // debug!("-- META: database_name is changed");
+                modified = true;
             }
             if self.database_description != other.database_description {
                 self.database_description = other.database_description.clone();
                 self.database_description_changed = current_time;
+                // debug!("-- META: database_description is changed");
+                modified = true;
             }
 
             if self.maintenance_history_days != other.maintenance_history_days {
                 self.maintenance_history_days = other.maintenance_history_days.clone();
+                // debug!("-- META: maintenance_history_days is changed");
+                modified = true;
             }
 
-            self.memory_protection = other.memory_protection.clone();
-            self.entry_template_group = other.entry_template_group.clone();
-            self.master_key_changed = other.master_key_changed.clone();
+            if  self.memory_protection != other.memory_protection {
+                self.memory_protection = other.memory_protection.clone();
+                // debug!("-- META: memory_protection is changed");
+                modified = true;
+            }
+            
+
+            if self.entry_template_group != other.entry_template_group {
+                self.entry_template_group = other.entry_template_group.clone();
+                // debug!("-- META: entry_template_group is changed");
+                modified = true;
+             } 
+
+            if self.master_key_changed != other.master_key_changed {
+                self.master_key_changed = other.master_key_changed.clone();
+                // debug!("-- META: master_key_changed is changed");
+                modified = true;
+            }
 
             if self.default_user_name != other.default_user_name {
                 self.default_user_name = other.default_user_name.clone();
                 self.default_user_name_changed = current_time;
+                // debug!("-- META: default_user_name is changed");
+                modified = true;
             }
         }
 
@@ -300,17 +327,22 @@ impl Meta {
                     self.custom_icons.icons.push(other_icon.clone());
                 }
             }
+            // debug!("-- META: custom_icons is changed");
+            modified = true;
             // Need to drop any custom icons that are not found in source should be removed from target
         }
 
         if self.custom_data != other.custom_data {
             for other_item in other.custom_data.get_items() {
                 if let Some(this_item) = self.custom_data.get_item_mut(&other_item.key) {
+
                     // Found a matching item
                     // TODO: Use this_item.last_modification_time ?
                     if this_item.value != other_item.value {
                         this_item.value = other_item.value.clone();
                         this_item.last_modification_time = Some(current_time);
+                        // debug!("-- META: custom_data is changed");
+                        modified = true;
                     }
                 } else {
                     // No matching item found, create a new one
@@ -320,17 +352,26 @@ impl Meta {
                             &other_item.value,
                             current_time,
                         ));
+                    // debug!("-- META: custom_data is inserted");
+                    modified = true;
                 }
             }
+
             // Need to drop any custom data item that are not found in source should be removed from target
         }
 
-        Ok(())
+        if modified {
+            // debug!("-- META: Before self.settings_changed {} ", &self.settings_changed);
+            self.settings_changed = current_time;
+            // debug!("-- META: After self.settings_changed {} ", &self.settings_changed);
+        }
+
+        Ok(modified)
     }
 
     #[allow(unused)]
     #[cfg(test)]
-    pub(crate) fn add_custom_icon(&mut self,icon_data:&Vec<u8>) {
+    pub(crate) fn add_custom_icon(&mut self, icon_data: &Vec<u8>) {
         let mut icon = Icon::default();
         icon.uuid = Uuid::new_v4();
         icon.data = icon_data.clone();

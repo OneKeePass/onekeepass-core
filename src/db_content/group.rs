@@ -55,29 +55,49 @@ impl Group {
         &self.notes
     }
 
+    #[allow(unused)]
+    #[inline]
     pub(crate) fn set_notes(&mut self, notes: &str) -> &mut Self {
         self.notes = notes.to_string();
         self
     }
 
+    #[allow(unused)]
+    #[inline]
     pub(crate) fn set_icon_id(&mut self, icon_id: i32) -> &mut Self {
         self.icon_id = icon_id;
         self
     }
+
 
     #[inline]
     pub(crate) fn last_modification_time(&self) -> NaiveDateTime {
         self.times.last_modification_time
     }
 
-    pub(crate) fn update_modification_time(&mut self) -> &mut Self {
-        self.times.update_modification_time();
+    #[allow(unused)]
+    #[inline]
+    pub(crate) fn update_modification_time_now(&mut self) -> &mut Self {
+        self.times.update_modification_time_now();
+        self
+    }
+
+    #[allow(unused)]
+    #[inline]
+    pub(crate) fn update_modification_time(&mut self,modification_time: NaiveDateTime) -> &mut Self {
+        self.times.update_modification_time(modification_time);
         self
     }
 
     #[inline]
     pub(crate) fn location_changed(&self) -> NaiveDateTime {
         self.times.location_changed
+    }
+
+    pub(crate) fn clear_children(&mut self,) -> &mut Self {
+        self.entry_uuids = vec![];
+        self.group_uuids = vec![];
+        self
     }
 }
 
@@ -123,19 +143,19 @@ impl Group {
         g
     }
 
-    pub(crate) fn get_uuid(&self) -> &Uuid {
-        &self.uuid
+    pub(crate) fn get_uuid(&self) -> Uuid {
+        self.uuid
     }
 
-    pub(crate) fn parent_group_uuid(&self) -> &Uuid {
-        &self.parent_group_uuid
+    pub(crate) fn parent_group_uuid(&self) -> Uuid {
+        self.parent_group_uuid
     }
 
     pub(crate) fn set_parent_group_uuid(&mut self,group_uuid: &Uuid) -> &mut Self{
         self.parent_group_uuid = *group_uuid;
         self
     }
-
+    
     pub fn sub_group_uuids(&self) -> &Vec<Uuid> {
         &self.group_uuids
     }

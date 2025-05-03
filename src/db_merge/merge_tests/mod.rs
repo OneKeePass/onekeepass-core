@@ -71,7 +71,7 @@ fn verify_updated_group(_ctx: &mut MergeTestContext) {
     util::test_clock::advance_by(1);
 
     if let Some(g1) = source_db.root.group_by_name_mut("group1") {
-        g1.set_name("group1 changed").update_modification_time();
+        g1.set_name("group1 changed").update_modification_time_now();
     }
 
     Merger::from_kdbx_file(&source, &mut target)
@@ -100,7 +100,7 @@ fn verify_group_location_changed(_ctx: &mut MergeTestContext) {
 
     // Create a new group
     let mut group3 = Group::with_parent(&source_db.root.root_uuid());
-    group3.set_name("group3").update_modification_time();
+    group3.set_name("group3").update_modification_time_now();
     let g3_uuid = group3.get_uuid().clone();
     source_db.root.insert_group(group3).unwrap();
 
@@ -131,7 +131,7 @@ fn verify_group_location_changed(_ctx: &mut MergeTestContext) {
 
     // println!("g3_uuid is {}, g1_parent is {}  ", g3_uuid, g1_parent);
 
-    assert_eq!(g1_parent_uuid, &g3_uuid);
+    assert_eq!(g1_parent_uuid, g3_uuid);
 }
 
 #[test_context(MergeTestContext)]
@@ -146,7 +146,7 @@ fn verify_root_group_updated(_ctx: &mut MergeTestContext) {
     let new_root_name = "root name changed";
 
     if let Some(g1) = source_db.root.group_by_id_mut(&source_db.root.root_uuid()) {
-        g1.set_name(new_root_name).update_modification_time();
+        g1.set_name(new_root_name).update_modification_time_now();
     }
 
     Merger::from_kdbx_file(&source, &mut target)
@@ -284,7 +284,20 @@ fn verify_meta_add_custom_icon(_ctx: &mut MergeTestContext) {
 fn verify_merge_different_databases(_ctx: &mut MergeTestContext) {
     let (source, mut target) = create_test_dbs_5();
 
+    println!(
+        "Source db groups {:?}",
+        source.keepass_main_content()
+            .root
+            .get_all_groups(false)
+            .iter()
+            .map(|g| g.name.clone())
+            .collect::<Vec<String>>());
+
     let target_db = target.keepass_main_content.as_mut().unwrap();
+
+    if let Some(g) = target_db.root.root_group_as_mut() {
+        g.set_name("Root");
+    }
 
     println!(
         "target_db groups {:?}",
@@ -293,7 +306,7 @@ fn verify_merge_different_databases(_ctx: &mut MergeTestContext) {
             .get_all_groups(false)
             .iter()
             .map(|g| g.name.clone())
-            .collect::<String>()
+            .collect::<Vec<String>>()
     );
 
     Merger::from_kdbx_file(&source, &mut target)
@@ -309,8 +322,47 @@ fn verify_merge_different_databases(_ctx: &mut MergeTestContext) {
             .get_all_groups(false)
             .iter()
             .map(|g| g.name.clone())
-            .collect::<String>()
+            .collect::<Vec<String>>()
     );
+}
+
+#[test_context(MergeTestContext)]
+#[test]
+fn verify_merge_moveto_recycle_bin(_ctx: &mut MergeTestContext) {
+    let (mut source, mut target) = create_test_dbs_4();
+
+    util::test_clock::advance_by(1);
+
+    let source_db = source.keepass_main_content.as_mut().unwrap();
+    let g2 = source_db.root.group_by_name("group2").unwrap().clone();
+    let group = create_group(source_db, "group22", &g2.get_uuid());
+    let _ = create_entry(source_db, "entry22", &group.get_uuid());
+
+    util::test_clock::advance_by(1);
+
+    source_db.root.move_group_to_recycle_bin(group.get_uuid()).unwrap();
+
+    let ids = source_db.root.recycle_bin_group().unwrap().sub_group_uuids().clone();
+    println!("Source Recycled groups {:?}",ids);
+    
+    for id in ids {
+        let g = source_db.root.group_by_id(&id).unwrap();
+        let cid = g.entry_uuids();
+        println!("Source recycled entry id {:?} in group {}",&cid,g.name() );
+    }
+
+    let merge_result = Merger::from_kdbx_file(&source, &mut target).merge().unwrap();
+
+    let target_db = target.keepass_main_content.as_mut().unwrap(); 
+    let ids = target_db.root.recycle_bin_group().unwrap().sub_group_uuids().clone();
+
+    println!("Target Recycled groups {:?}",ids);
+
+    for id in ids {
+        let g = target_db.root.group_by_id(&id).unwrap();
+        let cid = g.entry_uuids();
+        println!("Target recycled entry id {:?} in group {}",&cid,g.name() );
+    }
 }
 
 #[test_context(MergeTestContext)]
@@ -331,7 +383,7 @@ fn verify_merge_deletions(_ctx: &mut MergeTestContext) {
         .unwrap()
         .clone();
 
-    delete_group_permanently(source_db, g2.get_uuid());
+    delete_group_permanently(source_db, &g2.get_uuid());
 
     // Before merge target should not have any deleted objtect
     let target_db_deleted_objects = target_db.root.deleted_objects();
@@ -350,12 +402,11 @@ fn verify_merge_deletions(_ctx: &mut MergeTestContext) {
     // Both group and its entry should be in the deleted objects of the target
     let r = target_db_deleted_objects
         .iter()
-        .filter(|d| [*g2.get_uuid(), *e2.get_uuid()].contains(&d.uuid))
+        .filter(|d| [g2.get_uuid(), e2.get_uuid()].contains(&d.uuid))
         .count();
 
     assert_eq!(r == 2, true);
 }
-
 
 #[test_context(MergeTestContext)]
 #[test]
@@ -367,8 +418,8 @@ fn verify_merge_deletions_2(_ctx: &mut MergeTestContext) {
 
     let source_db = source.keepass_main_content.as_mut().unwrap();
     let g2 = source_db.root.group_by_name("group2").unwrap().clone();
-    let group = create_group(source_db, "group22", g2.get_uuid());
-    let _ = create_entry(source_db, "entry22", group.get_uuid());
+    let group = create_group(source_db, "group22", &g2.get_uuid());
+    let _ = create_entry(source_db, "entry22", &group.get_uuid());
 
     // Now create target from this source
     let mut target = source.clone();
@@ -379,7 +430,7 @@ fn verify_merge_deletions_2(_ctx: &mut MergeTestContext) {
     // Delete "group22" in source
     // This deletes group22 and its child "entry22"
     let source_db = source.keepass_main_content.as_mut().unwrap();
-    delete_group_permanently(source_db, group.get_uuid());
+    delete_group_permanently(source_db, &group.get_uuid());
 
     // source db has some deleted objects
     let source_db_deleted_objects = source_db.root.deleted_objects();

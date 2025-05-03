@@ -192,6 +192,14 @@ impl KdbxFile {
         self.inner_header.get_bytes_content(data_hash)
     }
 
+    pub(crate) fn attachmentset(&self, ) ->  &AttachmentSet{
+        &self.inner_header.entry_attachments
+    }
+
+    pub(crate) fn insert_or_update_with_attachmentset(&mut self,other:&AttachmentSet) {
+        self.inner_header.entry_attachments.insert_or_update_with_attachmentset(other);
+    }
+
     pub fn get_content_cipher_id(&self) -> ContentCipherId {
         match self.main_header.cipher_id.as_slice() {
             constants::uuid::AES256 => ContentCipherId::Aes256,

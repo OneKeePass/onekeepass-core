@@ -196,7 +196,7 @@ impl ReferenceFieldParsed {
             return self.default_unparsed();
         }
 
-        if let Ok(ref entry_uuid) = uuid::Uuid::parse_str(&self.text_or_uuid) {
+        if let Ok(entry_uuid) = uuid::Uuid::parse_str(&self.text_or_uuid) {
             if entry_uuid == entry_place_holder_parser.current_entry.get_uuid() {
                 // We are using a field (wanted_field) from the currrent entry for this uuid search_in_field
                 return entry_place_holder_parser
@@ -210,7 +210,7 @@ impl ReferenceFieldParsed {
             // If we do not find an entry with this uuid or no value is found, then we just return the ref string itself
             let out = entry_place_holder_parser
                 .root
-                .entry_by_id(entry_uuid)
+                .entry_by_id(&entry_uuid)
                 .map(|entry_found| {
                     // depth_counter is incremented as we are looking for 'wanted_field' in the next entry
                     self.parse_matched_entry(

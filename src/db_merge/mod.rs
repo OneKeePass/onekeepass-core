@@ -4,4 +4,4 @@ mod merge_tests;
 
 mod merger;
 
-pub use merger::Merger;
+pub use merger::{Merger,MergeResult};

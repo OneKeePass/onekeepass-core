@@ -25,9 +25,11 @@ pub const EMPTY: &[u8] = &[];
 pub const PAYLOAD_BLOCK_SIZE: u64 = 1048576; // (1MB = 1024 * 1024), 65536  1048576
 
 /*
-   Version 2:
-       Otp changes
+// Not yet used
+Version 2:
+    Otp changes
 */
+#[allow(dead_code)]
 pub const INTERNAL_VERSION: i32 = 2;
 
 pub const GENERATOR_NAME: &str = "OneKeyPass";

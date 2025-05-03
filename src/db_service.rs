@@ -80,6 +80,8 @@ pub use crate::form_data::{
 
 pub use crate::constants::entry_keyvalue_key;
 
+pub use crate::db_merge::MergeResult;
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SaveStatus {
     Success,
@@ -900,7 +902,7 @@ pub fn clone_entry(
 
 pub fn update_group(db_key: &str, group: Group) -> Result<()> {
     main_content_mut_action!(db_key, |k: &mut KeepassFile| {
-        Ok(k.root.update_group(group.clone()))
+        Ok(k.root.update_group(group.clone(),false))
     })
 }
 
@@ -1025,7 +1027,7 @@ pub fn merge_databases(
     source_db_key: &str,
     password: Option<&str>,
     key_file_name: Option<&str>,
-) -> Result<()> {
+) -> Result<MergeResult> {
     if target_db_key == source_db_key {
         return Err(error::Error::UnexpectedError(format!("Both source and target are the same databses. Please select a different database to merge")));
     }
@@ -1050,7 +1052,7 @@ pub fn merge_databases(
         false
     };
 
-    {
+    let merge_result = {
         let mut store = main_store().lock().unwrap();
         let [target, source] = store.get_disjoint_mut([target_db_key, source_db_key]);
         log::debug!("Got refs for source and target");
@@ -1062,21 +1064,17 @@ pub fn merge_databases(
             .as_ref()
             .ok_or_else(|| "Source database key is not found")?
             .kdbx_file;
-        db_merge::Merger::from_kdbx_file(source_kdbx, target_kdbx).merge()?;
+        let merge_result = db_merge::Merger::from_kdbx_file(source_kdbx, target_kdbx).merge()?;
         log::debug!("Dbs are merged");
 
-        // if target.is_some() && source.is_some() {
-        //     let target_kdbx = &mut target.unwrap().kdbx_file;
-        //     let source_kdbx = &source.unwrap().kdbx_file;
-        //     db_merge::Merger::from_kdbx_file(source_kdbx, target_kdbx).merge()?;
-        //     log::debug!("Dbs are merged");
-        // }
-    }
+
+        merge_result
+    };
 
     if source_loaded {
         close_kdbx(source_db_key)?;
         log::debug!("source_db_key closed as it was opened only for merging");
     }
 
-    Ok(())
+    Ok(merge_result)
 }

@@ -51,7 +51,7 @@ pub fn join_tags(tag_vec: &Vec<String>) -> String {
     tag_vec.join(";")
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct MemoryProtection {
     pub(crate) protect_title: bool,
     pub(crate) protect_notes: bool,
@@ -116,15 +116,15 @@ pub(crate) use move_to_recycle_bin;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Times {
     // The modification time is changed whenever an entry or a group fileds are changed
-    // KeepassXC changes modification time of group/entry and its parent group when an entry or group is moved in addition to 
+    // KeepassXC changes modification time of group/entry and its parent group when an entry or group is moved in addition to
     // location_changed
     pub(crate) last_modification_time: NaiveDateTime,
 
     // Only when an entry or group is first time created
     pub(crate) creation_time: NaiveDateTime,
 
-    // KeePass changes access time when an entry or group is moved 
-    // in addition to location_changed 
+    // KeePass changes access time when an entry or group is moved
+    // in addition to location_changed
     // KeePass may also change access time when an entry or group is accessed (check this?)
     pub(crate) last_access_time: NaiveDateTime,
 
@@ -154,9 +154,14 @@ impl Times {
         }
     }
 
-    pub(crate) fn update_modification_time(&mut self) {
+    pub(crate) fn update_modification_time_now(&mut self,) {
         let n = util::now_utc();
         self.last_modification_time = n;
         self.last_access_time = n;
+    }
+
+    pub(crate) fn update_modification_time(&mut self,modification_time:NaiveDateTime,) {
+        self.last_modification_time = modification_time;
+        self.last_access_time = modification_time;
     }
 }
