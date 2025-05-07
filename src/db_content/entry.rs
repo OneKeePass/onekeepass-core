@@ -154,8 +154,8 @@ impl EntryField {
 pub struct Entry {
     pub(crate) uuid: Uuid,
 
-    //The parent group uuid to refer back the group if required
-    pub(crate) group_uuid: Uuid,
+    // The parent group uuid to refer back the group if required
+    pub(crate) parent_group_uuid: Uuid,
 
     pub(crate) icon_id: i32,
 
@@ -186,7 +186,7 @@ pub struct Entry {
 impl PartialEq for Entry {
     fn eq(&self, other: &Self) -> bool {
         self.uuid == other.uuid
-            && self.group_uuid == other.group_uuid
+            && self.parent_group_uuid == other.parent_group_uuid
             && self.icon_id == other.icon_id
             && self.times == other.times
             && self.tags == other.tags
@@ -206,7 +206,7 @@ impl Entry {
     pub(crate) fn new() -> Self {
         Entry {
             uuid: Uuid::default(),
-            group_uuid: Uuid::default(),
+            parent_group_uuid: Uuid::default(),
             icon_id: i32::default(),
             times: Times::new(),
             tags: String::default(),
@@ -230,12 +230,12 @@ impl Entry {
 
     #[inline]
     pub(crate) fn parent_group_uuid(&self) -> Uuid {
-        self.group_uuid
+        self.parent_group_uuid
     }
 
     #[inline]
     pub(crate) fn set_parent_group_uuid(&mut self,parent_group_uuid:&Uuid) -> &mut Self {
-        self.group_uuid = *parent_group_uuid;
+        self.parent_group_uuid = *parent_group_uuid;
         self 
     }
 
@@ -287,7 +287,7 @@ impl Entry {
         //entry.times.expiry_time = util::add_years(entry.times.expiry_time, 3);
         entry.entry_field = entry_field;
         if let Some(gid) = parent_group_uuid {
-            entry.group_uuid = *gid;
+            entry.parent_group_uuid = *gid;
             // IMPORTANT: The caller needs to set the parent Group uuid if not passed
         }
         entry
@@ -362,7 +362,7 @@ impl Entry {
 
         self.binary_key_values = updated_entry.binary_key_values;
         self.history = History { entries: histories };
-        self.group_uuid = updated_entry.group_uuid;
+        self.parent_group_uuid = updated_entry.parent_group_uuid;
         self.icon_id = updated_entry.icon_id;
         self.tags = updated_entry.tags;
 
@@ -702,7 +702,7 @@ impl Entry {
         let he = self.history.entries.get(index as usize).cloned();
         he.map(|mut e1| {
             // Need to set the appropriate group uuid to the history entry
-            e1.group_uuid = self.group_uuid.clone();
+            e1.parent_group_uuid = self.parent_group_uuid.clone();
             e1.meta_share = Arc::clone(&self.meta_share);
             // Set the history entry's entry_type
             Entry::replace_entry_type_index_by_type_data(&mut e1, &self.encoded_entry_types(true));

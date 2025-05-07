@@ -626,7 +626,7 @@ impl<'a> XmlReader<'a> {
 
     fn read_entry(&mut self, group_uuid: uuid::Uuid, root: &mut Root) -> Result<uuid::Uuid> {
         let mut entry = self.read_entry_data()?; //Entry::new();
-        entry.group_uuid = group_uuid;
+        entry.parent_group_uuid = group_uuid;
         let eid = entry.uuid;
         root.insert_to_all_entries(entry);
         Ok(eid)

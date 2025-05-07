@@ -642,9 +642,10 @@ fn create_groups_summary_data(k: &KeepassFile) -> Result<GroupTree> {
     // to form summary. Need to pass 'false' to include all groups
     for group in &k.root.get_all_groups(false) {
         grps.insert(
-            group.uuid.to_string(),
+            group.get_uuid().to_string(),
             GroupSummary {
-                uuid: group.uuid.to_string(),
+                uuid: group.get_uuid(),
+                parent_group_uuid:group.parent_group_uuid(),
                 name: group.name.clone(),
                 icon_id: group.icon_id,
                 group_uuids: adjust_special_groups_order(k, &group),

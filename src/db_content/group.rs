@@ -10,7 +10,6 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Group {
     pub(crate) uuid: Uuid,
-    // TODO: Should we add parent group uuid as it is done for Entry?
     pub parent_group_uuid: Uuid,
     pub name: String,
     #[serde(default)]

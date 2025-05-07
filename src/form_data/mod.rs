@@ -3,6 +3,7 @@ mod entry;
 mod parsing;
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{
     db::{ContentCipherId, KdfAlgorithm},
@@ -93,7 +94,8 @@ pub struct KdbxSaved {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GroupSummary {
-    pub uuid: String,
+    pub uuid: Uuid,
+    pub parent_group_uuid: Uuid,
     pub name: String,
     pub icon_id: i32,
     pub group_uuids: Vec<String>,

@@ -378,7 +378,7 @@ impl EntryFormData {
 
         Self {
             uuid: entry.uuid,
-            group_uuid: entry.group_uuid,
+            group_uuid: entry.parent_group_uuid,
             icon_id: entry.icon_id,
 
             last_modification_time: entry.times.last_modification_time,
@@ -463,7 +463,7 @@ impl EntryFormData {
 
         let mut entry = Entry::new();
         entry.uuid = entry_form_data.uuid;
-        entry.group_uuid = entry_form_data.group_uuid;
+        entry.parent_group_uuid = entry_form_data.group_uuid;
 
         entry.entry_field = entry_field;
         entry.icon_id = entry_form_data.icon_id;
@@ -819,7 +819,7 @@ mod tests {
         // parent_group.uuid = uuid::Uuid::new_v4();
         parent_group.parent_group_uuid = root.root_uuid();
 
-        entry.group_uuid = parent_group.uuid;
+        entry.parent_group_uuid = parent_group.uuid;
 
         root.insert_group(parent_group).unwrap();
         root.insert_entry(entry.clone()).unwrap();

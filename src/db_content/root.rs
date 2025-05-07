@@ -286,7 +286,7 @@ impl Root {
             .filter(|x| {
                 if exclude {
                     //if ids.contains(&x.uuid) {false} else {true}
-                    if &x.group_uuid == &self.recycle_bin_uuid {
+                    if &x.parent_group_uuid == &self.recycle_bin_uuid {
                         false
                     } else {
                         true
@@ -310,7 +310,7 @@ impl Root {
             .values()
             .filter(|x| {
                 // Is this entry' parent group is in recycle bin or its parent is recycle bin?
-                !excluded_group_ids.contains(&x.group_uuid)
+                !excluded_group_ids.contains(&x.parent_group_uuid)
             })
             .collect();
         v
@@ -329,7 +329,7 @@ impl Root {
             .values()
             .filter(|x| {
                 // Consider the entries whose  parent group is not in recycle bin or its parent is not in recycle bin and Tag has Favorites
-                !excluded_group_ids.contains(&x.group_uuid)
+                !excluded_group_ids.contains(&x.parent_group_uuid)
                     && split_tags(&x.tags).contains(&FAVORITES.into())
             })
             //.filter(|e| split_tags(&e.tags).contains(&"Favorites".into()))
@@ -740,7 +740,7 @@ impl Root {
 
         // Remove this entry id from entry_uuids of its parent group.
         // The parent should be a recycle bin group  or group that is in recycle bin
-        if let Some(old_parent) = self.all_groups.get_mut(&e.group_uuid) {
+        if let Some(old_parent) = self.all_groups.get_mut(&e.parent_group_uuid) {
             old_parent.entry_uuids.retain(|&id| id != e.uuid);
         }
 
@@ -759,7 +759,7 @@ impl Root {
             .ok_or_else(|| "The entry is not found in All entries")?;
 
         // Remove this entry id from entry_uuids of its parent group.
-        if let Some(old_parent) = self.all_groups.get_mut(&entry.group_uuid) {
+        if let Some(old_parent) = self.all_groups.get_mut(&entry.parent_group_uuid) {
             old_parent.entry_uuids.retain(|&id| id != entry.uuid);
         }
 
@@ -770,6 +770,10 @@ impl Root {
     pub fn move_group(&mut self, group_uuid: Uuid, new_parent_id: Uuid) -> Result<()> {
         verify_uuid!(self, group_uuid, all_groups);
         verify_uuid!(self, new_parent_id, all_groups);
+
+        if group_uuid == new_parent_id {
+            return Err(Error::DataError("The group and its parent group cannot be the same"));
+        }
 
         let mut old_parent_id = Uuid::default();
         if let Some(grp) = self.all_groups.get_mut(&group_uuid) {
@@ -827,7 +831,7 @@ impl Root {
 
         // all_entries map contains the key 'entry_uuid' as we have that verified above. Calling unwrap() is fine
         let entry = self.all_entries.get_mut(&entry_uuid).unwrap();
-        let old_parent_id = entry.group_uuid;
+        let old_parent_id = entry.parent_group_uuid;
 
         verify_uuid!(self, old_parent_id, all_groups);
 
@@ -841,7 +845,7 @@ impl Root {
             ));
         }
 
-        entry.group_uuid = new_parent_id;
+        entry.parent_group_uuid = new_parent_id;
         entry.times.location_changed = util::now_utc();
 
         // Add this entry id to the new parent entry uuids. For now it is added to the end
@@ -867,7 +871,7 @@ impl Root {
 
         // TODO: Entry's group_uuid should be its parent group uuid. Should we add 'assert' for that?
         // Need to add this entry to its parent's list
-        if let Some(g) = self.all_groups.get_mut(&entry.group_uuid) {
+        if let Some(g) = self.all_groups.get_mut(&entry.parent_group_uuid) {
             g.entry_uuids.push(entry.uuid);
         } else {
             return Err(Error::NotFound("Group is not valid for the entry".into()));
@@ -908,7 +912,7 @@ impl Root {
         cloned_entry.uuid = new_e_uuid;
 
         // Cloned entry's parent group uuid should be set
-        cloned_entry.group_uuid = entry_clone_option.parent_group_uuid;
+        cloned_entry.parent_group_uuid = entry_clone_option.parent_group_uuid;
 
         // Title is changed
         if let Some(title) = entry_clone_option.new_title.as_ref() {
