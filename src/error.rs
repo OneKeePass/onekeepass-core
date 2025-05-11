@@ -195,6 +195,9 @@ pub enum Error {
     // instead of RemoteStorageCallError(String)
     #[error("RemoteStorageCallError: {0}")]
     RemoteStorageCallError(String),
+
+    #[error("CsvImportError: {0}")]
+    CsvImportError(#[from] csv::Error),
 }
 
 // Tauri main converts App error such as above as "hooks::InvokeError" using serde call and then returns to to the UI

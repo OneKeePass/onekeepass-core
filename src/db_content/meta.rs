@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 use super::entry_type::VersionedEntryType;
-use super::{Icon, Item};
+use super::Item;
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct HistoryItemsMeta {
@@ -372,7 +372,7 @@ impl Meta {
     #[allow(unused)]
     #[cfg(test)]
     pub(crate) fn add_custom_icon(&mut self, icon_data: &Vec<u8>) {
-        let mut icon = Icon::default();
+        let mut icon = super::Icon::default();
         icon.uuid = Uuid::new_v4();
         icon.data = icon_data.clone();
         icon.last_modification_time = util::now_utc();
@@ -381,7 +381,7 @@ impl Meta {
 
     #[allow(unused)]
     #[cfg(test)]
-    pub(crate) fn all_custom_icons(&self) -> &Vec<Icon> {
+    pub(crate) fn all_custom_icons(&self) -> &Vec<super::Icon> {
         &self.custom_icons.icons
     }
 }

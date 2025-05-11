@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use chrono::NaiveDateTime;
-use log::debug;
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -188,7 +187,6 @@ impl<'a> Merger<'a> {
         } else {
             // Source and target dbs are different
 
-
             self.different_databases = true;
             self.merge_result.different_databases = true;
 
@@ -223,7 +221,6 @@ impl<'a> Merger<'a> {
             self.merge_groups(source_root_group)?;
             self.merge_deleted_objects()?;
 
-
             // TODO:
             // Copy any custom entry type definitions stored in custom data of source meta to meta's custom data of target
 
@@ -245,12 +242,12 @@ impl<'a> Merger<'a> {
                 // Make sure that we create the recycle bin group if required
                 // debug!("Source db recycle_bin_uuid is found {}", p_uuid);
                 // debug!("Target db recycle_bin_uuid before recycle_bin_group call is  {}",self.target_db.root.recycle_bin_uuid());
-                
+
                 // This will create recycle bin group if required
                 self.target_db.root.recycle_bin_group();
-                
+
                 // debug!("Target db recycle_bin_uuid before recycle_bin_group call is  {}", self.target_db.root.recycle_bin_uuid());
-                
+
                 self.target_db.root.recycle_bin_uuid()
             } else {
                 p_uuid
@@ -258,7 +255,7 @@ impl<'a> Merger<'a> {
         }
     }
 
-     // Ensure that we have valid parent group ( should be an existing group) for the passed entry
+    // Ensure that we have valid parent group ( should be an existing group) for the passed entry
     fn parent_group_uuid_of_entry(&mut self, entry: &Entry) -> Uuid {
         let p_uuid = entry.parent_group_uuid();
         if !self.different_databases {
@@ -268,7 +265,7 @@ impl<'a> Merger<'a> {
                 self.target_db.root.root_uuid()
             } else if p_uuid == self.source_db.root.recycle_bin_uuid() {
                 // Make sure that we create the recycle bin group if required
-                
+
                 // debug!("Source db recycle_bin_uuid is found {}", p_uuid);
                 // debug!(
                 //     "Target db recycle_bin_uuid before recycle_bin_group call is  {}",
@@ -368,7 +365,6 @@ impl<'a> Merger<'a> {
         if target_group.last_modification_time() >= source_group.last_modification_time() {
             return Ok(());
         }
-
 
         // We change the target group data as source group data as is new
         self.target_db.root.update_group(source_group.clone(), true);

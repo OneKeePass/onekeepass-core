@@ -46,6 +46,8 @@ pub const AUTO_OPEN_GROUP_UC_NAME: &str = "AUTOOPEN";
 // string to reduce number of bytes taken by the key name entries in db and thus overall size of db
 // Any new key should have the next OKP_Kx.
 // Do not change the existing key names and meaning to make sure for backward compatability
+
+#[allow(dead_code)]
 pub mod custom_data_key {
     pub const OKP_INTERNAL_VERSION: &str = "OKP_K1";
 

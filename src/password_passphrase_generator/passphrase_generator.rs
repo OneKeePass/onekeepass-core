@@ -180,6 +180,7 @@ mod pass_phrase_impl {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use chbs::{config::BasicConfig, passphrase, probability::Probability, scheme::ToScheme, word};
@@ -191,7 +192,7 @@ mod tests {
     struct WordListLoaderImpl {}
 
     impl WordListLoader for WordListLoaderImpl {
-        fn load_from_resource(&self, file_name: &str) -> crate::error::Result<String> {
+        fn load_from_resource(&self, _file_name: &str) -> crate::error::Result<String> {
             todo!()
         }
     }

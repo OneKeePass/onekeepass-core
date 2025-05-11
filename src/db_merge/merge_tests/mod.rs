@@ -1,10 +1,8 @@
 mod common;
 
-use crate::error::Result;
 use crate::{
-    constants::{self, entry_keyvalue_key::TITLE, entry_type_name},
-    db::{KdbxFile, NewDatabase},
-    db_content::{standard_type_uuid_by_name, Entry, Group, KeepassFile},
+    constants::entry_keyvalue_key::TITLE,
+    db_content::Group,
     util,
 };
 use common::*;
@@ -351,7 +349,7 @@ fn verify_merge_moveto_recycle_bin(_ctx: &mut MergeTestContext) {
         println!("Source recycled entry id {:?} in group {}",&cid,g.name() );
     }
 
-    let merge_result = Merger::from_kdbx_file(&source, &mut target).merge().unwrap();
+    let _merge_result = Merger::from_kdbx_file(&source, &mut target).merge().unwrap();
 
     let target_db = target.keepass_main_content.as_mut().unwrap(); 
     let ids = target_db.root.recycle_bin_group().unwrap().sub_group_uuids().clone();

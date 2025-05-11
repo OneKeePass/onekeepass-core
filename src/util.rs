@@ -445,6 +445,7 @@ pub mod from_or_to {
 // This module is effective only in unit tests modules that provides controlling
 // date time setting - mainly for testing db merges 
 // This is not used in intgeration tests or in the lib's main code
+#[allow(dead_code)]
 #[cfg(test)]
 pub(crate) mod test_clock {
     use std::{ops::Add, time::{Duration, SystemTime, UNIX_EPOCH}};
@@ -572,6 +573,7 @@ mod tests {
     #[allow(dead_code)]
     use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, TimeZone, Utc};
 
+    #[allow(deprecated)]
     #[test]
     fn verify_decode_datetime_b64() {
         let ndt = decode_datetime_b64("mNxg1g4AAAA=");
@@ -584,6 +586,7 @@ mod tests {
         );
 
         //println!( "d is {}" , dt);
+        #[allow(deprecated)]
         assert_eq!(dt, NaiveDate::from_ymd(2020, 5, 27).and_hms(22, 11, 36));
         assert_eq!(dt.date(), NaiveDate::from_ymd(2020, 5, 27));
         assert_eq!(dt.time(), NaiveTime::from_hms(22, 11, 36));
@@ -611,6 +614,7 @@ mod tests {
         // }
     }
 
+    #[allow(deprecated)]
     #[test]
     fn verify_utc_parsing() {
         let dt = Utc.ymd(2022, 01, 04).and_hms_milli(1, 37, 8, 811);

@@ -170,7 +170,12 @@ lazy_static! {
 // that child is also has this attribute. For now the UI layer changes to the required case
 pub struct EntryFormData {
     pub uuid: Uuid,
+
+    // TODO:
+    // Need to change this field name to 'parent_group_uuid' as used in Entry and Group struct.
+    // But this requires additional changes on the UI cljs code also
     pub group_uuid: Uuid,
+
     pub icon_id: i32,
 
     pub last_modification_time: NaiveDateTime,
@@ -690,7 +695,9 @@ impl EntrySummary {
                 secondary_title,
                 icon_id: e.icon_id,
                 history_index: None,
+                #[allow(deprecated)]
                 modified_time: Some(e.times.last_modification_time.timestamp()),
+                #[allow(deprecated)]
                 created_time: Some(e.times.creation_time.timestamp()),
             });
         }

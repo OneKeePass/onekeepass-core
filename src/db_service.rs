@@ -82,6 +82,8 @@ pub use crate::constants::entry_keyvalue_key;
 
 pub use crate::db_merge::MergeResult;
 
+pub use crate::import::csv_reader::{CsvImport, CsvImportOptions, CvsHeaderInfo};
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SaveStatus {
     Success,
@@ -568,7 +570,9 @@ pub fn search_term(db_key: &str, term: &str) -> Result<EntrySearchResult> {
                     secondary_title: t2,
                     icon_id: e.icon_id,
                     history_index: None,
+                    #[allow(deprecated)]
                     modified_time: Some(e.times.last_modification_time.timestamp()),
+                    #[allow(deprecated)]
                     created_time: Some(e.times.creation_time.timestamp()),
                 });
             }
@@ -645,7 +649,7 @@ fn create_groups_summary_data(k: &KeepassFile) -> Result<GroupTree> {
             group.get_uuid().to_string(),
             GroupSummary {
                 uuid: group.get_uuid(),
-                parent_group_uuid:group.parent_group_uuid(),
+                parent_group_uuid: group.parent_group_uuid(),
                 name: group.name.clone(),
                 icon_id: group.icon_id,
                 group_uuids: adjust_special_groups_order(k, &group),
@@ -903,7 +907,7 @@ pub fn clone_entry(
 
 pub fn update_group(db_key: &str, group: Group) -> Result<()> {
     main_content_mut_action!(db_key, |k: &mut KeepassFile| {
-        Ok(k.root.update_group(group.clone(),false))
+        Ok(k.root.update_group(group.clone(), false))
     })
 }
 
@@ -1067,7 +1071,6 @@ pub fn merge_databases(
             .kdbx_file;
         let merge_result = db_merge::Merger::from_kdbx_file(source_kdbx, target_kdbx).merge()?;
         log::debug!("Dbs are merged");
-
 
         merge_result
     };

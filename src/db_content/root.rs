@@ -268,14 +268,14 @@ impl Root {
         g_opt.map(|id| self.all_groups.get_mut(&id)).flatten()
     }
 
-    pub(crate) fn is_group_empty(&self, group_uuid: &Uuid) -> Result<bool> {
-        let group = self
-            .all_groups
-            .get(&group_uuid)
-            .ok_or_else(|| "The group is not found in All groups")?;
+    // pub(crate) fn is_group_empty(&self, group_uuid: &Uuid) -> Result<bool> {
+    //     let group = self
+    //         .all_groups
+    //         .get(&group_uuid)
+    //         .ok_or_else(|| "The group is not found in All groups")?;
 
-        Ok(group.entry_uuids().is_empty() && group.sub_group_uuids().is_empty())
-    }
+    //     Ok(group.entry_uuids().is_empty() && group.sub_group_uuids().is_empty())
+    // }
 
     // Gets all entries. The flag exclude determines whether to include or exclude entries from the special groups in the list
     // TODO: intead of 'exclude', accept the list of group ids to exclude. See comments in 'KeepassFile'

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use log::{debug, error, info};
 
@@ -501,8 +501,95 @@ async fn poll_token_generation(db_key: String, entry_uuid: Uuid) {
         }
     }
 }
+
+
 // --------------------------------------------------------
 
+
+static OKP_TOKIO_RUNTIME: OnceLock<Arc<Runtime>> = OnceLock::new();
+
+// We may not require this if we use fn 'async_runtime()' with 'OKP_TOKIO_RUNTIME.get_or_init(..)'
+pub fn start_runtime() {
+    debug!("async start_runtime is called");
+
+    // Shutdown any previous runtime (particularly dev time ?)
+    // shutdown_runtime();
+
+    let runtime = Builder::new_multi_thread()
+        //.worker_threads(4)
+        .thread_name("okp-async-service")
+        .thread_stack_size(3 * 1024 * 1024)
+        .enable_all()
+        .build()
+        .unwrap();
+
+    debug!("Core OKP_TOKIO_RUNTIME is built...");
+
+    if let Err(e) = OKP_TOKIO_RUNTIME.set(Arc::new(runtime)) {
+        error!(
+            "Setting new tokio runtime in global var resulted in error: {:?}",
+            &e
+        );
+    }
+}
+
+// May be called from multiple threads and this Runtime ref is shared
+pub fn async_runtime() -> &'static Runtime {
+
+    OKP_TOKIO_RUNTIME.get().expect("Tokio runtime is not initialized")
+    
+    // We can also do the following. 
+    // In that case we should not do the 'OKP_TOKIO_RUNTIME.set' call in 'start_runtime' fn and we can skip using fn start_runtime()
+    // assuming we do not require to call 'shutdown_runtime' before start_runtime call
+
+    // OKP_TOKIO_RUNTIME.get_or_init(|| {
+    //     let runtime = Builder::new_multi_thread()
+    //         //.worker_threads(4)
+    //         .thread_name("okp-async-service")
+    //         .thread_stack_size(3 * 1024 * 1024)
+    //         .enable_all()
+    //         .build()
+    //         .unwrap();
+    //     Arc::new(runtime)
+    // })
+}
+
+// Useful only during dev time?
+
+fn shutdown_runtime() {
+    debug!("async shutdown_runtime is called");
+    // TODO: 
+    // Verify that the shutdown_runtime call in iOS and Android behave exactly as we see with previous 
+    // global static mut Option<Runtime> based implementation
+
+    if let Some(arc_ref) = OKP_TOKIO_RUNTIME.get() {
+        debug!("Count of arc ref is {}",Arc::strong_count(arc_ref));
+
+        // Returns the inner value 'Runtime', if the Arc has exactly one strong reference. Otherwise Err
+        match Arc::try_unwrap(arc_ref.to_owned()) {
+            Ok(runtime) => {
+                info!("Shutdown OKP_TOKIO_RUNTIME started");
+                // Tokio shutdown_timeout expects 'self' of 'Runtime' instance. Not &self
+                runtime.shutdown_timeout(tokio::time::Duration::from_secs(1));
+                info!("Shutdown OKP_TOKIO_RUNTIME done");
+            }
+            Err(_e) => {
+                error!("Could shutdown as there are still some refs found for the runtime");
+            }
+        }
+    } 
+    // else {
+    //     debug!("No previous tokio runtime is found. No shutdown is called");
+    // }
+}
+
+// --------------------------------------------------------
+
+// ****** TO BE REMOVED once we verify the above fns work without any issues in both desktop and mobile layers
+
+/* 
+
+// --------------------------------------------------------
 // As this is global, all access to this variable need to use 'unsafe' block
 // Otherwise we will see compile error 'this operation is unsafe and requires an unsafe function or block'
 // We may need to use Mutex to be thread safe for all access to this variable
@@ -551,6 +638,8 @@ pub fn shutdown_runtime() {
 
 // --------------------------------------------------------
 
+*/
+
 /*
 static TOKIO_RUNTIME: OnceCell<Runtime> = OnceCell::new();
 
@@ -595,17 +684,17 @@ pub fn async_runtime() -> &'static Runtime {
 
 //-----------------------------------------------------------------------------------------------------------
 
-#[cfg(test)]
-mod tests {
-    use super::{AsyncResponse, EntryOtpTokenReply};
+// #[cfg(test)]
+// mod tests {
+//     use super::{AsyncResponse, EntryOtpTokenReply};
 
-    #[test]
-    fn test1() {
-        let e = EntryOtpTokenReply::default();
-        let m = AsyncResponse::EntryOtpToken(e);
+//     #[test]
+//     fn test1() {
+//         let e = EntryOtpTokenReply::default();
+//         let m = AsyncResponse::EntryOtpToken(e);
 
-        let r = serde_json::to_string_pretty(&m);
+//         let r = serde_json::to_string_pretty(&m);
 
-        println!("r is {}", r.unwrap());
-    }
-}
+//         println!("r is {}", r.unwrap());
+//     }
+// }

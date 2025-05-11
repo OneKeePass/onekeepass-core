@@ -715,7 +715,7 @@ mod tests {
         let entry = Entry::new();
         let mut ef = EntryPlaceHolderParser::from(&root, &entry, &mut entry_fields);
 
-        let r = ef.parse_main(1);
+        let _r = ef.parse_main(1);
 
         println!(
             "\n parsed ef {:?} \n\n modified fields {:?}",
@@ -739,7 +739,7 @@ mod tests {
         let entry = Entry::new();
         let mut ef = EntryPlaceHolderParser::from(&root, &entry, &mut entry_fields);
 
-        let r = ef.parse_main(1);
+        let _r = ef.parse_main(1);
 
         println!(
             "\n parsed ef {:?} \n\n modified fields {:?}",
@@ -765,7 +765,7 @@ mod tests {
         let entry = Entry::new();
         let mut ef = EntryPlaceHolderParser::from(&root, &entry, &mut entry_fields);
 
-        let r = ef.parse_main(1);
+        let _r = ef.parse_main(1);
 
         println!(
             "\n parsed ef {:?} \n\n modified fields {:?}",
