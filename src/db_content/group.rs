@@ -40,16 +40,16 @@ pub struct Group {
 
 // Mainly used for testing or during the databse merging 
 impl Group {
-    pub fn name(&self) -> &String {
+    pub(crate) fn name(&self) -> &String {
         &self.name
     }
 
-    pub fn set_name(&mut self, name: &str) -> &mut Self {
+    pub(crate) fn set_name(&mut self, name: &str) -> &mut Self {
         self.name = name.to_string();
         self
     }
 
-    pub fn notes(&self) -> &String {
+    pub(crate) fn notes(&self) -> &String {
         &self.notes
     }
 

@@ -35,19 +35,19 @@ pub struct EntryTypeV1 {
 }
 
 impl EntryTypeV1 {
-    pub fn standard_type_by_id(type_id: &Uuid) -> &EntryType {
+    pub(crate) fn standard_type_by_id(type_id: &Uuid) -> &EntryType {
         match UUID_TO_ENTRY_TYPE_MAP.get(type_id) {
             Some(t) => t,
             None => &*DEFAULT_ENTRY_TYPE,
         }
     }
 
-    pub fn default_type<'a>() -> &'a EntryType {
+    pub(crate) fn default_type<'a>() -> &'a EntryType {
         &*DEFAULT_ENTRY_TYPE
     }
 
     /// Gets all builtin standard section names if the entry type is a standard one. Otherwise an empty vec
-    pub fn standard_section_names_by_id(&self) -> Vec<&str> {
+    pub(crate) fn standard_section_names_by_id(&self) -> Vec<&str> {
         if let Some(et) = UUID_TO_ENTRY_TYPE_MAP.get(&self.uuid) {
             et.sections
                 .iter()
@@ -59,7 +59,7 @@ impl EntryTypeV1 {
     }
 
     // Gets all built-in standard field names from all sections if the entry type is a standard one
-    pub fn standard_field_names_by_id(&self) -> Vec<&str> {
+    pub(crate) fn standard_field_names_by_id(&self) -> Vec<&str> {
         let v = if let Some(et) = UUID_TO_ENTRY_TYPE_MAP.get(&self.uuid) {
             et.sections
                 .iter()
@@ -72,7 +72,14 @@ impl EntryTypeV1 {
         v.iter().map(|f| f.name.as_str()).collect::<Vec<&str>>()
     }
 
-    pub fn changed(&self, other: &EntryType) -> bool {
+    pub(crate) fn add_section(&mut self, section: &Section) {
+        // Add the passed section with its field definitions only if is not done earlier
+        if !self.sections.iter().any(|s| s.name == section.name) {
+            self.sections.push(section.clone());
+        }
+    }
+
+    pub(crate) fn changed(&self, other: &EntryType) -> bool {
         // We check only changes in sections of these two EntryType
         // skipping other fields like 'name', secondary_title, icon_name for now as the incoming
         // EntryType instance in EntryFormData do not have these values
@@ -497,6 +504,26 @@ impl FieldDefV1 {
 pub struct SectionV1 {
     pub(crate) name: String,
     pub(crate) field_defs: Vec<FieldDefV1>,
+}
+
+impl Section {
+    pub(crate) fn new(name: &str) -> Self {
+        Self {
+            name: name.into(),
+            field_defs: vec![],
+        }
+    }
+
+    pub(crate) fn new_custom_field_section(field_names: Vec<&str>) -> Self {
+        let field_defs = field_names
+            .iter()
+            .map(|s| FieldDef::new(s))
+            .collect::<Vec<_>>();
+        Self {
+            name: "Custom Fields".into(),
+            field_defs,
+        }
+    }
 }
 
 #[cfg(test)]

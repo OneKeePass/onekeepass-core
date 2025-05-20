@@ -1,9 +1,235 @@
-use std::{path::Path, sync::Mutex};
+use std::{collections::HashMap, path::Path, sync::Mutex};
 
 use csv::{ReaderBuilder, StringRecord};
+use log::debug;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-use crate::error::Result;
+use crate::{
+    constants::entry_keyvalue_key::PASSWORD,
+    db::NewDatabase,
+    db_content::{Entry, Group, KeepassFile, KeyValue, Section},
+    error::Result,
+    form_data::KdbxLoaded,
+};
+
+const GROUP: &str = "Group";
+
+const TAGS: &str = "Tags";
+
+const OTHER_FIELDS: [&str; 4] = [GROUP, TAGS, "Modified Time", "Created Time"];
+
+const IMPORT_DEFAULT_GROUP: &str = "CsvImported";
+
+// Similar to okp-filed-to-csv-header-mapping in cljs
+#[derive(Debug, Deserialize)]
+pub struct MappedField {
+    // This indicates one of entry field 'key' (see )
+    field_name: String,
+
+    // This is the header field
+    mapped_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CsvImportMapping {
+    // The original header fields
+    headers: Vec<String>,
+
+    mapped_fields: Vec<MappedField>,
+
+    // Header fields not mapped to any of the entry fields
+    not_mapped_headers: Vec<String>,
+
+    // Indicates that we need to create custom fields
+    unmapped_custom_field: bool,
+}
+
+impl CsvImportMapping {
+    // create_new_db_with_imported_csv
+    pub fn create_new_db(&self, new_db: NewDatabase) -> Result<KdbxLoaded> {
+        let mut kdbx_file = new_db.create()?;
+        let keepass_file = kdbx_file.keepass_main_content_mut();
+
+        debug!("Going to apply the imported data");
+
+        self.apply_imported_csv_data(keepass_file)?;
+
+        // After creating the content from csv data, we need to write the new db to the file system
+        crate::db_service::write_new_db_kdbx_file(kdbx_file)
+    }
+
+    // Creates all required groups and entries from the previously loaded csv records
+    fn apply_imported_csv_data(&self, keepass_file: &mut KeepassFile) -> Result<()> {
+        let CsvImportMapping {
+            headers,
+            mapped_fields,
+            not_mapped_headers,
+            unmapped_custom_field,
+        } = self;
+
+        // First we create a easy look up map so as to locate the field value from the StringRecord
+        let field_to_index: (
+            HashMap<String, usize>,
+            HashMap<String, usize>,
+            HashMap<String, usize>,
+        ) = headers.iter().enumerate().fold(
+            (HashMap::default(), HashMap::default(), HashMap::default()),
+            |(mut acc1, mut acc2, mut acc3), (idx, header_item)| {
+                if let Some(mapped_field_found) = mapped_fields
+                    .iter()
+                    .find(|mapped_field_item| &mapped_field_item.mapped_name == header_item)
+                {
+                    if OTHER_FIELDS.contains(&mapped_field_found.field_name.as_str()) {
+                        // Optionally Group or Tags field to index of 'StringRecord'
+                        acc1.insert(mapped_field_found.field_name.clone(), idx);
+                        (acc1, acc2, acc3)
+                    } else {
+                        // Standard entry fields to index of 'StringRecord'
+                        acc2.insert(mapped_field_found.field_name.clone(), idx);
+                        (acc1, acc2, acc3)
+                    }
+                } else if *unmapped_custom_field && not_mapped_headers.contains(header_item) {
+                    // Custom fields to index of 'StringRecord'
+                    // The custom field name will be the same as header name
+                    acc3.insert(header_item.to_string(), idx);
+                    (acc1, acc2, acc3)
+                } else {
+                    (acc1, acc2, acc3)
+                }
+            },
+        );
+
+        let custom_field_section = if *unmapped_custom_field && !not_mapped_headers.is_empty() {
+            let field_names: Vec<&str> = not_mapped_headers.iter().map(|s| s.as_str()).collect();
+            Some(Section::new_custom_field_section(field_names))
+        } else {
+            None
+        };
+
+        let mut csv_lookup = CsvLookup {
+            other_fields: field_to_index.0,
+            standard_fields: field_to_index.1,
+            custom_fields: field_to_index.2,
+            custom_field_section,
+            keepass_file,
+        };
+
+        CsvImport::apply_data_records(&mut csv_lookup)?;
+
+        CsvImport::clear_stored_records();
+
+        Ok(())
+    }
+}
+
+struct CsvLookup<'a> {
+    // Key is from OTHER_FIELDS
+    other_fields: HashMap<String, usize>,
+    // Key is the Entry field name (UserName, Password....)
+    standard_fields: HashMap<String, usize>,
+    // Key is the unmapped csv header field name
+    custom_fields: HashMap<String, usize>,
+    //
+    custom_field_section: Option<Section>,
+
+    keepass_file: &'a mut KeepassFile,
+}
+
+impl<'a> CsvLookup<'a> {
+    fn apply_csv_data(&mut self, records: &Vec<StringRecord>) -> Result<()> {
+        // let records = NON_HEADER_RECORDS
+        //     .get()
+        //     .ok_or_else(|| "No data record is found")?
+        //     .lock()
+        //     .unwrap();
+
+        //  MutexGuard
+        //let records = CsvImport::data_records();
+
+        debug!(
+            "Going to create content from {} csv records ",
+            &records.len()
+        );
+
+        for sr in records.iter() {
+            let parent_group_uuid = self.create_group(sr)?;
+
+            // Create a new entry
+            let mut entry = Entry::new_login_entry(Some(&parent_group_uuid));
+
+            // Add custom section def
+            if let Some(section) = self.custom_field_section.as_ref() {
+                entry.entry_field.entry_type.add_section(section);
+            }
+
+            // Add tags to entry
+            if let Some(tags) = self.other_fields.get(TAGS).and_then(|i| sr.get(*i)) {
+                entry.set_tags(tags);
+            }
+
+            // Form KVs from  standard_fields and custom_fields if not empty
+            self.add_entry_values(&mut entry, sr);
+
+            // Insert new entry to keepass file
+            self.keepass_file.root.insert_entry(entry)?;
+        }
+
+        Ok(())
+    }
+
+    fn add_entry_values(&self, entry: &mut Entry, csv_record: &StringRecord) {
+        self.standard_fields.iter().for_each(|(name, i)| {
+            if let Some(value) = csv_record.get(*i) {
+                let kv = KeyValue::from(name.into(), value.into(), name == PASSWORD);
+                entry.entry_field.insert_key_value(kv);
+            }
+        });
+
+        self.custom_fields.iter().for_each(|(name, i)| {
+            if let Some(value) = csv_record.get(*i) {
+                let kv = KeyValue::from(name.into(), value.into(), false);
+                entry.entry_field.insert_key_value(kv);
+            }
+        });
+    }
+
+    fn create_group(&mut self, csv_record: &StringRecord) -> Result<Uuid> {
+        let root_uuid = self.keepass_file.root.root_uuid();
+
+        let g_uuid = if let Some(name) = self
+            .other_fields
+            .get(GROUP)
+            .and_then(|i| csv_record.get(*i))
+        {
+            // Gets any previously generated group for this name
+            if let Some(group) = self.keepass_file.root.group_by_name(name) {
+                group.get_uuid()
+            } else {
+                // No group is found with this name and a new one is created
+                let mut group = Group::with_parent(&root_uuid);
+                group.set_name(name);
+                let uuid = group.get_uuid();
+                self.keepass_file.root.insert_group(group)?;
+                uuid
+            }
+        } else {
+            // No group in the mapping. So we create a custom group and use this group as parent for the entries
+
+            if let Some(group) = self.keepass_file.root.group_by_name(IMPORT_DEFAULT_GROUP) {
+                group.get_uuid()
+            } else {
+                let mut group = Group::with_parent(&root_uuid);
+                group.set_name(IMPORT_DEFAULT_GROUP);
+                let uuid = group.get_uuid();
+                self.keepass_file.root.insert_group(group)?;
+                uuid
+            }
+        };
+
+        Ok(g_uuid)
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CsvImportOptions {
@@ -67,8 +293,6 @@ pub struct CvsHeaderInfo {
     headers: Vec<String>,
 }
 
-
-
 pub struct CsvImport {}
 
 impl CsvImport {
@@ -129,6 +353,22 @@ impl CsvImport {
         Ok(header_row)
     }
 
+    // pub(crate) fn data_records() -> std::sync::MutexGuard<'static, Vec<StringRecord>> {
+    //     NON_HEADER_RECORDS
+    //         .get_or_init(|| Default::default())
+    //         .lock()
+    //         .unwrap()
+    // }
+
+    fn apply_data_records(csv_lookup: &mut CsvLookup) -> Result<()> {
+        if let Some(mtx) = NON_HEADER_RECORDS.get() {
+            let records = mtx.lock().unwrap();
+            csv_lookup.apply_csv_data(&records)?;
+        }
+
+        Ok(())
+    }
+
     pub fn clear_stored_records() {
         // let mut v = RECORDS.lock().unwrap();
         // v.clear();
@@ -136,9 +376,11 @@ impl CsvImport {
         if let Some(m) = NON_HEADER_RECORDS.get() {
             let mut v = m.lock().unwrap();
             v.clear();
+            debug!("Previously stored csv records are cleared");
         }
     }
 
+    #[cfg(test)]
     pub fn create_entries() {
         // let data_wows = RECORDS.lock().unwrap();
         // for r in data_wows.iter() {
@@ -153,6 +395,98 @@ impl CsvImport {
         }
     }
 }
+
+/*
+impl CsvImportMapping {
+    pub fn create_kdbx_with_imported_csv(&self, new_db: NewDatabase) -> Result<()> {
+        let mut kdbx_file = create_new_db(new_db)?;
+
+        let kp = kdbx_file.keepass_main_content_mut();
+
+        let CsvImportMapping {
+            headers,
+            mapped_fields,
+            not_mapped_headers,
+            unmapped_custom_field,
+        } = self;
+
+        // First we create a easy look up map so as to locate the field value from the StringRecord
+        let field_to_index: (
+            HashMap<String, usize>,
+            HashMap<String, usize>,
+            HashMap<String, usize>,
+        ) = headers.iter().enumerate().fold(
+            (HashMap::default(), HashMap::default(), HashMap::default()),
+            |(mut acc1, mut acc2, mut acc3), (idx, header_item)| {
+                if let Some(mapped_field_found) = mapped_fields
+                    .iter()
+                    .find(|mapped_field_item| &mapped_field_item.mapped_name == header_item)
+                {
+                    if OTHER_FIELDS.contains(&mapped_field_found.field_name.as_str()) {
+                        // Optionally Group or Tags field to index of 'StringRecord'
+                        acc1.insert(mapped_field_found.field_name.clone(), idx);
+                        (acc1, acc2, acc3)
+                    } else {
+                        // Standard entry fields to index of 'StringRecord'
+                        acc2.insert(mapped_field_found.field_name.clone(), idx);
+                        (acc1, acc2, acc3)
+                    }
+                } else if *unmapped_custom_field && not_mapped_headers.contains(header_item) {
+                    // Custom fields to index of 'StringRecord'
+                    // The custom field name will be the same as header name
+                    acc3.insert(header_item.to_string(), idx);
+                    (acc1, acc2, acc3)
+                } else {
+                    (acc1, acc2, acc3)
+                }
+            },
+        );
+
+        let custom_field_section = if *unmapped_custom_field && !not_mapped_headers.is_empty() {
+            let field_names: Vec<&str> = not_mapped_headers.iter().map(|s| s.as_str()).collect();
+            Some(Section::new_custom_field_section(field_names))
+        } else {
+            None
+        };
+
+        let mut csv_lookup = CsvLookup {
+            other_fields: field_to_index.0,
+            standard_fields: field_to_index.1,
+            custom_fields: field_to_index.2,
+            custom_field_section,
+            keepass_file: kp,
+        };
+
+        csv_lookup.apply_csv_data()?;
+
+        Ok(())
+    }
+}
+*/
+
+/*
+    let v: HashMap<String, usize> =
+        headers
+            .iter()
+            .enumerate()
+            .fold(HashMap::default(), |mut acc, (idx, header_item)| {
+                if let Some(mapped_field_found) = mapped_fields
+                    .iter()
+                    .find(|mapped_field_item| &mapped_field_item.mapped_name == header_item)
+                {
+                    // Standard entry fields (optionally Group) to index of 'StringRecord'
+                    acc.insert(mapped_field_found.field_name.clone(), idx);
+                    acc
+                } else if unmapped_custom_field && not_mapped_headers.contains(header_item) {
+                    // Custom fields to index of 'StringRecord'
+                    // The custom field name will be the same as header name
+                    acc.insert(header_item.to_string(), idx);
+                    acc
+                } else {
+                    acc
+                }
+            });
+*/
 
 #[cfg(test)]
 mod tests {

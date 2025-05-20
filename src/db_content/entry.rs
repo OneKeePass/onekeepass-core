@@ -59,7 +59,7 @@ impl EntryField {
     }
 
     // Creates KeyValue structs for all FieldDefs found for this entry type
-    fn from_field_defs(fields: &Vec<&FieldDef>) -> Vec<KeyValue> {
+    fn field_defs_to_keyvalues(fields: &Vec<&FieldDef>) -> Vec<KeyValue> {
         // All types will have these two fields by default
         let mut kvs = vec![
             KeyValue {
@@ -96,13 +96,15 @@ impl EntryField {
             None => EntryType::standard_type_by_id(entry_type_uuid),
         };
 
+        // Collects all field definitions across all the sections
         let fields = &etype
             .sections
             .iter()
-            .flat_map(|s| &s.field_defs)
+            .flat_map(|section| &section.field_defs)
             .collect::<Vec<_>>();
 
-        let kvs = EntryField::from_field_defs(fields);
+        // Applies  KeyValues for these field definitions
+        let kvs = EntryField::field_defs_to_keyvalues(fields);
 
         let mut entry_field = EntryField::default();
         entry_field.entry_type = etype.clone();
@@ -234,9 +236,9 @@ impl Entry {
     }
 
     #[inline]
-    pub(crate) fn set_parent_group_uuid(&mut self,parent_group_uuid:&Uuid) -> &mut Self {
+    pub(crate) fn set_parent_group_uuid(&mut self, parent_group_uuid: &Uuid) -> &mut Self {
         self.parent_group_uuid = *parent_group_uuid;
-        self 
+        self
     }
 
     #[inline]
@@ -253,7 +255,10 @@ impl Entry {
 
     #[allow(unused)]
     #[inline]
-    pub(crate) fn update_modification_time(&mut self,modification_time: NaiveDateTime) -> &mut Self {
+    pub(crate) fn update_modification_time(
+        &mut self,
+        modification_time: NaiveDateTime,
+    ) -> &mut Self {
         self.times.update_modification_time(modification_time);
         self
     }
@@ -276,6 +281,11 @@ impl Entry {
         self
     }
 
+    pub(crate) fn set_tags(&mut self, tags:&str) -> &mut Self {
+        self.tags = tags.into();
+        self
+    }
+
     pub(crate) fn new_blank_entry_by_type_id(
         entry_type_uuid: &Uuid,
         custom_entry_type: Option<EntryType>,
@@ -288,10 +298,17 @@ impl Entry {
         entry.entry_field = entry_field;
         if let Some(gid) = parent_group_uuid {
             entry.parent_group_uuid = *gid;
-            // IMPORTANT: The caller needs to set the parent Group uuid if not passed
+            // IMPORTANT: The caller needs to set the parent Group uuid later if not passed
         }
         entry
     }
+
+     // An Entry with default login entry type
+     pub(crate) fn new_login_entry(parent_group_uuid: Option<&Uuid>) -> Self {
+        let entry_type_uuid = crate::build_uuid!(crate::constants::entry_type_uuid::LOGIN);
+        Entry::new_blank_entry_by_type_id(&entry_type_uuid, None, parent_group_uuid)
+    }
+
 
     // Any entry specific custom data parsing and setting in Entry to be done here
     pub(crate) fn after_xml_reading(&mut self, meta: &Meta) {
@@ -446,7 +463,7 @@ impl Entry {
                     OKP_ENTRY_TYPE,
                     &util::encode_uuid(&self.entry_field.entry_type.uuid),
                 ));
-            } 
+            }
             // else {
             //     log::debug!("The entry type is default one and its uuid is not saved");
             // }
@@ -967,6 +984,15 @@ impl KeyValue {
             key: String::default(),
             value: String::default(),
             protected: bool::default(),
+            data_type: FieldDataType::default(),
+        }
+    }
+
+    pub(crate) fn from(key: String, value: String, protected: bool) -> Self {
+        KeyValue {
+            key,
+            value,
+            protected,
             data_type: FieldDataType::default(),
         }
     }

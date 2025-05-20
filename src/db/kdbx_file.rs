@@ -28,7 +28,6 @@ impl KdbxFile {
 
     // For now used in unit tests
     #[allow(unused)]
-    #[cfg(test)]
     pub(crate) fn keepass_main_content_mut(&mut self) -> &mut KeepassFile {
         // CAUTION: This unwrap may Panic
         self.keepass_main_content.as_mut().unwrap()

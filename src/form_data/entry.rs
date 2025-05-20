@@ -30,13 +30,13 @@ pub use crate::db_content::CurrentOtpTokenData;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct KeyValueData {
-    pub key: String,
-    pub value: Option<String>,
-    pub protected: bool,
-    pub required: bool,
-    pub helper_text: Option<String>,
-    pub data_type: FieldDataType,
-    pub standard_field: bool,
+    key: String,
+    value: Option<String>,
+    protected: bool,
+    required: bool,
+    helper_text: Option<String>,
+    data_type: FieldDataType,
+    standard_field: bool,
 
     // TODO: Use select_field name instead of forming options list everytime.
     pub select_field_options: Option<Vec<String>>,
@@ -169,39 +169,42 @@ lazy_static! {
 // Using the rename will only this struct. It will not rename the child struct fields 'kebab-case' unless
 // that child is also has this attribute. For now the UI layer changes to the required case
 pub struct EntryFormData {
-    pub uuid: Uuid,
+    uuid: Uuid,
 
     // TODO:
     // Need to change this field name to 'parent_group_uuid' as used in Entry and Group struct.
     // But this requires additional changes on the UI cljs code also
-    pub group_uuid: Uuid,
+    group_uuid: Uuid,
 
-    pub icon_id: i32,
+    icon_id: i32,
 
-    pub last_modification_time: NaiveDateTime,
-    pub creation_time: NaiveDateTime,
-    pub last_access_time: NaiveDateTime,
-    pub expires: bool,
-    pub expiry_time: NaiveDateTime,
+    last_modification_time: NaiveDateTime,
+    creation_time: NaiveDateTime,
+    last_access_time: NaiveDateTime,
+    expires: bool,
+    expiry_time: NaiveDateTime,
 
-    pub tags: Vec<String>,
-    pub binary_key_values: Vec<BinaryKeyValue>,
-    pub history_count: i32,
-    pub entry_type_name: String,
-    pub entry_type_uuid: Uuid,
-    pub entry_type_icon_name: Option<String>,
-    pub title: String,
-    pub notes: String,
-    pub standard_section_names: Vec<String>,
-    pub section_names: Vec<String>,
-    pub section_fields: HashMap<String, Vec<KeyValueData>>,
+    tags: Vec<String>,
+    binary_key_values: Vec<BinaryKeyValue>,
+    history_count: i32,
+    entry_type_name: String,
+    entry_type_uuid: Uuid,
+    entry_type_icon_name: Option<String>,
+    title: String,
+    notes: String,
 
-    pub auto_type: AutoType,
+    standard_section_names: Vec<String>,
+    section_names: Vec<String>,
+
+    // For lookup by section name (section name is the key)
+    section_fields: HashMap<String, Vec<KeyValueData>>,
+
+    auto_type: AutoType,
 
     // This map has keys from kvd key (uppercase) and values are from kvd value that has some
     // placeholder, parsed and resolved
     #[serde(skip_deserializing)]
-    pub parsed_fields: HashMap<String, String>,
+    parsed_fields: HashMap<String, String>,
 }
 
 impl EntryFormData {

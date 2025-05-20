@@ -82,7 +82,7 @@ pub use crate::constants::entry_keyvalue_key;
 
 pub use crate::db_merge::MergeResult;
 
-pub use crate::import::csv_reader::{CsvImport, CsvImportOptions, CvsHeaderInfo};
+pub use crate::import::csv_reader::{CsvImport, CsvImportOptions, CvsHeaderInfo,CsvImportMapping};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SaveStatus {
@@ -134,6 +134,17 @@ impl Default for KdbxContext {
     }
 }
 
+impl KdbxContext {
+    // Add the newly created KdbxFile to cache for UI use
+    fn insert(kdbx_file:KdbxFile,) {
+        let db_key = kdbx_file.get_database_file_name().to_string();
+        let mut kdbx_context = KdbxContext::default();
+        kdbx_context.kdbx_file = kdbx_file;
+        let mut store = main_store().lock().unwrap();
+        store.insert(db_key, kdbx_context);
+    }
+}
+
 // Here we're using an Arc to share memory among threads, and the data - HashMap<String, KdbxContext> - inside
 // the Arc is protected with a mutex.
 // The keys of inner HashMap are from 'db_key' of each opened database
@@ -152,6 +163,17 @@ macro_rules! to_keepassfile {
         $kdbx_file
             .keepass_main_content
             .as_ref()
+            .ok_or("No main content")?
+    };
+}
+
+#[macro_export]
+macro_rules! to_keepassfile_mut {
+    ($kdbx_file:expr) => {
+        // Need to get Option<&KeepassFile> from Option<KeepassFile> using as_ref
+        $kdbx_file
+            .keepass_main_content
+            .as_mut()
             .ok_or("No main content")?
     };
 }

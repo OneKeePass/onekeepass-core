@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    db::{ContentCipherId, KdfAlgorithm},
+    db::{ContentCipherId, KdbxFile, KdfAlgorithm},
     db_content::Meta,
+    util,
 };
 
 pub use self::categories::*;
@@ -83,6 +84,33 @@ pub struct KdbxLoaded {
     pub file_name: Option<String>,
     // Full key file uri
     pub key_file_name: Option<String>,
+}
+
+impl From<&KdbxFile> for KdbxLoaded {
+    fn from(kdbx_file: &KdbxFile) -> Self {
+        let db_key = kdbx_file.get_database_file_name().into();
+        let database_name = kdbx_file.get_database_name().into();
+
+        let (file_name, key_file_name);
+
+        cfg_if::cfg_if! {
+            if #[cfg(any(target_os = "macos",target_os = "windows",target_os = "linux"))] {
+                (file_name,key_file_name) = (util::file_name(kdbx_file.get_database_file_name()),kdbx_file.get_key_file_name());
+            } else {
+                // In case of Mobile
+                (file_name,key_file_name) = (new_db.file_name, new_db.key_file_name) ;
+            }
+        }
+
+        let kdbx_loaded = KdbxLoaded {
+            db_key,
+            database_name,
+            file_name,
+            key_file_name,
+        };
+
+        kdbx_loaded
+    }
 }
 
 #[derive(Default, Serialize, Deserialize, Debug)]
