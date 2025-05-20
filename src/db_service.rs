@@ -113,7 +113,7 @@ pub fn kdbx_context_statuses(db_key: &str) -> Result<KdbxContextStatus> {
         })
     })
 }
-pub struct KdbxContext {
+pub(crate) struct KdbxContext {
     pub(crate) kdbx_file: KdbxFile,
     /// The time of the most recent reading of the database
     pub(crate) last_read_time: NaiveDateTime, // Need to use NaiveDateTime::signed_duration_since to get duration from this
@@ -203,7 +203,7 @@ macro_rules! main_content_mut_action {
         let r = call_main_content_mut_action($db_key, $closure_fn);
         // Update the write time
         call_kdbx_context_mut_action($db_key, |ctx: &mut KdbxContext| {
-            ctx.last_write_time = util::now_utc();
+            ctx.last_write_time = crate::util::now_utc();
             ctx.save_pending = true;
             Ok(())
         })?;
@@ -265,7 +265,7 @@ where
 }
 
 // Calls the mut action closure with the complete context for a specific db
-fn call_kdbx_context_mut_action<T, F>(db_key: &str, mut action: F) -> Result<T>
+pub(crate) fn call_kdbx_context_mut_action<T, F>(db_key: &str, mut action: F) -> Result<T>
 where
     F: FnMut(&mut KdbxContext) -> Result<T>,
 {
@@ -301,7 +301,7 @@ where
 }
 
 // Calls the mut action closure with the db content for a specific db
-fn call_main_content_mut_action<T, F>(db_key: &str, action: F) -> Result<T>
+pub(crate) fn call_main_content_mut_action<T, F>(db_key: &str, action: F) -> Result<T>
 where
     F: Fn(&mut KeepassFile) -> Result<T>,
 {

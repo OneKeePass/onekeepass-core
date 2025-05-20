@@ -9,8 +9,10 @@ use crate::{
     constants::entry_keyvalue_key::PASSWORD,
     db::NewDatabase,
     db_content::{Entry, Group, KeepassFile, KeyValue, Section},
+    db_service::{self,KdbxContext,call_main_content_mut_action,call_kdbx_context_mut_action},
     error::Result,
     form_data::KdbxLoaded,
+    main_content_mut_action,
 };
 
 const GROUP: &str = "Group";
@@ -56,7 +58,14 @@ impl CsvImportMapping {
         self.apply_imported_csv_data(keepass_file)?;
 
         // After creating the content from csv data, we need to write the new db to the file system
-        crate::db_service::write_new_db_kdbx_file(kdbx_file)
+        db_service::write_new_db_kdbx_file(kdbx_file)
+    }
+
+    pub fn import_into_db(&self,db_key: &str) -> Result<()> {
+        main_content_mut_action!(db_key, |k: &mut KeepassFile| { 
+            self.apply_imported_csv_data(k)?;
+            Ok(()) 
+        })
     }
 
     // Creates all required groups and entries from the previously loaded csv records
