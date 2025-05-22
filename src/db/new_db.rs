@@ -34,7 +34,7 @@ impl Default for NewDatabase {
             database_description: Some("New Database".into()),
             database_file_name: "NO_NAME".into(),
             file_name: None,
-            kdf: KdfAlgorithm::Argon2(crypto::kdf::Argon2Kdf::default()),
+            kdf: KdfAlgorithm::Argon2d(crypto::kdf::Argon2Kdf::default()),
             cipher_id: ContentCipherId::Aes256,
             password: Some("ss".into()),
             key_file_name: None,

@@ -49,7 +49,7 @@ impl Group {
         self
     }
 
-    pub(crate) fn notes(&self) -> &String {
+    pub(crate) fn _notes(&self) -> &String {
         &self.notes
     }
 

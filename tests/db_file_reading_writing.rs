@@ -1,6 +1,12 @@
 mod common;
 use onekeepass_core::db_service::{self, *};
 
+
+// NOTE: 
+// At this time, these tests used as dev time help and are ignored for the public use.
+// Later #[ignore] will be removed once removing dev specific tests
+
+#[ignore]
 #[test]
 fn verify_read_db_file() {
     println!("Test is called");
@@ -12,14 +18,62 @@ fn verify_read_db_file() {
     //     Some("ss"),
     //     None,
     // );
-    let r = load_kdbx("/Users/jeyasankar/Documents/OneKeePass/TextXC1.kdbx", Some("ss"), None);
+    let db_key = "/Users/jeyasankar/Documents/OneKeePass/Testcsv.kdbx";
+    // let db_key = "/Users/jeyasankar/Documents/OneKeePass/KP/KP-Database2.kdbx";
+    let r = load_kdbx(db_key, Some("ss"), None);
 
     println!("load_kdbx is called r is  {}", r.is_ok());
     if r.is_err() {
         println!("load_kdbx is error is   {:?}", r);
     }
+
+    let settings = db_service::get_db_settings(db_key).unwrap();
+
+    let json_str = serde_json::to_string_pretty(&settings).unwrap();
+    log::debug!("{}", json_str);
 }
 
+#[ignore]
+#[test]
+fn verify_read_write_db_file() {
+    common::init_logging();
+    common::init_key_main_store();
+    let db_key = "/Users/jeyasankar/Documents/OneKeePass/Testcsv.kdbx";
+
+    // Copy the kdbx file to a temp location and use that as db_key
+
+    let r = load_kdbx(db_key, Some("ss"), None);
+
+    if r.is_err() {
+        println!("load_kdbx is error is   {:?}", r);
+    }
+    assert!(r.is_ok());
+
+    // Add some changes to db
+    let mut settings = db_service::get_db_settings(db_key).unwrap();
+
+    let json_str = serde_json::to_string_pretty(&settings).unwrap();
+    log::debug!("{}", json_str);
+
+    settings.set_database_name("Changed");
+    db_service::set_db_settings(db_key, settings).unwrap();
+
+    // Save the chnages
+    let _kdbx_saved = db_service::save_kdbx_with_backup(db_key, None, true).unwrap();
+    assert!(true);
+
+    // Read back and verify the changes
+
+    let r = load_kdbx(db_key, Some("ss"), None);
+
+    if r.is_err() {
+        println!("2 load_kdbx is error is   {:?}", r);
+    }
+    assert!(r.is_ok());
+
+}
+
+#[ignore]
 #[test]
 fn verify_read_db_and_export_xml() {
     common::init_logging();
@@ -44,6 +98,7 @@ fn verify_read_db_and_export_xml() {
     println!("Xml is written");
 }
 
+#[ignore]
 #[test]
 fn verify_db_merge() {
     common::init_logging();
@@ -68,14 +123,15 @@ fn verify_db_merge() {
     }
 
     assert!(r.is_ok());
-    
+
     // let target_db_key = "not found";
-    
+
     db_service::merge_databases(target_db_key, source_db_key, Some("ss"), None).unwrap();
 
     assert!(true);
 }
 
+#[ignore]
 #[test]
 fn verify_read_save_as_db_file() {
     common::init_key_main_store();
@@ -92,6 +148,7 @@ fn verify_read_save_as_db_file() {
     assert!(r.is_ok());
 }
 
+#[ignore]
 #[test]
 fn verify_entry_1() {
     // get_entry_form_data_by_id

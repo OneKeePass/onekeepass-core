@@ -176,8 +176,7 @@ pub mod entry_keyvalue_key {
     // pub const SKIP_IF_KEY_FILE_NOT_EXISTS: &str = "SkipIfKeyFileNotExists";
 }
 
-
-// Note: 
+// Note:
 // At this time mainly some essential xml elements are used in OKP app
 // For example, tags such as Color, ForegroundColor, BackgroundColor ect are not considered
 
@@ -196,12 +195,12 @@ pub mod xml_element {
     pub const DATABASE_DESCRIPTION_CHANGED: &[u8] = b"DatabaseDescriptionChanged";
     pub const SETTINGS_CHANGED: &[u8] = b"SettingsChanged";
 
-    pub const DEFAULT_USER_NAME :&[u8]  = b"DefaultUserName";
-    pub const DEFAULT_USER_NAME_CHANGED :&[u8]  = b"DefaultUserNameChanged";
+    pub const DEFAULT_USER_NAME: &[u8] = b"DefaultUserName";
+    pub const DEFAULT_USER_NAME_CHANGED: &[u8] = b"DefaultUserNameChanged";
 
-    pub const MASTER_KEY_CHANGED :&[u8]  = b"MasterKeyChanged";
+    pub const MASTER_KEY_CHANGED: &[u8] = b"MasterKeyChanged";
     pub const RECYCLE_BIN_ENABLED: &[u8] = b"RecycleBinEnabled";
-    
+
     pub const RECYCLE_BIN_UUID: &[u8] = b"RecycleBinUUID";
     pub const RECYCLE_BIN_CHANGED: &[u8] = b"RecycleBinChanged";
 
@@ -212,7 +211,6 @@ pub mod xml_element {
     pub const MAINTENANCE_HISTORY_DAYS: &[u8] = b"MaintenanceHistoryDays";
     pub const HISTORY_MAX_SIZE: &[u8] = b"HistoryMaxSize";
     pub const LAST_SELECTED_GROUP: &[u8] = b"LastSelectedGroup";
-
 
     pub const MEMORY_PROTECTION: &[u8] = b"MemoryProtection";
     pub const PROTECT_TITLE: &[u8] = b"ProtectTitle";
@@ -228,14 +226,14 @@ pub mod xml_element {
 
     // It seems, 'KeePass' removes an entry or group completely and writes its UUID
     // here. This happens when RECYCLE_BIN_ENABLED is false ( By default it is false in KeePass app)
-    // OneKeePass and other implementation like KeePassXC uses RECYCLE_BIN_ENABLED = true and 
+    // OneKeePass and other implementation like KeePassXC uses RECYCLE_BIN_ENABLED = true and
     // Gives the user an option later to empty recycle bin or undo
     // However, when groups or entries are deleted permanently, the uuids of those objectes
     // are added under DeletedObjects after removing the groups/entries content from db
     pub const DELETED_OBJECTS: &[u8] = b"DeletedObjects";
     pub const DELETED_OBJECT: &[u8] = b"DeletedObject";
     pub const DELETION_TIME: &[u8] = b"DeletionTime";
-    
+
     //Some Common tags
 
     //Custom Data
@@ -272,8 +270,7 @@ pub mod xml_element {
     pub const KEY: &[u8] = b"Key";
     pub const VALUE: &[u8] = b"Value"; //
     pub const HISTORY: &[u8] = b"History";
-    pub const CUSTOM_ICON_UUID: &[u8] = b"CustomIconUUID"; 
-    
+    pub const CUSTOM_ICON_UUID: &[u8] = b"CustomIconUUID";
 
     // AutoKey related
     // Entry level
@@ -312,14 +309,26 @@ pub mod key_file_xml_element {
 
 #[allow(dead_code)]
 pub mod uuid {
-    pub const ARGON2_KDF: &[u8] = &[
+    // KeePassLib/Cryptography/KeyDerivation/Argon2Kdf.cs
+    // KeePass2.cpp
+
+    // Type Argon2d
+    pub const ARGON2_D_KDF: &[u8] = &[
         0xEF, 0x63, 0x6D, 0xDF, 0x8C, 0x29, 0x44, 0x4B, 0x91, 0xF7, 0xA9, 0xA4, 0x03, 0xE3, 0x0A,
         0x0C,
     ];
-    pub const AES_KDF: &[u8] = &[
-        0xC9, 0xD9, 0xF3, 0x9A, 0x62, 0x8A, 0x44, 0x60, 0xBF, 0x74, 0x0D, 0x08, 0xC1, 0x8A, 0x4F,
-        0xEA,
+
+    // Type // Argon2id
+    pub const ARGON2_ID_KDF: &[u8] = &[
+        0x9E, 0x29, 0x8B, 0x19, 0x56, 0xDB, 0x47, 0x73, 0xB2, 0x3D, 0xFC, 0x3E, 0xC6, 0xF0, 0xA1,
+        0xE6,
     ];
+
+    // This is supporeted in old KeePass format 3 and we are not supporting
+    // pub const AES_KDF: &[u8] = &[
+    //     0xC9, 0xD9, 0xF3, 0x9A, 0x62, 0x8A, 0x44, 0x60, 0xBF, 0x74, 0x0D, 0x08, 0xC1, 0x8A, 0x4F,
+    //     0xEA,
+    // ];
 
     pub const CHACHA20: &[u8] = &[
         0xD6, 0x03, 0x8A, 0x2B, 0x8B, 0x6F, 0x4C, 0xB5, 0xA5, 0x24, 0x33, 0x9A, 0x31, 0xDB, 0xB5,
@@ -402,10 +411,19 @@ pub mod inner_header_type {
 #[allow(unused)]
 mod tests {
 
+    #[ignore]
     #[test]
     fn generate_uuid() {
         let uid = uuid::Uuid::new_v4();
         println!("{}", crate::util::as_hex_array_formatted(uid.as_bytes()));
         println!("{}", uid.to_string());
+    }
+
+    #[ignore]
+    #[test]
+    fn generate_uuid_as_bytes() {
+        let uuid_str = "7c02bb82-79a7-4ac0-927d-114a00648238";
+        let uuid = uuid::Uuid::parse_str(&uuid_str).unwrap();
+        println!("{}", crate::util::as_hex_array_formatted(uuid.as_bytes()));
     }
 }

@@ -1,12 +1,13 @@
 mod categories;
 mod entry;
 mod parsing;
+mod db_setting;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    db::{ContentCipherId, KdbxFile, KdfAlgorithm},
+    db::KdbxFile,
     db_content::Meta,
     util,
 };
@@ -14,7 +15,9 @@ use crate::{
 pub use self::categories::*;
 pub use self::entry::*;
 
-// Following way can be used in case we want to export types from 'entry' under some
+pub use self::db_setting::*;
+
+// The following way can be used in case we want to export types from 'entry' under some
 // other module name.
 // The calleer can use the following
 // pub use crate::form_data::entry_form_data::{EntryFormData, EntrySummary, EntryTypeNames};
@@ -52,26 +55,6 @@ impl From<&MetaFormData> for Meta {
 
         meta
     }
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct DbSettings {
-    pub kdf: KdfAlgorithm,
-    pub cipher_id: ContentCipherId,
-    pub password: Option<String>,
-    pub key_file_name: Option<String>,
-    // Used for both reading and setting from UI side
-    pub password_used: bool,
-    pub key_file_used: bool,
-    // Set when changed from the UI side
-    pub password_changed: bool,
-    pub key_file_changed: bool,
-
-    // Just the file name component of the full key file name 'key_file_name'
-    // Used in mobile mainly
-    pub key_file_name_part: Option<String>,
-    pub database_file_name: String,
-    pub meta: MetaFormData,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]

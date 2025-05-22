@@ -4,23 +4,37 @@ use argon2_sys::{
 };
 use std::ffi::CStr;
 
-use crate::error::{Error, Result};
+use crate::{
+    constants,
+    error::{Error, Result},
+};
 use serde::{Deserialize, Serialize};
 
 pub trait Kdf {
     fn transform_key(&self, composite_key: Vec<u8>) -> Result<Vec<u8>>;
 }
 
+// Argon2 variants are identified by these constants
+// https://docs.rs/argon2-sys/0.1.0/argon2_sys/constant.Argon2_d.html
+const VARIANT_ARGON2_D: u32 = 0;
+const VARIANT_ARGON2_ID: u32 = 2;
+
+// This variant is not used in KeePass
+// const VARIANT_ARGON2_I: u32 = 1;
+
 #[derive(Clone, Deserialize, Serialize, Debug)]
 // While deserializing, any missing fields are formed from the struct's implementation of Default
 #[serde(default)]
 pub struct Argon2Kdf {
-    pub memory: u64,
-    //#[serde(default = "default_salt")]
-    pub salt: Vec<u8>,
-    pub iterations: u64,
-    pub parallelism: u32,
-    pub version: u32,
+    #[serde(skip_serializing)]
+    pub(crate) salt: Vec<u8>,
+
+    pub(crate) memory: u64,
+    pub(crate) iterations: u64,
+    pub(crate) parallelism: u32,
+    pub(crate) version: u32,
+
+    variant: u32,
 }
 
 impl Default for Argon2Kdf {
@@ -31,23 +45,44 @@ impl Default for Argon2Kdf {
             salt: super::get_random_bytes::<32>(),
             iterations: 10,
             parallelism: 2,
-            //hard code use of the default for now
+            // hard code use of the default for now
             version: 19,
+            variant: VARIANT_ARGON2_D,
         }
     }
 }
 
 impl Argon2Kdf {
+    pub(crate) fn variant_2d() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn variant_2id() -> Self {
+        let mut argon_kdf = Self::default();
+        argon_kdf.variant = VARIANT_ARGON2_ID;
+        argon_kdf
+    }
+
+    // The uuids used by KeePass KDBX 4
+    pub(crate) fn uuid_bytes(&self) -> &[u8] {
+        if self.variant == VARIANT_ARGON2_D {
+            constants::uuid::ARGON2_D_KDF
+        } else {
+            constants::uuid::ARGON2_ID_KDF
+        }
+    }
+
     // Creates argon2kdf with specific parameters values
     // The arg 'memory' size is in bytes
-    pub fn from(memory: u64, iterations: u64, parallelism: u32) -> Self {
+    pub(crate) fn from(memory: u64, iterations: u64, parallelism: u32) -> Self {
         Self {
             memory,
             salt: super::get_random_bytes::<32>(),
             iterations,
             parallelism,
-            //hard code use of the default for now
+            // hard code use of the default for now
             version: 19,
+            variant: VARIANT_ARGON2_D,
         }
     }
 }
@@ -85,7 +120,7 @@ impl Kdf for Argon2Kdf {
         };
 
         let context_ptr = &mut context as *mut Argon2_Context;
-        let variant = 0 as argon2_type;
+        let variant = self.variant as argon2_type;
         let return_code = unsafe { argon2_ctx(context_ptr, variant) };
 
         match check_return_code(return_code) {

@@ -8,12 +8,16 @@ pub struct KdbxFile {
     // See db_service::read_kdbx
     // In desktop (and also in mobile?), this is the actual full file path
     pub(crate) database_file_name: String,
+
     pub(crate) file_key: Option<FileKey>,
+
     pub(crate) main_header: MainHeader,
     pub(crate) inner_header: InnerHeader,
     pub(crate) secured_database_keys: SecuredDatabaseKeys,
-    // keepass_main_content is an Option type as it will be set to some value omly after xml content extraction
+
+    // keepass_main_content is an Option type as it will be set to some value only after xml content extraction is completed
     pub(crate) keepass_main_content: Option<KeepassFile>,
+
     pub(crate) checksum_hash: Vec<u8>,
 }
 
@@ -191,12 +195,14 @@ impl KdbxFile {
         self.inner_header.get_bytes_content(data_hash)
     }
 
-    pub(crate) fn attachmentset(&self, ) ->  &AttachmentSet{
+    pub(crate) fn attachmentset(&self) -> &AttachmentSet {
         &self.inner_header.entry_attachments
     }
 
-    pub(crate) fn insert_or_update_with_attachmentset(&mut self,other:&AttachmentSet) {
-        self.inner_header.entry_attachments.insert_or_update_with_attachmentset(other);
+    pub(crate) fn insert_or_update_with_attachmentset(&mut self, other: &AttachmentSet) {
+        self.inner_header
+            .entry_attachments
+            .insert_or_update_with_attachmentset(other);
     }
 
     pub fn get_content_cipher_id(&self) -> ContentCipherId {
@@ -219,14 +225,16 @@ impl KdbxFile {
     }
 
     pub fn set_kdf_algorithm(&mut self, other_kdf: KdfAlgorithm) -> Result<()> {
-        if let KdfAlgorithm::Argon2(ref _other) = other_kdf {
-            // The incoming other_kdf is expected to have all valid values in KdfAlgorithm::Argon2(crypto::kdf::Argon2Kdf)
-            self.main_header.kdf_algorithm = other_kdf;
-            Ok(())
-        } else {
-            Err(Error::UnsupportedKdfAlgorithm(
+        match other_kdf {
+            KdfAlgorithm::Argon2d(ref _other) | KdfAlgorithm::Argon2id(ref _other) => {
+                // The incoming other_kdf is expected to have all valid values in KdfAlgorithm::Argon2(crypto::kdf::Argon2Kdf)
+                self.main_header.kdf_algorithm = other_kdf;
+                Ok(())
+            }
+
+            _ => Err(Error::UnsupportedKdfAlgorithm(
                 "Invalid Kdf algorithm is passed while updating in the setting".into(),
-            ))
+            )),
         }
     }
 
@@ -274,11 +282,11 @@ impl MainHeader {
         let mut buf = Cursor::new(Vec::<u8>::new());
         buf.write(data)?;
         buf.seek(SeekFrom::Start(0))?;
-        //variant dict version (little endian) expected [0 1] rather the high byte  is critical
-        //and the loading code should refuse to load the data if the high byte is too high
+        // variant dict version (little endian) expected [0 1] rather the high byte is critical
+        // and the loading code should refuse to load the data if the high byte is too high
         let mut vd_ver = [0u8; 2];
         buf.read_exact(&mut vd_ver)?;
-        //TODO: Verify the variant dict version here
+        // TODO: Verify the variant dict version here
         let mut kdf = KdfAlgorithm::NoValidKdfAvailable;
         let mut vds = Vec::new();
         let mut vd_t = [0u8; 1];
@@ -312,8 +320,10 @@ impl MainHeader {
                 }
                 vd_type::BYTEARRAY => {
                     if name.as_str() == "$UUID" {
-                        if bytes_buf == constants::uuid::ARGON2_KDF {
-                            kdf = KdfAlgorithm::Argon2(crypto::kdf::Argon2Kdf::default());
+                        if bytes_buf == constants::uuid::ARGON2_D_KDF {
+                            kdf = KdfAlgorithm::Argon2d(crypto::kdf::Argon2Kdf::variant_2d());
+                        } else if bytes_buf == constants::uuid::ARGON2_ID_KDF {
+                            kdf = KdfAlgorithm::Argon2id(crypto::kdf::Argon2Kdf::variant_2id());
                         }
                     } else {
                         vds.push(VariantDict::BYTEARRAY(name, bytes_buf.clone()));
@@ -328,35 +338,44 @@ impl MainHeader {
                 }
             }
         }
-        // Do validation to verify the supported KDF algorithm
-        if let KdfAlgorithm::Argon2(k) = kdf {
-            //println!("kdf is {:?}", k);
-            let kf = vds.iter().fold(k, |mut acc, vd| {
-                match vd {
-                    VariantDict::UINT64(name, val) if *name == "I".to_string() => {
-                        acc.iterations = *val
-                    }
-                    VariantDict::UINT64(name, val) if *name == "M".to_string() => acc.memory = *val,
-                    VariantDict::UINT32(name, val) if *name == "P".to_string() => {
-                        acc.parallelism = *val
-                    }
-                    VariantDict::UINT32(name, val) if *name == "V".to_string() => {
-                        acc.version = *val
-                    }
-                    VariantDict::BYTEARRAY(name, val) if *name == "S".to_string() => {
-                        acc.salt = val.clone()
-                    }
-                    _ => (),
-                }
-                acc
-            });
-            //println!("kdf is {:?}", kf);
-            self.kdf_algorithm = KdfAlgorithm::Argon2(kf);
-            //Ok(KdfAlgorithm::Argon2(kf))
-            Ok(())
-        } else {
-            return Err(Error::SupportedOnlyArgon2dKdfAlgorithm);
+
+        match kdf {
+            KdfAlgorithm::Argon2d(k) => {
+                self.kdf_algorithm = KdfAlgorithm::Argon2d(self.update_argon2_with_vds(&vds, k));
+                Ok(())
+            }
+
+            KdfAlgorithm::Argon2id(k) => {
+                self.kdf_algorithm = KdfAlgorithm::Argon2id(self.update_argon2_with_vds(&vds, k));
+                Ok(())
+            }
+
+            _ => Err(Error::SupportedOnlyArgon2dKdfAlgorithm),
         }
+    }
+
+    fn update_argon2_with_vds(
+        &self,
+        vds: &Vec<VariantDict>,
+        argon2_kdf: crypto::kdf::Argon2Kdf,
+    ) -> crypto::kdf::Argon2Kdf {
+        let kf = vds.iter().fold(argon2_kdf, |mut acc, vd| {
+            match vd {
+                VariantDict::UINT64(name, val) if *name == "I".to_string() => acc.iterations = *val,
+                VariantDict::UINT64(name, val) if *name == "M".to_string() => acc.memory = *val,
+                VariantDict::UINT32(name, val) if *name == "P".to_string() => {
+                    acc.parallelism = *val
+                }
+                VariantDict::UINT32(name, val) if *name == "V".to_string() => acc.version = *val,
+                VariantDict::BYTEARRAY(name, val) if *name == "S".to_string() => {
+                    acc.salt = val.clone()
+                }
+                _ => (),
+            }
+            acc
+        });
+
+        kf
     }
 
     fn kdf_parameters_to_bytes(&mut self) -> Result<Vec<u8>> {
@@ -381,13 +400,22 @@ impl MainHeader {
             Ok(())
         };
 
-        if let KdfAlgorithm::Argon2(kdf) = &self.kdf_algorithm {
-            write(vd_type::BYTEARRAY, "$UUID", constants::uuid::ARGON2_KDF)?;
-            write(vd_type::UINT64, "I", &kdf.iterations.to_le_bytes())?;
-            write(vd_type::UINT64, "M", &kdf.memory.to_le_bytes())?;
-            write(vd_type::UINT32, "P", &kdf.parallelism.to_le_bytes())?;
-            write(vd_type::BYTEARRAY, "S", &kdf.salt)?;
-            write(vd_type::UINT32, "V", &kdf.version.to_le_bytes())?;
+        match &self.kdf_algorithm {
+            // Both Argon2 variants have the same parameters
+            KdfAlgorithm::Argon2d(kdf) | KdfAlgorithm::Argon2id(kdf) => {
+                write(vd_type::BYTEARRAY, "$UUID", kdf.uuid_bytes())?;
+                write(vd_type::UINT64, "I", &kdf.iterations.to_le_bytes())?;
+                write(vd_type::UINT64, "M", &kdf.memory.to_le_bytes())?;
+                write(vd_type::UINT32, "P", &kdf.parallelism.to_le_bytes())?;
+                write(vd_type::BYTEARRAY, "S", &kdf.salt)?;
+                write(vd_type::UINT32, "V", &kdf.version.to_le_bytes())?;
+            }
+
+            _ => {
+                return Err(Error::UnsupportedKdfAlgorithm(format!(
+                    "Found invalid KdfAlgorithm during writing"
+                )));
+            }
         }
         //IMPORTANT: Need to mark the end of Variant Dict with just END type byte
         writer.write(&[vd_type::NONE])?;

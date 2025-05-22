@@ -507,7 +507,7 @@ pub struct SectionV1 {
 }
 
 impl Section {
-    pub(crate) fn new(name: &str) -> Self {
+    pub(crate) fn _new(name: &str) -> Self {
         Self {
             name: name.into(),
             field_defs: vec![],
