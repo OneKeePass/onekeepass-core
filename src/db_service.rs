@@ -4,7 +4,7 @@
 mod attachment;
 mod io;
 
-// TODO: Need to move module storage to db_service_ffi crate as it is used only in mobile apps
+// Note: Moved module storage to db_service_ffi crate as it is used only in mobile apps for now
 
 // Modules storage and callback_service are used for now only in mobile apps
 //#[cfg(any( target_os = "ios",target_os = "android"))]
@@ -1049,6 +1049,7 @@ pub fn new_blank_group_with_parent(
     Ok(group)
 }
 
+#[cfg(any(target_os = "macos",target_os = "windows",target_os = "linux"))]
 pub fn merge_databases(
     target_db_key: &str,
     source_db_key: &str,
@@ -1056,7 +1057,7 @@ pub fn merge_databases(
     key_file_name: Option<&str>,
 ) -> Result<MergeResult> {
     if target_db_key == source_db_key {
-        return Err(error::Error::UnexpectedError(format!("Both source and target are the same databses. Please select a different database to merge")));
+        return Err(error::Error::UnexpectedError(format!("Both source and target are the same databases. Please select a different database to merge")));
     }
 
     // IMPORTANT:
@@ -1101,6 +1102,34 @@ pub fn merge_databases(
         close_kdbx(source_db_key)?;
         log::debug!("source_db_key closed as it was opened only for merging");
     }
+
+    Ok(merge_result)
+}
+
+
+#[cfg(any( target_os = "ios",target_os = "android"))]
+pub fn merge_databases(target_db_key: &str,source_db_key: &str,)  -> Result<MergeResult> {
+    if target_db_key == source_db_key {
+        return Err(error::Error::UnexpectedError(format!("Both source and target are the same databases. Please select a different database to merge")));
+    }
+
+    let merge_result = {
+        let mut store = main_store().lock().unwrap();
+        let [target, source] = store.get_disjoint_mut([target_db_key, source_db_key]);
+        log::debug!("Got refs for source and target");
+
+        let target_kdbx = &mut target
+            .ok_or_else(|| "Target database key is not found")?
+            .kdbx_file;
+        let source_kdbx = &source
+            .as_ref()
+            .ok_or_else(|| "Source database key is not found")?
+            .kdbx_file;
+        let merge_result = db_merge::Merger::from_kdbx_file(source_kdbx, target_kdbx).merge()?;
+        log::debug!("Dbs are merged");
+
+        merge_result
+    };
 
     Ok(merge_result)
 }

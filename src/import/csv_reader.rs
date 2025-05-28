@@ -49,6 +49,7 @@ pub struct CsvImportMapping {
 
 impl CsvImportMapping {
     // create_new_db_with_imported_csv
+    #[cfg(any(target_os = "macos",target_os = "windows",target_os = "linux"))]
     pub fn create_new_db(&self, new_db: NewDatabase) -> Result<KdbxLoaded> {
         let mut kdbx_file = new_db.create()?;
         let keepass_file = kdbx_file.keepass_main_content_mut();

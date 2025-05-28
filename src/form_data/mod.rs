@@ -69,6 +69,8 @@ pub struct KdbxLoaded {
     pub key_file_name: Option<String>,
 }
 
+// See write_new_db_kdbx_file fn 
+
 impl From<&KdbxFile> for KdbxLoaded {
     fn from(kdbx_file: &KdbxFile) -> Self {
         let db_key = kdbx_file.get_database_file_name().into();
@@ -80,8 +82,8 @@ impl From<&KdbxFile> for KdbxLoaded {
             if #[cfg(any(target_os = "macos",target_os = "windows",target_os = "linux"))] {
                 (file_name,key_file_name) = (util::file_name(kdbx_file.get_database_file_name()),kdbx_file.get_key_file_name());
             } else {
-                // In case of Mobile
-                (file_name,key_file_name) = (new_db.file_name, new_db.key_file_name) ;
+                // In case of Mobile. Needs fixing
+                (file_name,key_file_name) = (None, kdbx_file.get_key_file_name()) ;
             }
         }
 
