@@ -29,10 +29,14 @@ pub struct CategoryDetail {
     pub groups_count: usize,
     pub icon_id: i32,
     pub icon_name: Option<String>,
+
     // Used in case of Entry type based grouping
     pub entry_type_uuid: Option<Uuid>,
+
     // In case of group tree or group category this is used
     pub group_uuid: Option<Uuid>,
+    pub parent_group_uuid: Option<Uuid>,
+
     // Used when tag based grouping is used
     pub tag_id: Option<String>,
 }
@@ -176,6 +180,7 @@ impl From<&KeepassFile> for EntryCategoryInfo {
             icon_name: None,
             entry_type_uuid: None,
             group_uuid: None,
+            parent_group_uuid: None,
             tag_id: None,
         };
 
@@ -189,6 +194,7 @@ impl From<&KeepassFile> for EntryCategoryInfo {
             icon_name: None,
             entry_type_uuid: None,
             group_uuid: None,
+            parent_group_uuid: None,
             tag_id: None,
         };
 
@@ -202,10 +208,11 @@ impl From<&KeepassFile> for EntryCategoryInfo {
             icon_name: None,
             entry_type_uuid: None,
             group_uuid: None,
+            parent_group_uuid: None,
             tag_id: None,
         };
 
-        //Group category details
+        // Group category details
         let mut group_categories: Vec<GroupCategory> = vec![];
 
         // By calling get_all_groups with true we are excluding recycle bin group from category
@@ -222,6 +229,7 @@ impl From<&KeepassFile> for EntryCategoryInfo {
                         icon_name: None,
                         entry_type_uuid: None,
                         group_uuid: None,
+                        parent_group_uuid: None,
                         tag_id: None,
                     },
                 })
@@ -275,6 +283,7 @@ fn type_name_categories(
             },
             entry_type_uuid: Some(uuid.clone()),
             group_uuid: None,
+            parent_group_uuid: None,
             tag_id: None,
         })
     }
@@ -296,6 +305,7 @@ fn general_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
         icon_name: None,
         entry_type_uuid: None,
         group_uuid: None,
+        parent_group_uuid: None,
         tag_id: None,
     };
 
@@ -309,6 +319,7 @@ fn general_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
         icon_name: None,
         entry_type_uuid: None,
         group_uuid: None,
+        parent_group_uuid: None,
         tag_id: None,
     };
 
@@ -322,6 +333,7 @@ fn general_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
         icon_name: None,
         entry_type_uuid: None,
         group_uuid: None,
+        parent_group_uuid: None,
         tag_id: None,
     };
 
@@ -343,6 +355,7 @@ fn group_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
                 icon_name: None,
                 entry_type_uuid: None,
                 group_uuid: Some(group.uuid.clone()),
+                parent_group_uuid: Some(group.parent_group_uuid()),
                 tag_id: None,
             })
         }
@@ -391,6 +404,7 @@ fn tag_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
                         icon_name: None,
                         entry_type_uuid: None,
                         group_uuid: None,
+                        parent_group_uuid: None,
                         tag_id: Some(t.clone()),
                     };
                     acc.insert(t, d);

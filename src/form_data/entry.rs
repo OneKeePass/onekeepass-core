@@ -582,6 +582,7 @@ impl From<&EntryFormData> for Entry {
 #[derive(Serialize, Deserialize, Debug, Default, PartialEq, Eq)]
 pub struct EntrySummary {
     pub uuid: String,
+    pub parent_group_uuid:Uuid,
     pub title: Option<String>,
     pub secondary_title: Option<String>, //usually the user name
     pub icon_id: i32,
@@ -599,7 +600,9 @@ impl EntrySummary {
             //let ht = he.times.last_modification_time.format("%Y-%m-%dT%H:%M:%S");
 
             summary_list.push(Self {
-                uuid: he.uuid.to_string(),
+                uuid: he.uuid.to_string(), 
+                // We use the entry's parent group uuid for its history
+                parent_group_uuid: entry.parent_group_uuid(),
                 title: kv.map(|x| x.value.clone()),
                 // There is some issue of using chrono Local to get the time in local TZ in mac 12.6+ in M1
                 // See more details in util.rs test. The utc time is set here and in the UI side, the datetime in local TZ shown
@@ -690,10 +693,10 @@ impl EntrySummary {
             let title = parsed_fields
                 .get(&title_upper)
                 .map_or_else(|| e.find_kv_field_value(TITLE), |s| Some(s.to_string())); //e.find_kv_field_value(TITLE);
-
             let secondary_title = EntrySummary::secondary_title(e, &parsed_fields);
             summary_list.push(Self {
                 uuid: e.uuid.to_string(),
+                parent_group_uuid:e.parent_group_uuid(),
                 title,
                 secondary_title,
                 icon_id: e.icon_id,

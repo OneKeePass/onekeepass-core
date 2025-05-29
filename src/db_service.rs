@@ -588,6 +588,7 @@ pub fn search_term(db_key: &str, term: &str) -> Result<EntrySearchResult> {
                 let (t1, t2) = extract_entry_titles(e);
                 search_result.entry_items.push(EntrySummary {
                     uuid: e.uuid.to_string(),
+                    parent_group_uuid:e.parent_group_uuid(),
                     title: t1,
                     secondary_title: t2,
                     icon_id: e.icon_id,
