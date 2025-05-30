@@ -62,7 +62,29 @@ pub struct MergeResult {
 
     meta_data_changed: bool,
 
+    // It is set to true when any of the above change is done to target database
+    merge_done: bool,
+
+    // Merge is generally used when two databases are similar. But there is a posibilities that, user may
+    // merge entrirely two different databases. Then this flag is true
     different_databases: bool,
+}
+
+impl MergeResult {
+    fn finalize_merge_done(&mut self) {
+        // If there is any change is done to the target database, then we set this flag
+        if self.meta_data_changed
+            || !self.updated_entries.is_empty()
+            || !self.parent_changed_entries.is_empty()
+            || !self.added_groups.is_empty()
+            || !self.updated_groups.is_empty()
+            || !self.parent_changed_groups.is_empty()
+            || !self.permanently_deleted_entries.is_empty()
+            || !self.permanently_deleted_groups.is_empty()
+        {
+            self.merge_done = true;
+        }
+    }
 }
 
 pub struct Merger<'a> {
@@ -226,6 +248,8 @@ impl<'a> Merger<'a> {
 
             // Copy all deleted objects from sourc db to target
         }
+
+        self.merge_result.finalize_merge_done();
 
         Ok(self.merge_result.clone())
     }
