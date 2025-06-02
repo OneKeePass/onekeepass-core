@@ -307,10 +307,10 @@ impl<'a> Merger<'a> {
     }
 
     fn merge_groups(&mut self, source_group: &Group) -> Result<()> {
-        log::debug!(
-            "-- GROUP merge_groups is called for source_group {} ",
-            source_group.name
-        );
+        // log::debug!(
+        //     "-- GROUP merge_groups is called for source_group {} ",
+        //     source_group.name
+        // );
 
         self.merge_entries(source_group)?;
 
@@ -407,6 +407,7 @@ impl<'a> Merger<'a> {
             //     source_group.name,
             //     &source_entry_uuid
             // );
+
             // Get the source entry using the uuid
             if let Some(source_entry) = source_db_root.entry_by_id(source_entry_uuid) {
                 let source_parent_group_uuid = self.parent_group_uuid_of_entry(source_entry);
@@ -484,13 +485,15 @@ impl<'a> Merger<'a> {
         } else {
             // Target entry is newer
 
-            let to_entry_cloned = &mut target_entry;
-            let from_entry_cloned = source_entry.clone();
-            // source entry's histories are merged to the target entry's history
-            // and the target entry is stored in the target db
-            self.merge_histories(&from_entry_cloned, to_entry_cloned)?;
+            if !target_entry.found_in_history(source_entry) {
+                let to_entry_cloned = &mut target_entry;
+                let from_entry_cloned = source_entry.clone();
+                // source entry's histories are merged to the target entry's history
+                // and the target entry is stored in the target db
+                self.merge_histories(&from_entry_cloned, to_entry_cloned)?;
 
-            self.record_entry_updated(&to_entry_cloned.title(), to_entry_cloned.get_uuid());
+                self.record_entry_updated(&to_entry_cloned.title(), to_entry_cloned.get_uuid());
+            }
 
             // debug!("--ENTRY record_entry_updated target is the latest");
         }

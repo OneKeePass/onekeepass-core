@@ -281,7 +281,7 @@ impl Entry {
         self
     }
 
-    pub(crate) fn set_tags(&mut self, tags:&str) -> &mut Self {
+    pub(crate) fn set_tags(&mut self, tags: &str) -> &mut Self {
         self.tags = tags.into();
         self
     }
@@ -303,12 +303,11 @@ impl Entry {
         entry
     }
 
-     // An Entry with default login entry type
-     pub(crate) fn new_login_entry(parent_group_uuid: Option<&Uuid>) -> Self {
+    // An Entry with default login entry type
+    pub(crate) fn new_login_entry(parent_group_uuid: Option<&Uuid>) -> Self {
         let entry_type_uuid = crate::build_uuid!(crate::constants::entry_type_uuid::LOGIN);
         Entry::new_blank_entry_by_type_id(&entry_type_uuid, None, parent_group_uuid)
     }
-
 
     // Any entry specific custom data parsing and setting in Entry to be done here
     pub(crate) fn after_xml_reading(&mut self, meta: &Meta) {
@@ -632,6 +631,17 @@ impl Entry {
         });
 
         self.adjust_history_entries_entry_type_indexes();
+    }
+
+    // Checks whether the other entry is in the current entry's history or not
+    pub(crate) fn found_in_history(&self, other_entry: &Entry) -> bool {
+        self.histories()
+            .iter()
+            .find(|he| {
+                he.uuid == other_entry.uuid
+                    && he.last_modification_time() == other_entry.last_modification_time()
+            })
+            .is_some()
     }
 
     fn replace_index_by_entry_types_data(&self, histories: Vec<Entry>) -> Vec<Entry> {
