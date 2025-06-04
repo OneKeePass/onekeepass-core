@@ -71,6 +71,9 @@ pub struct KdbxLoaded {
 
 // See write_new_db_kdbx_file fn 
 
+// As this conversion is called only for desktop csv loading for now, the mobil clause is not called
+// When we introduce, csv import in mobile, then we need to ensure that 'file_name' part is set for mobile properly
+// Instead of using From based kdbx_file.into for mobile, we can add a constructor method  KdbxLoaded::from(kdbx_file: &KdbxFile,file_name)
 impl From<&KdbxFile> for KdbxLoaded {
     fn from(kdbx_file: &KdbxFile) -> Self {
         let db_key = kdbx_file.get_database_file_name().into();
@@ -82,7 +85,8 @@ impl From<&KdbxFile> for KdbxLoaded {
             if #[cfg(any(target_os = "macos",target_os = "windows",target_os = "linux"))] {
                 (file_name,key_file_name) = (util::file_name(kdbx_file.get_database_file_name()),kdbx_file.get_key_file_name());
             } else {
-                // In case of Mobile. Needs fixing
+                // In case of Mobile. Needs fixing to set 'file_name'
+                
                 (file_name,key_file_name) = (None, kdbx_file.get_key_file_name()) ;
             }
         }

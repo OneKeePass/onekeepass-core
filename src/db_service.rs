@@ -82,6 +82,7 @@ pub use crate::constants::entry_keyvalue_key;
 
 pub use crate::db_merge::MergeResult;
 
+#[cfg(any(target_os = "macos",target_os = "windows",target_os = "linux"))]
 pub use crate::import::csv_reader::{CsvImport, CsvImportOptions, CvsHeaderInfo,CsvImportMapping};
 
 #[derive(Serialize, Deserialize, Debug)]
