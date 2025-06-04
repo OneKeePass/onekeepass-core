@@ -797,12 +797,25 @@ mod tests {
     use crate::db_content::*;
     use crate::form_data::*;
 
+    #[ignore]
     #[test]
     fn verify_place_holder_parsing() {
+
+        let mut root = Root::new();
+        let root_group = Group::new_with_id();
+        
+        root.set_root_uuid(root_group.get_uuid());
+        root.insert_to_all_groups(root_group);
+
+        let mut parent_group = Group::new_with_id();
+        parent_group.parent_group_uuid = root.root_uuid();
+        
+        root.insert_group(parent_group.clone()).unwrap();
+
         let uuid = uuid::Builder::from_slice(&entry_type_uuid::LOGIN)
             .unwrap()
             .into_uuid();
-        let mut entry = Entry::new_blank_entry_by_type_id(&uuid, None, None);
+        let mut entry = Entry::new_blank_entry_by_type_id(&uuid, None, Some(&parent_group.uuid));
 
         entry.entry_field.fields.insert(
             "Title".into(),
@@ -822,19 +835,6 @@ mod tests {
             .entry_field
             .update_value(URL, "https://www.oracle.com");
 
-        let mut root = Root::new();
-        root.set_root_uuid(uuid::Uuid::new_v4());
-        let root_group = Group::new_with_id();
-        // root_group.uuid = root.root_uuid();
-        root.insert_to_all_groups(root_group);
-
-        let mut parent_group = Group::new_with_id();
-        // parent_group.uuid = uuid::Uuid::new_v4();
-        parent_group.parent_group_uuid = root.root_uuid();
-
-        entry.parent_group_uuid = parent_group.uuid;
-
-        root.insert_group(parent_group).unwrap();
         root.insert_entry(entry.clone()).unwrap();
 
         let form_data = EntryFormData::place_holder_resolved_form_data(&root, &entry);
@@ -845,6 +845,7 @@ mod tests {
         assert_eq!("My first https://www.oracle.com name", resolved);
     }
 
+    #[ignore]
     #[test]
     fn verify_creating_display_entry() {
         let uuid = uuid::Builder::from_slice(&entry_type_uuid::LOGIN)

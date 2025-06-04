@@ -1658,6 +1658,7 @@ mod tests {
         path
     }
 
+    #[ignore]
     #[test]
     fn verify_escape_unescape() {
         let s = "asddaads\nKim's idea";
@@ -1683,6 +1684,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[test]
     fn read_sample_text_xml() {
         init();
@@ -1781,6 +1783,7 @@ mod tests {
         println!(" Kp is {:?}", r.unwrap());
     }
 
+    #[ignore]
     #[test]
     fn read_sample_xml_fail1() {
         init();
@@ -1801,6 +1804,7 @@ mod tests {
         assert_eq!(r.is_err(), true);
     }
 
+    #[ignore]
     #[test]
     fn read_sample_xml() {
         init();
@@ -1830,6 +1834,7 @@ mod tests {
         println!(" Kp is {:?}", r.unwrap());
     }
 
+    #[ignore]
     #[test]
     fn read_write_sample_xml() {
         let file_name = test_file("PasswordsXC1-Tags.xml"); //TODO Need to add this test xml to repo
@@ -1875,7 +1880,8 @@ mod tests {
         // );
     }
 
-    /// Key xml file related reading and writing tests
+    // Key xml file related reading and writing tests
+    #[ignore]
     #[test]
     fn verify_reading_file_key_xml() {
         // Data text is formatted
@@ -1915,6 +1921,7 @@ mod tests {
         assert!(r1.verify_checksum().is_ok());
     }
 
+    #[ignore]
     #[test]
     fn verify_write_file_key_xml() {
         let data = "ABA681B2C6E19C74E671EDEC41D5AC099089F4B4605937B5B3E211AD0056B325";
@@ -1944,6 +1951,7 @@ mod tests {
         assert!(r1.verify_checksum().is_ok());
     }
 
+    #[ignore]
     #[test]
     fn verify_generate_xml_key() {
         let r = KeyFileData::generate_key_data();

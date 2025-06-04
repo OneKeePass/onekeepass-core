@@ -405,102 +405,11 @@ impl CsvImport {
     }
 }
 
-/*
-impl CsvImportMapping {
-    pub fn create_kdbx_with_imported_csv(&self, new_db: NewDatabase) -> Result<()> {
-        let mut kdbx_file = create_new_db(new_db)?;
-
-        let kp = kdbx_file.keepass_main_content_mut();
-
-        let CsvImportMapping {
-            headers,
-            mapped_fields,
-            not_mapped_headers,
-            unmapped_custom_field,
-        } = self;
-
-        // First we create a easy look up map so as to locate the field value from the StringRecord
-        let field_to_index: (
-            HashMap<String, usize>,
-            HashMap<String, usize>,
-            HashMap<String, usize>,
-        ) = headers.iter().enumerate().fold(
-            (HashMap::default(), HashMap::default(), HashMap::default()),
-            |(mut acc1, mut acc2, mut acc3), (idx, header_item)| {
-                if let Some(mapped_field_found) = mapped_fields
-                    .iter()
-                    .find(|mapped_field_item| &mapped_field_item.mapped_name == header_item)
-                {
-                    if OTHER_FIELDS.contains(&mapped_field_found.field_name.as_str()) {
-                        // Optionally Group or Tags field to index of 'StringRecord'
-                        acc1.insert(mapped_field_found.field_name.clone(), idx);
-                        (acc1, acc2, acc3)
-                    } else {
-                        // Standard entry fields to index of 'StringRecord'
-                        acc2.insert(mapped_field_found.field_name.clone(), idx);
-                        (acc1, acc2, acc3)
-                    }
-                } else if *unmapped_custom_field && not_mapped_headers.contains(header_item) {
-                    // Custom fields to index of 'StringRecord'
-                    // The custom field name will be the same as header name
-                    acc3.insert(header_item.to_string(), idx);
-                    (acc1, acc2, acc3)
-                } else {
-                    (acc1, acc2, acc3)
-                }
-            },
-        );
-
-        let custom_field_section = if *unmapped_custom_field && !not_mapped_headers.is_empty() {
-            let field_names: Vec<&str> = not_mapped_headers.iter().map(|s| s.as_str()).collect();
-            Some(Section::new_custom_field_section(field_names))
-        } else {
-            None
-        };
-
-        let mut csv_lookup = CsvLookup {
-            other_fields: field_to_index.0,
-            standard_fields: field_to_index.1,
-            custom_fields: field_to_index.2,
-            custom_field_section,
-            keepass_file: kp,
-        };
-
-        csv_lookup.apply_csv_data()?;
-
-        Ok(())
-    }
-}
-*/
-
-/*
-    let v: HashMap<String, usize> =
-        headers
-            .iter()
-            .enumerate()
-            .fold(HashMap::default(), |mut acc, (idx, header_item)| {
-                if let Some(mapped_field_found) = mapped_fields
-                    .iter()
-                    .find(|mapped_field_item| &mapped_field_item.mapped_name == header_item)
-                {
-                    // Standard entry fields (optionally Group) to index of 'StringRecord'
-                    acc.insert(mapped_field_found.field_name.clone(), idx);
-                    acc
-                } else if unmapped_custom_field && not_mapped_headers.contains(header_item) {
-                    // Custom fields to index of 'StringRecord'
-                    // The custom field name will be the same as header name
-                    acc.insert(header_item.to_string(), idx);
-                    acc
-                } else {
-                    acc
-                }
-            });
-*/
-
 #[cfg(test)]
 mod tests {
     use super::{CsvImport, CsvImportOptions};
 
+    #[ignore]
     #[test]
     fn verify1() {
         let cfile = "/Users/jeyasankar/Downloads/test1_kdbx2.csv";
@@ -520,39 +429,3 @@ mod tests {
         CsvImport::create_entries();
     }
 }
-
-/*
-impl CsvImport {
-    pub(crate) fn import_from_path<P: AsRef<Path>>(
-        path: P,
-        import_options: CsvImportOptions,
-    ) -> Result<()> {
-        let mut csv_rdr = import_options.reader_builder().from_path(path.as_ref())?;
-
-        if csv_rdr.has_headers() {
-            let headers = csv_rdr.headers()?;
-            let v = headers.iter().map(|r| r).collect::<Vec<_>>();
-            println!(" headers in v is {:?}", &v);
-        } else {
-            let headers = csv_rdr.headers()?;
-            println!(" headers len is {:?}",headers.len());
-        }
-
-        // {
-        //     let headers = csv_rdr.headers()?;
-        //     println!("headers 1 {:?}", headers);
-        // }
-
-
-
-        for record in csv_rdr.records() {
-            let sr: StringRecord = record?;
-            println!("sr is {:?}", &sr);
-            println!("Field1 of sr is {:?}", &sr.get(0));
-        }
-
-        Ok(())
-    }
-}
-
-*/

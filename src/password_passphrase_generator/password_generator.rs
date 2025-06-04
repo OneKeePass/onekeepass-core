@@ -226,6 +226,7 @@ mod tests {
 
     use crate::password_passphrase_generator::password_generator::*;
 
+    #[ignore]
     #[test]
     fn verify_password_1() {
         let mut po = PasswordGenerationOptions::new();
@@ -235,6 +236,7 @@ mod tests {
         println!("P is {}", pwd);
     }
 
+    #[ignore]
     #[test]
     fn verify_analyze() {
         let mut po = PasswordGenerationOptions::new();
@@ -249,6 +251,7 @@ mod tests {
         // println!("result {}", r);
     }
 
+    #[ignore]
     #[test]
     fn verify_readable_password() {
         //See

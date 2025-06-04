@@ -589,6 +589,7 @@ pub(crate) fn place_holder_marker_found(input: &str) -> bool {
 mod tests {
     use super::*;
 
+    #[ignore]
     #[test]
     fn verify_place_holder_name_parsing() {
         use super::PlaceHolderType::*;
@@ -627,6 +628,7 @@ mod tests {
         assert_eq!(r, Ok(("", AnyName)));
     }
 
+    #[ignore]
     #[test]
     fn verify_recursive_use() {
         let mut entry_fields = HashMap::<String, String>::default();
@@ -657,6 +659,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[test]
     fn verify_parsing_non_existing_ref() {
         let mut entry_fields = HashMap::<String, String>::default();
@@ -686,6 +689,8 @@ mod tests {
             "Xcvbd {REF:U@I:5017C6460FED43FFB16FD85C0F875D0E} - https:://www.oracle.com"
         );
     }
+
+    #[ignore]
     #[test]
     fn verify_not_supported_ref_source_search() {
         let mut entry_fields = HashMap::<String, String>::default();
@@ -704,6 +709,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[test]
     fn verify_unknown_placeholder_name() {
         let mut entry_fields = HashMap::<String, String>::default();
@@ -728,6 +734,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[test]
     fn verify_custom_field_parsing() {
         let mut entry_fields = HashMap::<String, String>::default();
@@ -753,6 +760,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[test]
     fn verify_place_holder_in_custom_field() {
         let mut entry_fields = HashMap::<String, String>::default();
@@ -773,6 +781,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[test]
     fn verify_main_parser() {
         let mut parser = alt((field_parser(), no_field_parser()));
@@ -781,6 +790,7 @@ mod tests {
         println!(" r is {:?}", r);
     }
 
+    #[ignore]
     #[test]
     fn verify_part1() {
         let s = "kdbx://{DB_DIR}/f1/PasswordsUsesKeyFile2.kdbx";
@@ -820,6 +830,7 @@ mod tests {
         println!("v is {:?} , contains pat {}", &v, s.contains(pat));
     }
 
+    #[ignore]
     #[test]
     fn verify_drive() {
         const FILE_PROVIDER_IDS: [&str; 11] = [

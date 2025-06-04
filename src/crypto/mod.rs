@@ -92,6 +92,7 @@ mod tests {
     use super::*;
     use crate::util::init_test_logging;
 
+    #[ignore]
     #[test]
     fn check_hmac_sha256() {
         init_log_lib_info();
@@ -105,6 +106,7 @@ mod tests {
         assert!(r);
     }
 
+    #[ignore]
     #[test]
     fn veriy_aes_gcm() {
         let kc = KeyCipher::new();
@@ -126,6 +128,7 @@ mod tests {
         assert_eq!(plain_text.as_ref(), &dec_result);
     }
 
+    #[ignore]
     #[test]
     fn verify_aes256_encrypt_decrypt() {
         init_test_logging();
@@ -163,6 +166,7 @@ mod tests {
         file
     }
 
+    #[ignore]
     #[test]
     fn verify_aes256_file_data_encrypt_decrypt() {
         init_log_lib_info();

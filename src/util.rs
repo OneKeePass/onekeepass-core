@@ -517,6 +517,7 @@ pub(crate) mod test_clock {
 #[allow(unused)]
 mod tests {
     use super::*;
+    
     #[test]
     fn decode_uuid_sample_b64str() {
         init_test_logging();
