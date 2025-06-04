@@ -374,7 +374,7 @@ impl Root {
         }
     }
 
-    // Gets an existing recycle bin group referece. 
+    // Gets an existing recycle bin group referece.
     // If there is no recycle bin group, a new one is created and a ref that group is returned
     // This fn is used in the macro 'move_to_recycle_bin!' while calling move_group or with move_entry
     pub fn recycle_bin_group(&mut self) -> Option<&Group> {
@@ -501,7 +501,7 @@ impl Root {
         Ok(())
     }
 
-    pub fn update_group(&mut self, group: Group,group_modification_time_used:bool) {
+    pub fn update_group(&mut self, group: Group, group_modification_time_used: bool) {
         //TODO: Need return error if this group is not present in all_groups map
 
         if let Some(g) = self.all_groups.get_mut(&group.uuid) {
@@ -510,7 +510,7 @@ impl Root {
             } else {
                 g.times.update_modification_time_now();
             }
-            
+
             g.name = group.name;
             g.notes = group.notes;
             g.tags = group.tags;
@@ -772,7 +772,9 @@ impl Root {
         verify_uuid!(self, new_parent_id, all_groups);
 
         if group_uuid == new_parent_id {
-            return Err(Error::DataError("The group and its parent group cannot be the same"));
+            return Err(Error::DataError(
+                "The group and its parent group cannot be the same",
+            ));
         }
 
         let mut old_parent_id = Uuid::default();

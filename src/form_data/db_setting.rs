@@ -4,7 +4,6 @@ use crate::db::{ContentCipherId, KdfAlgorithm};
 
 use super::MetaFormData;
 
-
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct DbSettings {
     pub(crate) kdf: KdfAlgorithm,

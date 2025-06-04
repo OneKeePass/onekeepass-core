@@ -161,7 +161,7 @@ impl Meta {
 
     pub fn copy_to_custom_data(&mut self) {
         self.copy_entry_types_to_custom_data();
-        // TODO: 
+        // TODO:
         // Need to read and store this internal version info in meta and should be updated
         // only when we update the INTERNAL_VERSION or inserted only first time
         // self.custom_data.set_internal_version(&INTERNAL_VERSION.to_string());
@@ -281,18 +281,17 @@ impl Meta {
                 modified = true;
             }
 
-            if  self.memory_protection != other.memory_protection {
+            if self.memory_protection != other.memory_protection {
                 self.memory_protection = other.memory_protection.clone();
                 // debug!("-- META: memory_protection is changed");
                 modified = true;
             }
-            
 
             if self.entry_template_group != other.entry_template_group {
                 self.entry_template_group = other.entry_template_group.clone();
                 // debug!("-- META: entry_template_group is changed");
                 modified = true;
-             } 
+            }
 
             if self.master_key_changed != other.master_key_changed {
                 self.master_key_changed = other.master_key_changed.clone();
@@ -335,7 +334,6 @@ impl Meta {
         if self.custom_data != other.custom_data {
             for other_item in other.custom_data.get_items() {
                 if let Some(this_item) = self.custom_data.get_item_mut(&other_item.key) {
-
                     // Found a matching item
                     // TODO: Use this_item.last_modification_time ?
                     if this_item.value != other_item.value {

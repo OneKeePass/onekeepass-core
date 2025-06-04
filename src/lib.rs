@@ -4,11 +4,11 @@ mod crypto;
 mod db;
 mod db_merge;
 mod form_data;
-#[cfg(any(target_os = "macos",target_os = "windows",target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 mod import;
 mod password_passphrase_generator;
 mod searcher;
-mod xml_parse; 
+mod xml_parse;
 
 pub mod async_service;
 pub mod db_content;

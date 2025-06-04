@@ -1,8 +1,7 @@
 mod common;
 use onekeepass_core::db_service::{self, *};
 
-
-// NOTE: 
+// NOTE:
 // At this time, these tests used as dev time help and are ignored for the public use.
 // Later #[ignore] will be removed once removing dev specific tests
 
@@ -70,7 +69,6 @@ fn verify_read_write_db_file() {
         println!("2 load_kdbx is error is   {:?}", r);
     }
     assert!(r.is_ok());
-
 }
 
 #[ignore]

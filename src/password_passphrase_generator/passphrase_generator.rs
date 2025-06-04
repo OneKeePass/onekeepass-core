@@ -180,7 +180,6 @@ mod pass_phrase_impl {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use chbs::{config::BasicConfig, passphrase, probability::Probability, scheme::ToScheme, word};

@@ -22,9 +22,9 @@ use crate::db::{
 use crate::util::{self};
 
 // For now it is used in desktop
-// TODO: To use in mobile also, we need to fix calling 'save_kdbx_with_backup' 
+// TODO: To use in mobile also, we need to fix calling 'save_kdbx_with_backup'
 
-#[cfg(any(target_os = "macos",target_os = "windows",target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub(crate) fn write_new_db_kdbx_file(kdbx_file: KdbxFile) -> Result<KdbxLoaded> {
     debug!("write_new_db_kdbx_file is called ");
 
@@ -36,7 +36,7 @@ pub(crate) fn write_new_db_kdbx_file(kdbx_file: KdbxFile) -> Result<KdbxLoaded> 
     KdbxContext::insert(kdbx_file);
 
     // Save the newly created db to the file system for persistence
-    // This is desktop specific 
+    // This is desktop specific
     save_kdbx_with_backup(&db_key, None, true)?;
 
     debug!("save_kdbx_with_backup is done in write_new_db_kdbx_file");

@@ -130,8 +130,7 @@ impl Item {
     }
 }
 
-
-/* 
+/*
 // For now keeping it here as commented and may be used in any future time
 // TODO: Use Trait ?
 impl CustomData {

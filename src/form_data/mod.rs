@@ -1,16 +1,12 @@
 mod categories;
+mod db_setting;
 mod entry;
 mod parsing;
-mod db_setting;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{
-    db::KdbxFile,
-    db_content::Meta,
-    util,
-};
+use crate::{db::KdbxFile, db_content::Meta, util};
 
 pub use self::categories::*;
 pub use self::entry::*;
@@ -69,7 +65,7 @@ pub struct KdbxLoaded {
     pub key_file_name: Option<String>,
 }
 
-// See write_new_db_kdbx_file fn 
+// See write_new_db_kdbx_file fn
 
 // As this conversion is called only for desktop csv loading for now, the mobil clause is not called
 // When we introduce, csv import in mobile, then we need to ensure that 'file_name' part is set for mobile properly
@@ -86,7 +82,7 @@ impl From<&KdbxFile> for KdbxLoaded {
                 (file_name,key_file_name) = (util::file_name(kdbx_file.get_database_file_name()),kdbx_file.get_key_file_name());
             } else {
                 // In case of Mobile. Needs fixing to set 'file_name'
-                
+
                 (file_name,key_file_name) = (None, kdbx_file.get_key_file_name()) ;
             }
         }

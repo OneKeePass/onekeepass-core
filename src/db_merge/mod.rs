@@ -1,7 +1,6 @@
-
 #[cfg(test)]
 mod merge_tests;
 
 mod merger;
 
-pub use merger::{Merger,MergeResult};
+pub use merger::{MergeResult, Merger};

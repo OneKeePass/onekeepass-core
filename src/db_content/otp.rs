@@ -90,7 +90,7 @@ macro_rules! verify_digits {
     };
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize,PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct OtpData {
     // non-encoded value
     // Any base32 encoded incoming value needs to be decoded
@@ -841,7 +841,7 @@ mod tests {
     }
 
     ///////////
-    
+
     #[ignore]
     #[test]
     fn verify1_totp_59_sec() {

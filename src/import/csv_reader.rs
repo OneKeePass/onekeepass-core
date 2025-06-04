@@ -9,7 +9,7 @@ use crate::{
     constants::entry_keyvalue_key::PASSWORD,
     db::NewDatabase,
     db_content::{Entry, Group, KeepassFile, KeyValue, Section},
-    db_service::{self,KdbxContext,call_main_content_mut_action,call_kdbx_context_mut_action},
+    db_service::{self, call_kdbx_context_mut_action, call_main_content_mut_action, KdbxContext},
     error::Result,
     form_data::KdbxLoaded,
     main_content_mut_action,
@@ -61,10 +61,10 @@ impl CsvImportMapping {
         db_service::write_new_db_kdbx_file(kdbx_file)
     }
 
-    pub fn import_into_db(&self,db_key: &str) -> Result<()> {
-        main_content_mut_action!(db_key, |k: &mut KeepassFile| { 
+    pub fn import_into_db(&self, db_key: &str) -> Result<()> {
+        main_content_mut_action!(db_key, |k: &mut KeepassFile| {
             self.apply_imported_csv_data(k)?;
-            Ok(()) 
+            Ok(())
         })
     }
 

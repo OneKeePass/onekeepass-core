@@ -281,7 +281,7 @@ pub fn standard_types_ordered_by_id() -> Vec<&'static EntryType> {
 }
 
 // Gets the entry typ's UUID from its name
-pub fn standard_type_uuid_by_name(type_name:&str) -> &Uuid {
+pub fn standard_type_uuid_by_name(type_name: &str) -> &Uuid {
     STANDARD_TYPE_UUIDS_BY_NAME.get(type_name).unwrap()
 }
 

@@ -443,12 +443,15 @@ pub mod from_or_to {
 }
 
 // This module is effective only in unit tests modules that provides controlling
-// date time setting - mainly for testing db merges 
+// date time setting - mainly for testing db merges
 // This is not used in intgeration tests or in the lib's main code
 #[allow(dead_code)]
 #[cfg(test)]
 pub(crate) mod test_clock {
-    use std::{ops::Add, time::{Duration, SystemTime, UNIX_EPOCH}};
+    use std::{
+        ops::Add,
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
 
     use chrono::{DateTime, TimeZone, Utc};
     use log;
@@ -517,7 +520,7 @@ pub(crate) mod test_clock {
 #[allow(unused)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn decode_uuid_sample_b64str() {
         init_test_logging();

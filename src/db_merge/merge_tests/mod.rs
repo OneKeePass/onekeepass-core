@@ -1,10 +1,6 @@
 mod common;
 
-use crate::{
-    constants::entry_keyvalue_key::TITLE,
-    db_content::Group,
-    util,
-};
+use crate::{constants::entry_keyvalue_key::TITLE, db_content::Group, util};
 use common::*;
 
 use test_context::{test_context, TestContext};
@@ -284,12 +280,14 @@ fn verify_merge_different_databases(_ctx: &mut MergeTestContext) {
 
     println!(
         "Source db groups {:?}",
-        source.keepass_main_content()
+        source
+            .keepass_main_content()
             .root
             .get_all_groups(false)
             .iter()
             .map(|g| g.name.clone())
-            .collect::<Vec<String>>());
+            .collect::<Vec<String>>()
+    );
 
     let target_db = target.keepass_main_content.as_mut().unwrap();
 
@@ -338,28 +336,43 @@ fn verify_merge_moveto_recycle_bin(_ctx: &mut MergeTestContext) {
 
     util::test_clock::advance_by(1);
 
-    source_db.root.move_group_to_recycle_bin(group.get_uuid()).unwrap();
+    source_db
+        .root
+        .move_group_to_recycle_bin(group.get_uuid())
+        .unwrap();
 
-    let ids = source_db.root.recycle_bin_group().unwrap().sub_group_uuids().clone();
-    println!("Source Recycled groups {:?}",ids);
-    
+    let ids = source_db
+        .root
+        .recycle_bin_group()
+        .unwrap()
+        .sub_group_uuids()
+        .clone();
+    println!("Source Recycled groups {:?}", ids);
+
     for id in ids {
         let g = source_db.root.group_by_id(&id).unwrap();
         let cid = g.entry_uuids();
-        println!("Source recycled entry id {:?} in group {}",&cid,g.name() );
+        println!("Source recycled entry id {:?} in group {}", &cid, g.name());
     }
 
-    let _merge_result = Merger::from_kdbx_file(&source, &mut target).merge().unwrap();
+    let _merge_result = Merger::from_kdbx_file(&source, &mut target)
+        .merge()
+        .unwrap();
 
-    let target_db = target.keepass_main_content.as_mut().unwrap(); 
-    let ids = target_db.root.recycle_bin_group().unwrap().sub_group_uuids().clone();
+    let target_db = target.keepass_main_content.as_mut().unwrap();
+    let ids = target_db
+        .root
+        .recycle_bin_group()
+        .unwrap()
+        .sub_group_uuids()
+        .clone();
 
-    println!("Target Recycled groups {:?}",ids);
+    println!("Target Recycled groups {:?}", ids);
 
     for id in ids {
         let g = target_db.root.group_by_id(&id).unwrap();
         let cid = g.entry_uuids();
-        println!("Target recycled entry id {:?} in group {}",&cid,g.name() );
+        println!("Target recycled entry id {:?} in group {}", &cid, g.name());
     }
 }
 
@@ -448,13 +461,11 @@ fn verify_merge_deletions_2(_ctx: &mut MergeTestContext) {
         .unwrap();
 
     // As entry22 is modified in target after the deletion time of group22 and entry22 in source
-    // The whole group is retained 
-    let target_db = target.keepass_main_content.as_ref().unwrap();    
+    // The whole group is retained
+    let target_db = target.keepass_main_content.as_ref().unwrap();
     let target_db_deleted_objects = target_db.root.deleted_objects().clone();
-    
+
     // println!(" Dos after {:?}", target_db_deleted_objects);
 
     assert_eq!(target_db_deleted_objects.len() == 0, true);
-
 }
-

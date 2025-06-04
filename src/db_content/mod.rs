@@ -154,13 +154,13 @@ impl Times {
         }
     }
 
-    pub(crate) fn update_modification_time_now(&mut self,) {
+    pub(crate) fn update_modification_time_now(&mut self) {
         let n = util::now_utc();
         self.last_modification_time = n;
         self.last_access_time = n;
     }
 
-    pub(crate) fn update_modification_time(&mut self,modification_time:NaiveDateTime,) {
+    pub(crate) fn update_modification_time(&mut self, modification_time: NaiveDateTime) {
         self.last_modification_time = modification_time;
         self.last_access_time = modification_time;
     }

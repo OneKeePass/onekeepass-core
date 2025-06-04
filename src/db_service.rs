@@ -82,8 +82,8 @@ pub use crate::constants::entry_keyvalue_key;
 
 pub use crate::db_merge::MergeResult;
 
-#[cfg(any(target_os = "macos",target_os = "windows",target_os = "linux"))]
-pub use crate::import::csv_reader::{CsvImport, CsvImportOptions, CvsHeaderInfo,CsvImportMapping};
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub use crate::import::csv_reader::{CsvImport, CsvImportMapping, CsvImportOptions, CvsHeaderInfo};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SaveStatus {
@@ -137,7 +137,7 @@ impl Default for KdbxContext {
 
 impl KdbxContext {
     // Add the newly created KdbxFile to cache for UI use
-    fn insert(kdbx_file:KdbxFile,) {
+    fn insert(kdbx_file: KdbxFile) {
         let db_key = kdbx_file.get_database_file_name().to_string();
         let mut kdbx_context = KdbxContext::default();
         kdbx_context.kdbx_file = kdbx_file;
@@ -589,7 +589,7 @@ pub fn search_term(db_key: &str, term: &str) -> Result<EntrySearchResult> {
                 let (t1, t2) = extract_entry_titles(e);
                 search_result.entry_items.push(EntrySummary {
                     uuid: e.uuid.to_string(),
-                    parent_group_uuid:e.parent_group_uuid(),
+                    parent_group_uuid: e.parent_group_uuid(),
                     title: t1,
                     secondary_title: t2,
                     icon_id: e.icon_id,
@@ -1051,7 +1051,7 @@ pub fn new_blank_group_with_parent(
     Ok(group)
 }
 
-#[cfg(any(target_os = "macos",target_os = "windows",target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn merge_databases(
     target_db_key: &str,
     source_db_key: &str,
@@ -1108,9 +1108,8 @@ pub fn merge_databases(
     Ok(merge_result)
 }
 
-
-#[cfg(any( target_os = "ios",target_os = "android"))]
-pub fn merge_databases(target_db_key: &str,source_db_key: &str,)  -> Result<MergeResult> {
+#[cfg(any(target_os = "ios", target_os = "android"))]
+pub fn merge_databases(target_db_key: &str, source_db_key: &str) -> Result<MergeResult> {
     if target_db_key == source_db_key {
         return Err(error::Error::UnexpectedError(format!("Both source and target are the same databases. Please select a different database to merge")));
     }

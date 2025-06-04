@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 mod crypto_impl;
 pub use crypto_impl::*;
 
-/* 
+/*
 // botan crypto is used for all platforms except for android armv7 platform
 // as botan lib compilation for 'android armv7' platform could not be done
 

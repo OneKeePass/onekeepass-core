@@ -502,9 +502,7 @@ async fn poll_token_generation(db_key: String, entry_uuid: Uuid) {
     }
 }
 
-
 // --------------------------------------------------------
-
 
 static OKP_TOKIO_RUNTIME: OnceLock<Arc<Runtime>> = OnceLock::new();
 
@@ -535,10 +533,11 @@ pub fn start_runtime() {
 
 // May be called from multiple threads and this Runtime ref is shared
 pub fn async_runtime() -> &'static Runtime {
+    OKP_TOKIO_RUNTIME
+        .get()
+        .expect("Tokio runtime is not initialized")
 
-    OKP_TOKIO_RUNTIME.get().expect("Tokio runtime is not initialized")
-    
-    // We can also do the following. 
+    // We can also do the following.
     // In that case we should not do the 'OKP_TOKIO_RUNTIME.set' call in 'start_runtime' fn and we can skip using fn start_runtime()
     // assuming we do not require to call 'shutdown_runtime' before start_runtime call
 
@@ -558,12 +557,12 @@ pub fn async_runtime() -> &'static Runtime {
 
 fn shutdown_runtime() {
     debug!("async shutdown_runtime is called");
-    // TODO: 
-    // Verify that the shutdown_runtime call in iOS and Android behave exactly as we see with previous 
+    // TODO:
+    // Verify that the shutdown_runtime call in iOS and Android behave exactly as we see with previous
     // global static mut Option<Runtime> based implementation
 
     if let Some(arc_ref) = OKP_TOKIO_RUNTIME.get() {
-        debug!("Count of arc ref is {}",Arc::strong_count(arc_ref));
+        debug!("Count of arc ref is {}", Arc::strong_count(arc_ref));
 
         // Returns the inner value 'Runtime', if the Arc has exactly one strong reference. Otherwise Err
         match Arc::try_unwrap(arc_ref.to_owned()) {
@@ -577,7 +576,7 @@ fn shutdown_runtime() {
                 error!("Could shutdown as there are still some refs found for the runtime");
             }
         }
-    } 
+    }
     // else {
     //     debug!("No previous tokio runtime is found. No shutdown is called");
     // }
@@ -587,7 +586,7 @@ fn shutdown_runtime() {
 
 // ****** TO BE REMOVED once we verify the above fns work without any issues in both desktop and mobile layers
 
-/* 
+/*
 
 // --------------------------------------------------------
 // As this is global, all access to this variable need to use 'unsafe' block

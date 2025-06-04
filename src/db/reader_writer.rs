@@ -67,7 +67,7 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
         // {:x} prints in Base 16 (hexadecimal) format, {:b} as Base 2 (binary)
         // println!("=== sig1 {:x}, sig2 {:x} , ver {:x}", sig1, sig2, ver);
 
-        // TODO: 
+        // TODO:
         // Need to modifiy this to verify (using higher 4 bytes ?) ver as any 4.x instead of the specific 4.0 or 4.1
         // That way we need not change here the hard coded checking of the next version
         match (sig1, sig2, ver) {

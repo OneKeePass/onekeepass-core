@@ -123,12 +123,22 @@ pub(crate) fn delete_group_permanently(keepassfile: &mut KeepassFile, group_uuid
         .unwrap();
 }
 
-pub(crate) fn update_entry(keepassfile: &mut KeepassFile, entry:&mut Entry,key:&str, value:&str) {
+pub(crate) fn update_entry(
+    keepassfile: &mut KeepassFile,
+    entry: &mut Entry,
+    key: &str,
+    value: &str,
+) {
     entry.entry_field.update_value(key, value);
     keepassfile.root.update_entry(entry.clone()).unwrap();
 }
 
-pub(crate) fn find_update_entry(keepassfile: &mut KeepassFile, title:&str,key:&str, value:&str) -> Entry {
+pub(crate) fn find_update_entry(
+    keepassfile: &mut KeepassFile,
+    title: &str,
+    key: &str,
+    value: &str,
+) -> Entry {
     let mut entry = keepassfile
         .root
         .entry_by_matching_kv(TITLE, title)

@@ -43,10 +43,8 @@ impl Default for NewDatabase {
 }
 
 impl NewDatabase {
-
     // Creates a blank database with some intial values. The database is not yet saved
     pub fn create(&self) -> Result<KdbxFile> {
-
         let file_key = match &self.key_file_name {
             Some(n) if !n.trim().is_empty() => Some(FileKey::open(&n)?),
             Some(_) | None => None,
