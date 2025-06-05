@@ -157,6 +157,7 @@ impl KeyFileData {
 mod tests {
     use super::FileKey;
 
+    #[ignore]
     #[test]
     fn verify_xml_key_file() {
         let path = "/Users/jeyasankar/Documents/OneKeePass/f1/mytestkey.keyx";
@@ -173,6 +174,7 @@ mod tests {
         assert!(final_hash == h)
     }
 
+    #[ignore]
     #[test]
     fn verify_any_key_file() {
         let path = "/Users/jeyasankar/Documents/OneKeePass/test_key_file";

@@ -1,18 +1,19 @@
 mod categories;
+mod db_setting;
 mod entry;
 mod parsing;
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-use crate::{
-    db::{ContentCipherId, KdfAlgorithm},
-    db_content::Meta,
-};
+use crate::{db::KdbxFile, db_content::Meta, util};
 
 pub use self::categories::*;
 pub use self::entry::*;
 
-// Following way can be used in case we want to export types from 'entry' under some
+pub use self::db_setting::*;
+
+// The following way can be used in case we want to export types from 'entry' under some
 // other module name.
 // The calleer can use the following
 // pub use crate::form_data::entry_form_data::{EntryFormData, EntrySummary, EntryTypeNames};
@@ -52,26 +53,6 @@ impl From<&MetaFormData> for Meta {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct DbSettings {
-    pub kdf: KdfAlgorithm,
-    pub cipher_id: ContentCipherId,
-    pub password: Option<String>,
-    pub key_file_name: Option<String>,
-    // Used for both reading and setting from UI side
-    pub password_used: bool,
-    pub key_file_used: bool,
-    // Set when changed from the UI side
-    pub password_changed: bool,
-    pub key_file_changed: bool,
-
-    // Just the file name component of the full key file name 'key_file_name'
-    // Used in mobile mainly
-    pub key_file_name_part: Option<String>,
-    pub database_file_name: String,
-    pub meta: MetaFormData,
-}
-
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
 pub struct KdbxLoaded {
     // Full database uri
@@ -84,6 +65,39 @@ pub struct KdbxLoaded {
     pub key_file_name: Option<String>,
 }
 
+// See write_new_db_kdbx_file fn
+
+// As this conversion is called only for desktop csv loading for now, the mobil clause is not called
+// When we introduce, csv import in mobile, then we need to ensure that 'file_name' part is set for mobile properly
+// Instead of using From based kdbx_file.into for mobile, we can add a constructor method  KdbxLoaded::from(kdbx_file: &KdbxFile,file_name)
+impl From<&KdbxFile> for KdbxLoaded {
+    fn from(kdbx_file: &KdbxFile) -> Self {
+        let db_key = kdbx_file.get_database_file_name().into();
+        let database_name = kdbx_file.get_database_name().into();
+
+        let (file_name, key_file_name);
+
+        cfg_if::cfg_if! {
+            if #[cfg(any(target_os = "macos",target_os = "windows",target_os = "linux"))] {
+                (file_name,key_file_name) = (util::file_name(kdbx_file.get_database_file_name()),kdbx_file.get_key_file_name());
+            } else {
+                // In case of Mobile. Needs fixing to set 'file_name'
+
+                (file_name,key_file_name) = (None, kdbx_file.get_key_file_name()) ;
+            }
+        }
+
+        let kdbx_loaded = KdbxLoaded {
+            db_key,
+            database_name,
+            file_name,
+            key_file_name,
+        };
+
+        kdbx_loaded
+    }
+}
+
 #[derive(Default, Serialize, Deserialize, Debug)]
 pub struct KdbxSaved {
     pub db_key: String,
@@ -93,7 +107,8 @@ pub struct KdbxSaved {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GroupSummary {
-    pub uuid: String,
+    pub uuid: Uuid,
+    pub parent_group_uuid: Uuid,
     pub name: String,
     pub icon_id: i32,
     pub group_uuids: Vec<String>,

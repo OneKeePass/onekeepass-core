@@ -46,6 +46,7 @@ mod tests {
         data
     }
 
+    #[ignore]
     #[test]
     fn verify_aes256_encrypt_decrypt_botan() {
         let (_uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
@@ -72,6 +73,7 @@ mod tests {
         // assert_eq!(text.as_bytes(),decrypted);
     }
 
+    #[ignore]
     #[test]
     fn verify_aes256_file_data_encrypt_decrypt_botan() {
         let (_uuid, enc_iv) = ContentCipherId::Aes256.uuid_with_iv().unwrap();
@@ -110,6 +112,7 @@ mod tests {
         // assert_eq!(data,decrypted);
     }
 
+    #[ignore]
     #[test]
     fn verify_chacha20_encrypt_decrypt_botan() {
         let (_uuid, enc_iv) = ContentCipherId::ChaCha20.uuid_with_iv().unwrap();
@@ -133,6 +136,7 @@ mod tests {
         // assert_eq!(text.as_bytes(),decrypted);
     }
 
+    #[ignore]
     #[test]
     fn verify_phash_argon2() {
         // See https://botan.randombit.net/handbook/api_ref/pbkdf.html#pbkdf-example

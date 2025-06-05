@@ -17,9 +17,74 @@ use crate::{kdbx_context_mut_action, main_content_action, to_keepassfile};
 use crate::error::{Error, Result};
 
 use crate::db::{
-    self, write_kdbx_content_to_file, write_kdbx_file, write_kdbx_file_with_backup_file,
+    self, write_kdbx_content_to_file, write_kdbx_file, write_kdbx_file_with_backup_file, KdbxFile,
 };
 use crate::util::{self};
+
+// For now it is used in desktop
+// TODO: To use in mobile also, we need to fix calling 'save_kdbx_with_backup'
+
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub(crate) fn write_new_db_kdbx_file(kdbx_file: KdbxFile) -> Result<KdbxLoaded> {
+    debug!("write_new_db_kdbx_file is called ");
+
+    let kdbx_loaded = (&kdbx_file).into();
+
+    let db_key = kdbx_file.get_database_file_name().to_string();
+
+    // IMPORTANT: Make sure that we store the newly created db in memory
+    KdbxContext::insert(kdbx_file);
+
+    // Save the newly created db to the file system for persistence
+    // This is desktop specific
+    save_kdbx_with_backup(&db_key, None, true)?;
+
+    debug!("save_kdbx_with_backup is done in write_new_db_kdbx_file");
+
+    Ok(kdbx_loaded)
+}
+
+/*
+pub(crate) fn create_kdbx_with_imported_csv(
+    new_db: NewDatabase,
+    mapping: CsvImportMapping,
+) -> Result<KdbxFile> {
+    if let Some(kf) = &new_db.key_file_name {
+        if !kf.trim().is_empty() & !Path::new(kf).exists() {
+            return Err(Error::NotFound(format!(
+                "The key file {} is not valid one",
+                kf
+            )));
+        }
+    }
+    let mut kdbx_file = new_db.create()?;
+    let keepass_file = to_keepassfile_mut!(kdbx_file);
+
+    mapping.create_kdbx_with_imported_csv(keepass_file)?;
+
+    let database_name = keepass_file.meta.database_name.clone();
+
+    let (file_name, key_file_name);
+
+    cfg_if::cfg_if! {
+        if #[cfg(any(target_os = "macos",target_os = "windows",target_os = "linux"))] {
+            (file_name,key_file_name) = (util::file_name(&new_db.database_file_name),kdbx_file.get_key_file_name());
+        } else {
+            // In case of Mobile
+            (file_name,key_file_name) = (new_db.file_name, new_db.key_file_name) ;
+        }
+    }
+
+    let kdbx_loaded = KdbxLoaded {
+        db_key: new_db.database_file_name.clone(),
+        database_name,
+        file_name,
+        key_file_name,
+    };
+
+    Ok(kdbx_file)
+}
+*/
 
 // TODO: Refactor create_kdbx (used mainly for desktop app) and create_and_write_to_writer to use common functionalties
 // Called to create a new KDBX database and perists the file
@@ -44,6 +109,7 @@ pub fn create_kdbx(new_db: NewDatabase) -> Result<KdbxLoaded> {
         key_file_name: kdbx_file.get_key_file_name(),
     };
 
+    /*
     // IMPORTANT:
     // We need to call the following inserting of db to the shared cache in a {} block
     // so that the Mutex guard is unlocked when this block's scope ends and the save_kdbx_with_backup fn
@@ -59,6 +125,9 @@ pub fn create_kdbx(new_db: NewDatabase) -> Result<KdbxLoaded> {
         store.insert(new_db.database_file_name.clone(), kdbx_context);
     }
     // Mutex guard is now released
+    */
+
+    KdbxContext::insert(kdbx_file);
 
     // Save the newly created db to the file system for persistence
     // See above block comment. The drop(main_store()) is not working; Also there is no method 'unlock' in Mutex yet;

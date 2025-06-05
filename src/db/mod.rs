@@ -60,8 +60,11 @@ enum VariantDict {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(tag = "algorithm")]
+// This serializes this enum as {"algorithm":"Argon2d", "memory": 67108864, "iterations": 11, ...  }
 pub enum KdfAlgorithm {
-    Argon2(crypto::kdf::Argon2Kdf),
+    Argon2d(crypto::kdf::Argon2Kdf),
+    Argon2id(crypto::kdf::Argon2Kdf),
     NoValidKdfAvailable,
 }
 
@@ -73,7 +76,7 @@ impl Default for KdfAlgorithm {
 
 impl KdfAlgorithm {
     pub fn default_argon2() -> Self {
-        KdfAlgorithm::Argon2(crypto::kdf::Argon2Kdf::default())
+        KdfAlgorithm::Argon2d(crypto::kdf::Argon2Kdf::default())
     }
 
     // Creates argon2 with specific parameters values
@@ -81,7 +84,7 @@ impl KdfAlgorithm {
     pub fn as_argon2(memory: u64, iterations: u64, parallelism: u32) -> Self {
         // The incoming memory bytes size needs to be converted to size in Mb
         let mem = memory * 1024 * 1024;
-        KdfAlgorithm::Argon2(crypto::kdf::Argon2Kdf::from(mem, iterations, parallelism))
+        KdfAlgorithm::Argon2d(crypto::kdf::Argon2Kdf::from(mem, iterations, parallelism))
     }
 }
 
@@ -142,6 +145,12 @@ impl AttachmentSet {
         // If the uploaded attachment content is same as any previously loaded one, only single content is kept
         self.attachments.insert(key, prefixed_data);
         key
+    }
+
+    fn insert_or_update_with_attachmentset(&mut self, other: &AttachmentSet) {
+        other.attachments.iter().for_each(|(k, v)| {
+            self.attachments.insert(k.clone(), v.clone());
+        });
     }
 
     // Generates a hash key based on the attachment bytes data
@@ -296,16 +305,31 @@ impl SecuredDatabaseKeys {
         kdf_algorithm: &KdfAlgorithm,
         master_seed: &Vec<u8>,
     ) -> Result<()> {
-        if let KdfAlgorithm::Argon2(kdf) = &kdf_algorithm {
-            let ck = self.get_composite_key(db_key)?;
-            // Then transform the composite key using KDF
-            let transformed_key = kdf.transform_key(ck)?;
+        match &kdf_algorithm {
+            KdfAlgorithm::Argon2d(kdf) | KdfAlgorithm::Argon2id(kdf) => {
+                let ck = self.get_composite_key(db_key)?;
+                // Then transform the composite key using KDF
+                let transformed_key = kdf.transform_key(ck)?;
 
-            // Determine the HMAC and Payload Encryption/Decryption Key
-            self.compute_keys(&master_seed, transformed_key)?;
-        } else {
-            return Err(Error::SupportedOnlyArgon2dKdfAlgorithm);
+                // Determine the HMAC and Payload Encryption/Decryption Key
+                self.compute_keys(&master_seed, transformed_key)?;
+            }
+            _ => {
+                return Err(Error::SupportedOnlyArgon2dKdfAlgorithm);
+            }
         }
+
+        // if let KdfAlgorithm::Argon2d(kdf) = &kdf_algorithm {
+        //     let ck = self.get_composite_key(db_key)?;
+        //     // Then transform the composite key using KDF
+        //     let transformed_key = kdf.transform_key(ck)?;
+
+        //     // Determine the HMAC and Payload Encryption/Decryption Key
+        //     self.compute_keys(&master_seed, transformed_key)?;
+        // } else {
+        //     return Err(Error::SupportedOnlyArgon2dKdfAlgorithm);
+        // }
+
         Ok(())
     }
 

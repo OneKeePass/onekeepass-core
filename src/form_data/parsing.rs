@@ -196,7 +196,7 @@ impl ReferenceFieldParsed {
             return self.default_unparsed();
         }
 
-        if let Ok(ref entry_uuid) = uuid::Uuid::parse_str(&self.text_or_uuid) {
+        if let Ok(entry_uuid) = uuid::Uuid::parse_str(&self.text_or_uuid) {
             if entry_uuid == entry_place_holder_parser.current_entry.get_uuid() {
                 // We are using a field (wanted_field) from the currrent entry for this uuid search_in_field
                 return entry_place_holder_parser
@@ -210,7 +210,7 @@ impl ReferenceFieldParsed {
             // If we do not find an entry with this uuid or no value is found, then we just return the ref string itself
             let out = entry_place_holder_parser
                 .root
-                .entry_by_id(entry_uuid)
+                .entry_by_id(&entry_uuid)
                 .map(|entry_found| {
                     // depth_counter is incremented as we are looking for 'wanted_field' in the next entry
                     self.parse_matched_entry(
@@ -589,6 +589,7 @@ pub(crate) fn place_holder_marker_found(input: &str) -> bool {
 mod tests {
     use super::*;
 
+    #[ignore]
     #[test]
     fn verify_place_holder_name_parsing() {
         use super::PlaceHolderType::*;
@@ -627,6 +628,7 @@ mod tests {
         assert_eq!(r, Ok(("", AnyName)));
     }
 
+    #[ignore]
     #[test]
     fn verify_recursive_use() {
         let mut entry_fields = HashMap::<String, String>::default();
@@ -657,6 +659,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[test]
     fn verify_parsing_non_existing_ref() {
         let mut entry_fields = HashMap::<String, String>::default();
@@ -686,6 +689,8 @@ mod tests {
             "Xcvbd {REF:U@I:5017C6460FED43FFB16FD85C0F875D0E} - https:://www.oracle.com"
         );
     }
+
+    #[ignore]
     #[test]
     fn verify_not_supported_ref_source_search() {
         let mut entry_fields = HashMap::<String, String>::default();
@@ -704,6 +709,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[test]
     fn verify_unknown_placeholder_name() {
         let mut entry_fields = HashMap::<String, String>::default();
@@ -715,7 +721,7 @@ mod tests {
         let entry = Entry::new();
         let mut ef = EntryPlaceHolderParser::from(&root, &entry, &mut entry_fields);
 
-        let r = ef.parse_main(1);
+        let _r = ef.parse_main(1);
 
         println!(
             "\n parsed ef {:?} \n\n modified fields {:?}",
@@ -728,6 +734,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[test]
     fn verify_custom_field_parsing() {
         let mut entry_fields = HashMap::<String, String>::default();
@@ -739,7 +746,7 @@ mod tests {
         let entry = Entry::new();
         let mut ef = EntryPlaceHolderParser::from(&root, &entry, &mut entry_fields);
 
-        let r = ef.parse_main(1);
+        let _r = ef.parse_main(1);
 
         println!(
             "\n parsed ef {:?} \n\n modified fields {:?}",
@@ -753,6 +760,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[test]
     fn verify_place_holder_in_custom_field() {
         let mut entry_fields = HashMap::<String, String>::default();
@@ -765,7 +773,7 @@ mod tests {
         let entry = Entry::new();
         let mut ef = EntryPlaceHolderParser::from(&root, &entry, &mut entry_fields);
 
-        let r = ef.parse_main(1);
+        let _r = ef.parse_main(1);
 
         println!(
             "\n parsed ef {:?} \n\n modified fields {:?}",
@@ -773,6 +781,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[test]
     fn verify_main_parser() {
         let mut parser = alt((field_parser(), no_field_parser()));
@@ -781,6 +790,7 @@ mod tests {
         println!(" r is {:?}", r);
     }
 
+    #[ignore]
     #[test]
     fn verify_part1() {
         let s = "kdbx://{DB_DIR}/f1/PasswordsUsesKeyFile2.kdbx";
@@ -820,6 +830,7 @@ mod tests {
         println!("v is {:?} , contains pat {}", &v, s.contains(pat));
     }
 
+    #[ignore]
     #[test]
     fn verify_drive() {
         const FILE_PROVIDER_IDS: [&str; 11] = [

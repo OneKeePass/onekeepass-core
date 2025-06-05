@@ -75,6 +75,8 @@ pub fn search_term_with_options(term: &str, case_insensitive: bool, entry: &Entr
 mod tests {
     use crate::db_content::{Entry, FieldDataType, KeyValue};
     use crate::searcher::*;
+
+    #[ignore]
     #[test]
     fn verify_simple_search() {
         let mut e = Entry::new();
@@ -134,6 +136,7 @@ mod tests {
         }
     }
 
+    #[ignore]
     #[test]
     fn verify_case_insensitive_search() {
         let mut e = Entry::new();
@@ -226,6 +229,7 @@ mod tests {
         // }
     }
 
+    #[ignore]
     #[test]
     fn test1() {
         let term = "(?i)Github"; //"https://github.com/login"

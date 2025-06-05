@@ -76,8 +76,17 @@ pub fn now_local() -> NaiveDateTime {
 }
 
 pub fn now_utc() -> NaiveDateTime {
-    let now = chrono::Utc::now().naive_utc().with_nanosecond(0).unwrap();
-    now
+    // Note #[cfg(test)] is effective only for unit tests and it is not effective
+    // in integration tests or in this crate is used as lib in desktop/mobile rust side
+    cfg_if::cfg_if! {
+        if #[cfg(test)] {
+            test_clock::now_utc().naive_utc().with_nanosecond(0).unwrap()
+        } else {
+            let now = chrono::Utc::now().naive_utc().with_nanosecond(0).unwrap();
+            // log::debug!("cfg_if::cfg_if else part");
+            now
+        }
+    }
 }
 
 // Returns the number of non-leap seconds since January 1, 1970 0:00:00 UTC
@@ -385,7 +394,7 @@ pub fn strip_spaces(string_with_spaces: &str) -> String {
 }
 
 // To see logging output during unit testing
-#[test]
+#[cfg(test)]
 pub fn init_test_logging() {
     let _ = env_logger::builder()
         // Include all events in tests
@@ -433,13 +442,88 @@ pub mod from_or_to {
     }
 }
 
+// This module is effective only in unit tests modules that provides controlling
+// date time setting - mainly for testing db merges
+// This is not used in intgeration tests or in the lib's main code
+#[allow(dead_code)]
+#[cfg(test)]
+pub(crate) mod test_clock {
+    use std::{
+        ops::Add,
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
+
+    use chrono::{DateTime, TimeZone, Utc};
+    use log;
+
+    use std::cell::Cell;
+
+    // This mockclock implementation is based on the suggestion here
+    // https://stackoverflow.com/questions/60469894/how-can-time-be-mocked-in-tests-in-rust
+    thread_local! {
+        static NOW: Cell<Duration> =  {
+            Cell::new(SystemTime::now().duration_since(UNIX_EPOCH).expect("system time before Unix epoch"))
+        }
+    }
+
+    pub struct MockUtc;
+
+    impl MockUtc {
+        pub fn now() -> DateTime<chrono::Utc> {
+            NOW.with(|now| {
+                DateTime::<chrono::Utc>::from_timestamp(
+                    now.get().as_secs() as i64,
+                    now.get().subsec_nanos(),
+                )
+            })
+            .expect("a valid timestamp set")
+        }
+    }
+
+    // timestamp is 'secs' from unix epoch
+    pub fn set_timestamp(timestamp: i64) {
+        NOW.with(|ts| ts.set(Duration::new(timestamp as u64, 0)));
+    }
+
+    // Called to initiate the mockclock with some selected initial date
+    pub fn init_datetime(year: i32, month: u32, day: u32, hour: u32, min: u32, sec: u32) {
+        let date: DateTime<Utc> = Utc
+            .with_ymd_and_hms(year, month, day, hour, min, sec)
+            .unwrap();
+        set_timestamp(date.timestamp());
+    }
+
+    pub(crate) fn advance_by(secs: u32) {
+        NOW.with(|ts| {
+            let seconds = Duration::new(secs as u64, 0);
+            let d = ts.get().add(seconds);
+            ts.set(d);
+        });
+    }
+
+    pub(crate) fn now_utc() -> DateTime<Utc> {
+        log::debug!("test_clock now_utc is called ");
+
+        // This the implementation of chrono DateTime and used in the mockclock implementation
+
+        // let now = SystemTime::now()
+        //     .duration_since(UNIX_EPOCH)
+        //     .expect("system time before Unix epoch");
+        // DateTime::from_timestamp(now.as_secs() as i64, now.subsec_nanos()).unwrap()
+
+        MockUtc::now()
+    }
+}
+
 #[cfg(test)]
 #[allow(dead_code)]
 #[allow(unused)]
 mod tests {
     use super::*;
+
     #[test]
     fn decode_uuid_sample_b64str() {
+        init_test_logging();
         let b64_str = "3aBY+AcLQmiPas0vjK2zng==";
         let u = decode_uuid(b64_str);
         assert_eq!(u.is_some(), true);
@@ -493,6 +577,7 @@ mod tests {
     #[allow(dead_code)]
     use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, TimeZone, Utc};
 
+    #[allow(deprecated)]
     #[test]
     fn verify_decode_datetime_b64() {
         let ndt = decode_datetime_b64("mNxg1g4AAAA=");
@@ -505,6 +590,7 @@ mod tests {
         );
 
         //println!( "d is {}" , dt);
+        #[allow(deprecated)]
         assert_eq!(dt, NaiveDate::from_ymd(2020, 5, 27).and_hms(22, 11, 36));
         assert_eq!(dt.date(), NaiveDate::from_ymd(2020, 5, 27));
         assert_eq!(dt.time(), NaiveTime::from_hms(22, 11, 36));
@@ -532,6 +618,7 @@ mod tests {
         // }
     }
 
+    #[allow(deprecated)]
     #[test]
     fn verify_utc_parsing() {
         let dt = Utc.ymd(2022, 01, 04).and_hms_milli(1, 37, 8, 811);
@@ -557,88 +644,6 @@ mod tests {
         //println!("New Dt2 {:?}", n2);
 
         assert_eq!(dt == parsed_dt, true);
-    }
-
-    #[test]
-    fn verify1() {
-        //DateTime::<Utc>
-        //NaiveDateTime::new(date, time)
-
-        let d1 = now_utc(); // 2024-11-05 20:01:42
-        let s1 = d1.format("%d %b %Y %H:%M:%S").to_string();
-        let s1 = d1.format("%Y-%m-%d %H:%M:%S").to_string();
-        println!("d1 is {}", &s1);
-    }
-
-    #[test]
-    fn verify_datetime_local_format() {
-        // Experiment to show UTC and Local now calls. The Local now should be based on the system timezone
-        // and accordingly it is expected have some offsets
-        // Howver, in case of Mac OS 12.6.2 (as on 01 Jan 2023) in M1 machine, the Local returns the same time as Utc.
-        // The same works fine in X86_64 mac with os 10.15+
-        // See some related issues in chrono here
-        // https://github.com/chronotope/chrono/issues/922,
-        let d1 = Utc::now();
-        println!("Formatted {}", d1.format("%Y-%m-%dT%H:%M:%S").to_string());
-        let d2 = Local::now();
-        let d3 = Local.from_local_datetime(&d2.naive_local());
-        println!(
-            "utc dt is {},str dt {}, tz is {}, offset {}",
-            d1,
-            d1.to_string(),
-            d1.timezone(),
-            d1.offset()
-        );
-        println!(
-            "local dt is {}, tz is {:?} , offset {}",
-            d2,
-            d2.timezone(),
-            d2.offset()
-        ); // d2 should have some offsets
-
-        println!("d3 is {:?}", d3);
-
-        // This is reflects proper offsets from Utc
-        let parsed_dt_pacific = d1.with_timezone(&chrono_tz::US::Pacific);
-        println!("Parsed dt in Pacific TimeZone {:?}", parsed_dt_pacific);
-        let offset_in_sec = d2.offset().local_minus_utc();
-        println!("offset_in_sec is {}", offset_in_sec);
-
-        println!(
-            "parsed_dt_pacific offset  is {}",
-            parsed_dt_pacific.offset()
-        );
-
-        //Following tests will fail while rumming in Mac m1 with os 12.6+. See above
-        /*
-        let naive_dt: NaiveDateTime = NaiveDate::from_ymd(2016, 7, 8).and_hms(9, 10, 11);
-        println!( "dt is {}",naive_dt);
-        println!("Date {}", naive_dt.format("%Y-%m-%dT%H:%M:%SZ").to_string());
-
-        let date_time: DateTime<Utc> = Utc.from_local_datetime(&naive_dt).unwrap();
-        //let date_time: DateTime<Utc> = Utc.from_utc_datetime(&naive_dt);
-        println!( "UTC date_time is {}",date_time.format("%Y-%m-%dT%H:%M:%S"));
-        assert_eq!("2016-07-08T09:10:11" == date_time.format("%Y-%m-%dT%H:%M:%S").to_string(), true);
-
-        let local_date_time: DateTime<Local> = date_time.with_timezone(&Local);
-        println!("TZ is {:?}",local_date_time.timezone());
-        println!( "Local date_time is {}",local_date_time.format("%Y-%m-%dT%H:%M:%S"));
-        println!( "Local date_time is {}",local_date_time.format("%d %b %Y %H:%M:%S %Z")); //%Z is not working, it puts -07:00 instead PST
-
-        let formated = format_utc_naivedatetime_to_local(&naive_dt,None);
-        //println!( "Local date_time formated as  {}",formated);
-        assert_eq!("08 Jul 2016 02:10:11" == formated, true);
-
-        let formated = format_utc_naivedatetime_to_local(&naive_dt,Some("%Y-%m-%dT%H:%M:%S"));
-        assert_eq!("2016-07-08T02:10:11" == formated, true);
-
-        //let v = Local.from_utc_datetime(&date_time.naive_local());
-        //println!("v is {}",v);
-
-        let formated = format_utc_naivedatetime_to_local(&naive_dt,Some("%Y-%m-%d %I:%M:%S %p"));
-        println!("{}",formated);
-
-        */
     }
 
     #[test]
@@ -749,25 +754,6 @@ mod tests {
     }
 
     #[test]
-    fn verify_compress_decompress_timing() {
-        let test_file = "/Users/jeyasankar/mytemp/Test1/compression_test_data_bin";
-        let mut f = fs::File::open(test_file).unwrap();
-        let mut buf: Vec<u8> = vec![];
-        std::io::Read::read_to_end(&mut f, &mut buf).unwrap();
-        println!("Size of buf is {}", buf.len());
-
-        let start = std::time::Instant::now();
-        let c_v1 = compress(&buf).unwrap();
-        println!("Size of compressed data  is {}", c_v1.len());
-        println!("Compression took {} seconds ", start.elapsed().as_secs());
-
-        let start = std::time::Instant::now();
-        let c_v2 = decompress(&c_v1).unwrap();
-        println!("Size of decompressed data  is {}", c_v2.len());
-        println!("Dcompression took {} seconds ", start.elapsed().as_secs());
-    }
-
-    #[test]
     fn hex_str_test() {
         let b: Vec<u8> = vec![12, 3, 44, 7, 6, 22, 34];
         use hex;
@@ -788,7 +774,40 @@ mod tests {
         let s2 = "";
         assert_eq!(strip_spaces(s2).is_empty(), true);
     }
+
+    #[ignore]
+    #[test]
+    fn example_decode_datetime() {
+        let ndt = decode_datetime_b64("btWN3w4AAAA=");
+        println!("dt is {:?}", ndt);
+        let dt = ndt.unwrap();
+        let ldt = Local.from_utc_datetime(&dt);
+        println!("ldt is {:?}", ldt);
+    }
 }
+
+// Useful to validate performace of compression
+// Used when the flate2 compression crate was introduced
+/*
+#[test]
+    fn verify_compress_decompress_timing() {
+        let test_file = "/Users/jeyasankar/mytemp/Test1/compression_test_data_bin";
+        let mut f = fs::File::open(test_file).unwrap();
+        let mut buf: Vec<u8> = vec![];
+        std::io::Read::read_to_end(&mut f, &mut buf).unwrap();
+        println!("Size of buf is {}", buf.len());
+
+        let start = std::time::Instant::now();
+        let c_v1 = compress(&buf).unwrap();
+        println!("Size of compressed data  is {}", c_v1.len());
+        println!("Compression took {} seconds ", start.elapsed().as_secs());
+
+        let start = std::time::Instant::now();
+        let c_v2 = decompress(&c_v1).unwrap();
+        println!("Size of decompressed data  is {}", c_v2.len());
+        println!("Dcompression took {} seconds ", start.elapsed().as_secs());
+    }
+*/
 
 /*
 #[test]
@@ -801,4 +820,53 @@ mod tests {
 
         println!("{}", now_utc());
     }
+ */
+
+/*
+
+#[test]
+   fn verify1() {
+       //DateTime::<Utc>
+       //NaiveDateTime::new(date, time)
+
+       let d1 = now_utc(); // 2024-11-05 20:01:42
+       let s1 = d1.format("%d %b %Y %H:%M:%S").to_string();
+       let s1 = d1.format("%Y-%m-%d %H:%M:%S").to_string();
+       println!("d1 is {}", &s1);
+   }
+
+   #[test]
+   fn verify_datetime_local_format() {
+       let d1 = Utc::now();
+       println!("Formatted {}", d1.format("%Y-%m-%dT%H:%M:%S").to_string());
+       let d2 = Local::now();
+       let d3 = Local.from_local_datetime(&d2.naive_local());
+       println!(
+           "utc dt is {},str dt {}, tz is {}, offset {}",
+           d1,
+           d1.to_string(),
+           d1.timezone(),
+           d1.offset()
+       );
+       println!(
+           "local dt is {}, tz is {:?} , offset {}",
+           d2,
+           d2.timezone(),
+           d2.offset()
+       ); // d2 should have some offsets
+
+       println!("d3 is {:?}", d3);
+
+       // This is reflects proper offsets from Utc
+       let parsed_dt_pacific = d1.with_timezone(&chrono_tz::US::Pacific);
+       println!("Parsed dt in Pacific TimeZone {:?}", parsed_dt_pacific);
+       let offset_in_sec = d2.offset().local_minus_utc();
+       println!("offset_in_sec is {}", offset_in_sec);
+
+       println!(
+           "parsed_dt_pacific offset  is {}",
+           parsed_dt_pacific.offset()
+       );
+   }
+
  */

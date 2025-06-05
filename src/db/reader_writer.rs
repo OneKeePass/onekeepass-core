@@ -39,7 +39,7 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
 
     // Reads the content of kdbx db, parses headers, decrypts payload, parses xml content into in memory struct
     pub(crate) fn read(&mut self) -> Result<()> {
-        debug!("Starting the dataabse read_file_signature call");
+        debug!("Starting the database read_file_signature call");
         self.read_file_signature()?;
         self.read_header()?;
         self.verify_stored_hash()?;
@@ -64,7 +64,12 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
         self.reader.read_exact(&mut buffer)?; // 4 bytes
         let ver = u32::from_le_bytes(buffer); // u32 value 262144,hex 40000  (for 4.1 the values are 262145, 40001)
 
-        // TODO: Need to modifiy to verify (using higher 4 bytes ?) ver as any 4.x instead of the specific 4.0 or 4.1
+        // {:x} prints in Base 16 (hexadecimal) format, {:b} as Base 2 (binary)
+        // println!("=== sig1 {:x}, sig2 {:x} , ver {:x}", sig1, sig2, ver);
+
+        // TODO:
+        // Need to modifiy this to verify (using higher 4 bytes ?) ver as any 4.x instead of the specific 4.0 or 4.1
+        // That way we need not change here the hard coded checking of the next version
         match (sig1, sig2, ver) {
             (constants::OLD_SIG1, constants::OLD_SIG2, _) => {
                 return Err(Error::OldUnsupportedKeePass1);
@@ -340,12 +345,13 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
         // TODO:
         // Following are used for any debugging to see the XML content during development.
         // This should be removed after making some command line program
+        // Need to introduce cargo 'feature' to do this automatically on demand during dev test time
 
         /*
-        // Dumps the raw xml content
-        let dump_xml_file_name = temp_raw_xml_dump_file_name("test_read.xml");
-        super::write_xml_to_file(&dump_xml_file_name,xml_bytes).unwrap();
-        println!("Wrote the raw xml to the file {}",&dump_xml_file_name);
+         // Dumps the raw xml content that has been decrypted
+         let dump_xml_file_name = temp_raw_xml_dump_file_name("test_read.xml");
+         super::write_xml_to_file(&dump_xml_file_name,xml_bytes).unwrap();
+         println!("Wrote the raw xml to the file {}",&dump_xml_file_name);
         */
 
         //println!("xml: {}", std::str::from_utf8(xml_bytes).expect("utf conversion failed"));

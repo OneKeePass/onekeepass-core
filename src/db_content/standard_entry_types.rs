@@ -260,7 +260,7 @@ pub fn standard_type_uuids_names_ordered_by_id() -> Vec<(Uuid, String)> {
     STANDARD_TYPE_NAMES
         .iter()
         .map(|s| {
-            //&* gives &Uuid  and we use unwrap assuming STANDARD_TYPE_UUIDS_BY_NAME and STANDARD_TYPE_NAMES match
+            //&* gives &Uuid and we use unwrap assuming STANDARD_TYPE_UUIDS_BY_NAME and STANDARD_TYPE_NAMES match
             let uuid = &*STANDARD_TYPE_UUIDS_BY_NAME.get(s).unwrap();
             (uuid.clone(), (&**s).into())
         })
@@ -278,6 +278,11 @@ pub fn standard_types_ordered_by_id() -> Vec<&'static EntryType> {
                 .map_or_else(|| &*DEFAULT_ENTRY_TYPE, |e| e)
         })
         .collect::<Vec<&EntryType>>()
+}
+
+// Gets the entry typ's UUID from its name
+pub fn standard_type_uuid_by_name(type_name: &str) -> &Uuid {
+    STANDARD_TYPE_UUIDS_BY_NAME.get(type_name).unwrap()
 }
 
 pub fn _auto_open_entry_type_opt() -> Option<&'static EntryType> {

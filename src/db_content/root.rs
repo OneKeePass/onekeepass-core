@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::vec;
@@ -70,13 +71,32 @@ impl GroupVisitor for InOrderIds {
     }
 }
 
+#[derive(Debug, Default, Clone, PartialEq)]
+pub(crate) struct DeletedObject {
+    pub(crate) uuid: Uuid,
+    pub(crate) deletion_time: NaiveDateTime,
+}
+
+impl DeletedObject {
+    pub(crate) fn with_uuid(uuid: Uuid, deletion_time: Option<NaiveDateTime>) -> Self {
+        Self {
+            uuid,
+            deletion_time: deletion_time.map_or_else(|| util::now_utc(), |d| d),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Root {
     root_uuid: Uuid,
     recycle_bin_uuid: Uuid,
     auto_open_group_uuid: Option<Uuid>,
+
+    deleted_objects: Vec<DeletedObject>,
+
     // All groups data for easy lookup by uuid
     all_groups: HashMap<Uuid, Group>,
+
     // All entries data for easy lookup by uuid
     all_entries: HashMap<Uuid, Entry>,
 }
@@ -86,10 +106,31 @@ impl Root {
         Root {
             root_uuid: Uuid::default(),
             recycle_bin_uuid: Uuid::default(),
+            deleted_objects: vec![],
             auto_open_group_uuid: None,
             all_groups: HashMap::new(),
             all_entries: HashMap::new(),
         }
+    }
+
+    // Called during xml read time
+    pub(crate) fn add_deleted_object(&mut self, deleted_object: DeletedObject) {
+        self.deleted_objects.push(deleted_object);
+    }
+
+    pub(crate) fn add_deleted_object_by_id(&mut self, uuid: Uuid) {
+        self.deleted_objects.push(DeletedObject {
+            uuid,
+            deletion_time: util::now_utc(),
+        });
+    }
+
+    pub(crate) fn deleted_objects(&self) -> &Vec<DeletedObject> {
+        self.deleted_objects.as_ref()
+    }
+
+    pub(crate) fn set_deleted_objects(&mut self, deleted_objects: Vec<DeletedObject>) {
+        self.deleted_objects = deleted_objects;
     }
 
     pub(crate) fn auto_open_group_uuid(&self) -> Option<Uuid> {
@@ -173,13 +214,68 @@ impl Root {
         self.all_entries.get_mut(entry_uuid)
     }
 
+    // Finds the first entry that has a matching value in a given key field
+    pub fn entry_by_matching_kv(&self, key: &str, value: &str) -> Option<&Entry> {
+        // First match is returned
+        self.all_entries.values().find(|e| {
+            if let Some(ref v) = e.find_kv_field_value(key) {
+                v == value
+            } else {
+                false
+            }
+        })
+    }
+
+    pub fn entry_by_matching_kv_mut(&mut self, key: &str, value: &str) -> Option<&mut Entry> {
+        // First match is returned
+        self.all_entries.values_mut().find(|e| {
+            if let Some(ref v) = e.find_kv_field_value(key) {
+                v == value
+            } else {
+                false
+            }
+        })
+    }
+
     pub fn group_by_id(&self, group_uuid: &Uuid) -> Option<&Group> {
         self.all_groups.get(group_uuid)
+    }
+
+    pub fn group_by_id_ok(&self, group_uuid: &Uuid) -> Result<&Group> {
+        Ok(self
+            .all_groups
+            .get(group_uuid)
+            .ok_or_else(|| "The group is not found in All groups")?)
     }
 
     pub fn group_by_id_mut(&mut self, group_uuid: &Uuid) -> Option<&mut Group> {
         self.all_groups.get_mut(group_uuid)
     }
+
+    pub fn group_by_name(&self, name: &str) -> Option<&Group> {
+        // Returns the first matching group
+        self.all_groups.values().find(|g| g.name == name)
+    }
+
+    pub fn group_by_name_mut(&mut self, name: &str) -> Option<&mut Group> {
+        // Returns the first matching group
+        let g_opt = self
+            .all_groups
+            .values()
+            .find(|g| g.name == name)
+            .map(|g| g.uuid);
+
+        g_opt.map(|id| self.all_groups.get_mut(&id)).flatten()
+    }
+
+    // pub(crate) fn is_group_empty(&self, group_uuid: &Uuid) -> Result<bool> {
+    //     let group = self
+    //         .all_groups
+    //         .get(&group_uuid)
+    //         .ok_or_else(|| "The group is not found in All groups")?;
+
+    //     Ok(group.entry_uuids().is_empty() && group.sub_group_uuids().is_empty())
+    // }
 
     // Gets all entries. The flag exclude determines whether to include or exclude entries from the special groups in the list
     // TODO: intead of 'exclude', accept the list of group ids to exclude. See comments in 'KeepassFile'
@@ -190,7 +286,7 @@ impl Root {
             .filter(|x| {
                 if exclude {
                     //if ids.contains(&x.uuid) {false} else {true}
-                    if &x.group_uuid == &self.recycle_bin_uuid {
+                    if &x.parent_group_uuid == &self.recycle_bin_uuid {
                         false
                     } else {
                         true
@@ -214,7 +310,7 @@ impl Root {
             .values()
             .filter(|x| {
                 // Is this entry' parent group is in recycle bin or its parent is recycle bin?
-                !excluded_group_ids.contains(&x.group_uuid)
+                !excluded_group_ids.contains(&x.parent_group_uuid)
             })
             .collect();
         v
@@ -233,7 +329,7 @@ impl Root {
             .values()
             .filter(|x| {
                 // Consider the entries whose  parent group is not in recycle bin or its parent is not in recycle bin and Tag has Favorites
-                !excluded_group_ids.contains(&x.group_uuid)
+                !excluded_group_ids.contains(&x.parent_group_uuid)
                     && split_tags(&x.tags).contains(&FAVORITES.into())
             })
             //.filter(|e| split_tags(&e.tags).contains(&"Favorites".into()))
@@ -260,12 +356,31 @@ impl Root {
         entries
     }
 
-    /// Gets an existing recycle bin group referece. If there is no recycle bin group, a new one
-    /// is created and a ref that group is returned
+    // TODO: Combine set_recycle_bin_group_on_merge and recycle_bin_group
+
+    pub(crate) fn set_recycle_bin_group_on_merge(&mut self, source_recycle_bin_uuid: Uuid) {
+        if source_recycle_bin_uuid != Uuid::default() && self.recycle_bin_uuid == Uuid::default() {
+            debug!("Recycle bin is set from source db ");
+
+            let mut g = Group::new();
+            g.uuid = source_recycle_bin_uuid;
+            g.parent_group_uuid = self.root_uuid; // Recycle parent is root group
+            g.name = "Recycle Bin".into();
+            g.icon_id = 43;
+            // This recycle_bin_uuid is copied to Meta while writing the db. See share_root_to_meta method of KeepassFile struct
+            self.recycle_bin_uuid = g.uuid;
+            // This adds the recycle group to the 'root' group's group_uuids and also inserts to 'all_groups' map
+            let _r = self.insert_group(g);
+        }
+    }
+
+    // Gets an existing recycle bin group referece.
+    // If there is no recycle bin group, a new one is created and a ref that group is returned
+    // This fn is used in the macro 'move_to_recycle_bin!' while calling move_group or with move_entry
     pub fn recycle_bin_group(&mut self) -> Option<&Group> {
         if self.recycle_bin_uuid == Uuid::default() {
-            let mut g = Group::new();
-            g.uuid = Uuid::new_v4();
+            let mut g = Group::new_with_id();
+            // g.uuid = Uuid::new_v4();
             g.parent_group_uuid = self.root_uuid; // Recycle parent is root group
             g.name = "Recycle Bin".into();
             g.icon_id = 43;
@@ -348,7 +463,7 @@ impl Root {
     }
 
     #[inline]
-    fn root_group_as_mut(&mut self) -> Option<&mut Group> {
+    pub(crate) fn root_group_as_mut(&mut self) -> Option<&mut Group> {
         self.all_groups.get_mut(&self.root_uuid)
     }
 
@@ -386,13 +501,15 @@ impl Root {
         Ok(())
     }
 
-    pub fn update_group(&mut self, group: Group) {
-        //TODO: Need return error if this group is not present
+    pub fn update_group(&mut self, group: Group, group_modification_time_used: bool) {
+        //TODO: Need return error if this group is not present in all_groups map
 
         if let Some(g) = self.all_groups.get_mut(&group.uuid) {
-            let mut times = g.times.clone();
-            times.last_access_time = util::now_utc();
-            times.last_modification_time = times.last_access_time.clone();
+            if group_modification_time_used {
+                g.times = group.times.clone();
+            } else {
+                g.times.update_modification_time_now();
+            }
 
             g.name = group.name;
             g.notes = group.notes;
@@ -502,6 +619,7 @@ impl Root {
             self.all_entries
                 .remove(&eid)
                 .ok_or("The recycled entry is not found in All Entries map")?;
+            self.add_deleted_object_by_id(eid);
         }
 
         // This will remove all deleted groups. The groups' entries have been deleted
@@ -510,6 +628,7 @@ impl Root {
             self.all_groups
                 .remove(&gid)
                 .ok_or("The recycled group is not found in All Groups map")?;
+            self.add_deleted_object_by_id(gid);
         }
 
         let recycle_group = self
@@ -541,9 +660,12 @@ impl Root {
             self.remove_entry_permanently(eid)?;
         }
 
+        // Now all entries of this group and its subgroups are removed
+
+        // Get all subgroups recursively
         let sub_group_ids = self.children_groups_uuids(&group_uuid);
 
-        // Remove all sub groups
+        // Remove all sub groups. Entries are already removed
         for gid in sub_group_ids {
             self.all_groups
                 .remove(&gid)
@@ -562,6 +684,39 @@ impl Root {
         // Remove this group id from group_uuids of its parent where
         // the parent may recycle bin group or group that is in recycle
         if let Some(old_parent) = self.all_groups.get_mut(&g.parent_group_uuid) {
+            old_parent.group_uuids.retain(|&id| id != group_uuid);
+        }
+
+        // Add the uuid to the "DeletedObjects" to mark permanent removal of this group
+        // Useful during merging dbs
+        self.add_deleted_object_by_id(group_uuid);
+
+        Ok(())
+    }
+
+    pub fn remove_group_on_merge_deleted_objects(&mut self, group_uuid: Uuid) -> Result<()> {
+        verify_uuid!(self, group_uuid, all_groups);
+
+        // As we have already verified group_uuid above, we can use unwrap also
+        let group = self
+            .all_groups
+            .get(&group_uuid)
+            .ok_or_else(|| "The group is not found in All groups")?;
+
+        if !group.entry_uuids.is_empty() || !group.group_uuids.is_empty() {
+            return Err(Error::DataError(
+                "Group is not empty. The group should not have any entry or subgroup",
+            ));
+        }
+
+        // Remove the group from all_groups map
+        let group = self
+            .all_groups
+            .remove(&group_uuid)
+            .ok_or_else(|| "The group is not found in All groups")?;
+
+        // Remove this group id from group_uuids of its parent group.
+        if let Some(old_parent) = self.all_groups.get_mut(&group.parent_group_uuid) {
             old_parent.group_uuids.retain(|&id| id != group_uuid);
         }
 
@@ -585,9 +740,29 @@ impl Root {
 
         // Remove this entry id from entry_uuids of its parent group.
         // The parent should be a recycle bin group  or group that is in recycle bin
-        if let Some(old_parent) = self.all_groups.get_mut(&e.group_uuid) {
+        if let Some(old_parent) = self.all_groups.get_mut(&e.parent_group_uuid) {
             old_parent.entry_uuids.retain(|&id| id != e.uuid);
         }
+
+        self.add_deleted_object_by_id(entry_uuid);
+
+        Ok(())
+    }
+
+    pub fn remove_entry_on_merge_deleted_objects(&mut self, entry_uuid: Uuid) -> Result<()> {
+        verify_uuid!(self, entry_uuid, all_entries);
+
+        // Remove the entry from all_groups map
+        let entry = self
+            .all_entries
+            .remove(&entry_uuid)
+            .ok_or_else(|| "The entry is not found in All entries")?;
+
+        // Remove this entry id from entry_uuids of its parent group.
+        if let Some(old_parent) = self.all_groups.get_mut(&entry.parent_group_uuid) {
+            old_parent.entry_uuids.retain(|&id| id != entry.uuid);
+        }
+
         Ok(())
     }
 
@@ -595,6 +770,12 @@ impl Root {
     pub fn move_group(&mut self, group_uuid: Uuid, new_parent_id: Uuid) -> Result<()> {
         verify_uuid!(self, group_uuid, all_groups);
         verify_uuid!(self, new_parent_id, all_groups);
+
+        if group_uuid == new_parent_id {
+            return Err(Error::DataError(
+                "The group and its parent group cannot be the same",
+            ));
+        }
 
         let mut old_parent_id = Uuid::default();
         if let Some(grp) = self.all_groups.get_mut(&group_uuid) {
@@ -607,6 +788,8 @@ impl Root {
                 return Err(Error::DataError("The new parent is the same as the old parent for this group and move is not done"));
             }
             grp.parent_group_uuid = new_parent_id;
+            // At this time we are changing only 'location_changed' time.
+            grp.times.location_changed = util::now_utc();
         }
 
         // If the new parent is root group, we need to keep the recycle bin group as the last one in root's group_uuids
@@ -650,7 +833,7 @@ impl Root {
 
         // all_entries map contains the key 'entry_uuid' as we have that verified above. Calling unwrap() is fine
         let entry = self.all_entries.get_mut(&entry_uuid).unwrap();
-        let old_parent_id = entry.group_uuid;
+        let old_parent_id = entry.parent_group_uuid;
 
         verify_uuid!(self, old_parent_id, all_groups);
 
@@ -664,12 +847,14 @@ impl Root {
             ));
         }
 
-        entry.group_uuid = new_parent_id;
+        entry.parent_group_uuid = new_parent_id;
+        entry.times.location_changed = util::now_utc();
 
         // Add this entry id to the new parent entry uuids. For now it is added to the end
         self.all_groups
             .entry(new_parent_id.clone())
             .and_modify(|g| g.entry_uuids.push(entry_uuid));
+
         // Remove this entry id from entry_uuids of previous parent group
         if let Some(old_parent) = self.all_groups.get_mut(&old_parent_id) {
             old_parent.entry_uuids.retain(|&id| id != entry_uuid);
@@ -688,7 +873,7 @@ impl Root {
 
         // TODO: Entry's group_uuid should be its parent group uuid. Should we add 'assert' for that?
         // Need to add this entry to its parent's list
-        if let Some(g) = self.all_groups.get_mut(&entry.group_uuid) {
+        if let Some(g) = self.all_groups.get_mut(&entry.parent_group_uuid) {
             g.entry_uuids.push(entry.uuid);
         } else {
             return Err(Error::NotFound("Group is not valid for the entry".into()));
@@ -729,7 +914,7 @@ impl Root {
         cloned_entry.uuid = new_e_uuid;
 
         // Cloned entry's parent group uuid should be set
-        cloned_entry.group_uuid = entry_clone_option.parent_group_uuid;
+        cloned_entry.parent_group_uuid = entry_clone_option.parent_group_uuid;
 
         // Title is changed
         if let Some(title) = entry_clone_option.new_title.as_ref() {

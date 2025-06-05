@@ -69,7 +69,7 @@ pub enum Error {
     // UnsupportedKdf(Vec<u8>),
     #[error("{0}")]
     UnsupportedKdfAlgorithm(String),
-    #[error("Only Argon 2d kdf algorithm is supported")]
+    #[error("Only Argon2 kdf algorithm is supported")]
     SupportedOnlyArgon2dKdfAlgorithm,
 
     #[error("{0}")]
@@ -195,6 +195,9 @@ pub enum Error {
     // instead of RemoteStorageCallError(String)
     #[error("RemoteStorageCallError: {0}")]
     RemoteStorageCallError(String),
+
+    #[error("CsvImportError: {0}")]
+    CsvImportError(#[from] csv::Error),
 }
 
 // Tauri main converts App error such as above as "hooks::InvokeError" using serde call and then returns to to the UI

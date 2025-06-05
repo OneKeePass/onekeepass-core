@@ -4,7 +4,7 @@
 mod attachment;
 mod io;
 
-// TODO: Need to move module storage to db_service_ffi crate as it is used only in mobile apps
+// Note: Moved module storage to db_service_ffi crate as it is used only in mobile apps for now
 
 // Modules storage and callback_service are used for now only in mobile apps
 //#[cfg(any( target_os = "ios",target_os = "android"))]
@@ -14,6 +14,7 @@ mod io;
 
 use crate::db::KdbxFile;
 use crate::db_content::{standard_types_ordered_by_id, Entry, KeepassFile, OtpData};
+use crate::db_merge;
 use crate::form_data;
 use crate::searcher;
 use crate::util;
@@ -79,6 +80,11 @@ pub use crate::form_data::{
 
 pub use crate::constants::entry_keyvalue_key;
 
+pub use crate::db_merge::MergeResult;
+
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub use crate::import::csv_reader::{CsvImport, CsvImportMapping, CsvImportOptions, CvsHeaderInfo};
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SaveStatus {
     Success,
@@ -108,7 +114,7 @@ pub fn kdbx_context_statuses(db_key: &str) -> Result<KdbxContextStatus> {
         })
     })
 }
-pub struct KdbxContext {
+pub(crate) struct KdbxContext {
     pub(crate) kdbx_file: KdbxFile,
     /// The time of the most recent reading of the database
     pub(crate) last_read_time: NaiveDateTime, // Need to use NaiveDateTime::signed_duration_since to get duration from this
@@ -126,6 +132,17 @@ impl Default for KdbxContext {
             last_write_time: util::now_utc(),
             save_pending: false,
         }
+    }
+}
+
+impl KdbxContext {
+    // Add the newly created KdbxFile to cache for UI use
+    fn insert(kdbx_file: KdbxFile) {
+        let db_key = kdbx_file.get_database_file_name().to_string();
+        let mut kdbx_context = KdbxContext::default();
+        kdbx_context.kdbx_file = kdbx_file;
+        let mut store = main_store().lock().unwrap();
+        store.insert(db_key, kdbx_context);
     }
 }
 
@@ -147,6 +164,17 @@ macro_rules! to_keepassfile {
         $kdbx_file
             .keepass_main_content
             .as_ref()
+            .ok_or("No main content")?
+    };
+}
+
+#[macro_export]
+macro_rules! to_keepassfile_mut {
+    ($kdbx_file:expr) => {
+        // Need to get Option<&KeepassFile> from Option<KeepassFile> using as_ref
+        $kdbx_file
+            .keepass_main_content
+            .as_mut()
             .ok_or("No main content")?
     };
 }
@@ -176,7 +204,7 @@ macro_rules! main_content_mut_action {
         let r = call_main_content_mut_action($db_key, $closure_fn);
         // Update the write time
         call_kdbx_context_mut_action($db_key, |ctx: &mut KdbxContext| {
-            ctx.last_write_time = util::now_utc();
+            ctx.last_write_time = crate::util::now_utc();
             ctx.save_pending = true;
             Ok(())
         })?;
@@ -238,7 +266,7 @@ where
 }
 
 // Calls the mut action closure with the complete context for a specific db
-fn call_kdbx_context_mut_action<T, F>(db_key: &str, mut action: F) -> Result<T>
+pub(crate) fn call_kdbx_context_mut_action<T, F>(db_key: &str, mut action: F) -> Result<T>
 where
     F: FnMut(&mut KdbxContext) -> Result<T>,
 {
@@ -274,7 +302,7 @@ where
 }
 
 // Calls the mut action closure with the db content for a specific db
-fn call_main_content_mut_action<T, F>(db_key: &str, action: F) -> Result<T>
+pub(crate) fn call_main_content_mut_action<T, F>(db_key: &str, action: F) -> Result<T>
 where
     F: Fn(&mut KeepassFile) -> Result<T>,
 {
@@ -561,11 +589,14 @@ pub fn search_term(db_key: &str, term: &str) -> Result<EntrySearchResult> {
                 let (t1, t2) = extract_entry_titles(e);
                 search_result.entry_items.push(EntrySummary {
                     uuid: e.uuid.to_string(),
+                    parent_group_uuid: e.parent_group_uuid(),
                     title: t1,
                     secondary_title: t2,
                     icon_id: e.icon_id,
                     history_index: None,
+                    #[allow(deprecated)]
                     modified_time: Some(e.times.last_modification_time.timestamp()),
+                    #[allow(deprecated)]
                     created_time: Some(e.times.creation_time.timestamp()),
                 });
             }
@@ -639,9 +670,10 @@ fn create_groups_summary_data(k: &KeepassFile) -> Result<GroupTree> {
     // to form summary. Need to pass 'false' to include all groups
     for group in &k.root.get_all_groups(false) {
         grps.insert(
-            group.uuid.to_string(),
+            group.get_uuid().to_string(),
             GroupSummary {
-                uuid: group.uuid.to_string(),
+                uuid: group.get_uuid(),
+                parent_group_uuid: group.parent_group_uuid(),
                 name: group.name.clone(),
                 icon_id: group.icon_id,
                 group_uuids: adjust_special_groups_order(k, &group),
@@ -899,7 +931,7 @@ pub fn clone_entry(
 
 pub fn update_group(db_key: &str, group: Group) -> Result<()> {
     main_content_mut_action!(db_key, |k: &mut KeepassFile| {
-        Ok(k.root.update_group(group.clone()))
+        Ok(k.root.update_group(group.clone(), false))
     })
 }
 
@@ -996,8 +1028,8 @@ pub fn new_entry_form_data_by_id(
 }
 
 pub fn new_blank_group(mark_as_category: bool) -> Group {
-    let mut group = Group::new();
-    group.uuid = uuid::Uuid::new_v4();
+    let mut group = Group::new_with_id();
+    // group.uuid = uuid::Uuid::new_v4();
     if mark_as_category {
         group.mark_as_category();
         //group.custom_data.mark_as_category();
@@ -1019,63 +1051,86 @@ pub fn new_blank_group_with_parent(
     Ok(group)
 }
 
-/*
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub fn merge_databases(
+    target_db_key: &str,
+    source_db_key: &str,
+    password: Option<&str>,
+    key_file_name: Option<&str>,
+) -> Result<MergeResult> {
+    if target_db_key == source_db_key {
+        return Err(error::Error::UnexpectedError(format!("Both source and target are the same databases. Please select a different database to merge")));
+    }
 
-// Deprecated; Use entry_type_headers
-pub fn entry_type_names(db_key: &str) -> Result<EntryTypeNames> {
-    main_content_action!(db_key, |k: &KeepassFile| {
-        k.meta
-            .custom_entry_type_names_by_id()
-            .sort_by(|a, b| a.1.cmp(&b.1));
-        //let mut sn = standard_type_names();
-        let mut sn = standard_types_ordered_by_id()
-            .into_iter()
-            .map(|e| e.name.clone())
-            .collect::<Vec<String>>();
-        //let mut sn = standard_type_uuids_names_ordered_by_id();
-        sn.sort();
-        let type_names = EntryTypeNames {
-            custom: k
-                .meta
-                .custom_entry_type_names_by_id()
-                .into_iter()
-                .map(|(_, s)| s)
-                .collect(), //entries.sort_unstable_by(|a, b| a.title.cmp(&b.title));
-            //standard: sn.into_iter().map(|(_,s)| s).collect(),
-            standard: sn,
-        };
-        Ok(type_names)
-    })
-}
+    // IMPORTANT:
+    // We need to call all the calls 'main_store().lock()' to access the shared cache in a {} block
+    // so that the Mutex guard is unlocked while leaving the block and can then called again in another block or fn
+    // If not done this way, the deadlock will happen when we make calls to 'main_store().lock()' before unlocking the previous call
 
-
-
-// Deprecate - See below fn comment
-// A macro to query the db store for an entry or group by id
-macro_rules! query_main_content_by_id {
-    ($db_key:expr, $uuid:expr, $coll_name:tt) => {
-        main_content_action!(
-            $db_key,
-            (|k: &KeepassFile| match Uuid::parse_str($uuid) {
-                Ok(p_uuid) => {
-                    if let Some(g) = k.root.$coll_name(&p_uuid) {
-                        return Ok(g.clone());
-                    } else {
-                        return Err(Error::NotFound(
-                            "No entry Entry/Group found for the id".into(),
-                        ));
-                    }
-                }
-                Err(e) => Err(Error::UuidCoversionFailed(e)),
-            })
-        )
+    let source_already_opened = {
+        let store = main_store().lock().unwrap();
+        store.contains_key(source_db_key)
     };
+
+    log::debug!("source_already_openned is {}", source_already_opened);
+
+    let source_loaded = if !source_already_opened {
+        load_kdbx(source_db_key, password, key_file_name)?;
+        log::debug!("source is opened");
+        true
+    } else {
+        false
+    };
+
+    let merge_result = {
+        let mut store = main_store().lock().unwrap();
+        let [target, source] = store.get_disjoint_mut([target_db_key, source_db_key]);
+        log::debug!("Got refs for source and target");
+
+        let target_kdbx = &mut target
+            .ok_or_else(|| "Target database key is not found")?
+            .kdbx_file;
+        let source_kdbx = &source
+            .as_ref()
+            .ok_or_else(|| "Source database key is not found")?
+            .kdbx_file;
+        let merge_result = db_merge::Merger::from_kdbx_file(source_kdbx, target_kdbx).merge()?;
+        log::debug!("Dbs are merged");
+
+        merge_result
+    };
+
+    if source_loaded {
+        close_kdbx(source_db_key)?;
+        log::debug!("source_db_key closed as it was opened only for merging");
+    }
+
+    Ok(merge_result)
 }
 
-// Deprecate after using get_group_by_id in Mobile
-pub fn query_group_by_id(db_key: &str, group_uuid: &str) -> Result<Group> {
-    query_main_content_by_id!(db_key, group_uuid, group_by_id)
+#[cfg(any(target_os = "ios", target_os = "android"))]
+pub fn merge_databases(target_db_key: &str, source_db_key: &str) -> Result<MergeResult> {
+    if target_db_key == source_db_key {
+        return Err(error::Error::UnexpectedError(format!("Both source and target are the same databases. Please select a different database to merge")));
+    }
+
+    let merge_result = {
+        let mut store = main_store().lock().unwrap();
+        let [target, source] = store.get_disjoint_mut([target_db_key, source_db_key]);
+        log::debug!("Got refs for source and target");
+
+        let target_kdbx = &mut target
+            .ok_or_else(|| "Target database key is not found")?
+            .kdbx_file;
+        let source_kdbx = &source
+            .as_ref()
+            .ok_or_else(|| "Source database key is not found")?
+            .kdbx_file;
+        let merge_result = db_merge::Merger::from_kdbx_file(source_kdbx, target_kdbx).merge()?;
+        log::debug!("Dbs are merged");
+
+        merge_result
+    };
+
+    Ok(merge_result)
 }
-
-
-*/
