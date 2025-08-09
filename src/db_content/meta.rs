@@ -80,6 +80,11 @@ pub struct Meta {
     pub(crate) default_user_name: String,
     pub(crate) maintenance_history_days: i32,
     pub(crate) recycle_bin_enabled: bool,
+
+    // When a db is loaded, this is set from xml content if available and copied to root. 
+    // But when a recycle bin is created first time in onekeepas, 
+    // the new recycle group is created in 'root' and its uuid  is later 
+    // copied to meta from root before writing to xml
     pub(crate) recycle_bin_uuid: Uuid,
 
     pub(crate) last_selected_group: Uuid,
@@ -130,6 +135,11 @@ impl Meta {
 
             meta_share: Arc::default(),
         }
+    }
+
+    
+    pub(crate) fn database_name(&self) -> &String {
+        &self.database_name
     }
 
     // The incoming Meta instance 'other' is partially filled from db_service::MetaFormData and passed it here

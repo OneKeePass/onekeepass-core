@@ -10,22 +10,29 @@ mod standard_entry_types;
 
 pub(crate) use self::custom_data::{CustomData, Item};
 pub(crate) use self::otp::OtpData;
+pub(crate) use self::keepass::KeepassFile;
+pub(crate) use self::meta::Meta;
+pub(crate) use self::root::Root;
+pub(crate) use self::root::DeletedObject;
+
 
 pub use self::entry::{
     Association, AutoType, BinaryKeyValue, Entry, EntryField, History, KeyValue,
 };
+
 pub use self::entry_type::{EntryType, FieldDataType, FieldDef, Section};
 pub use self::group::Group;
-pub use self::keepass::KeepassFile;
-pub use self::meta::Meta;
+
 pub use self::otp::{CurrentOtpTokenData, OtpAlgorithm, OtpSettings};
 
-pub(crate) use self::root::DeletedObject;
-pub use self::root::{AllTags, EntryCloneOption, GroupSortCriteria, Root};
+pub use self::root::{AllTags, EntryCloneOption, GroupSortCriteria, };
+
 pub use self::standard_entry_types::{
     standard_type_uuid_by_name, standard_type_uuids_names_ordered_by_id,
     standard_types_ordered_by_id,
 };
+
+pub type AttachmentHashValue = u64;
 
 use chrono::NaiveDateTime;
 
@@ -34,12 +41,10 @@ use uuid::Uuid; //info, warn
 
 use crate::util;
 
-pub type AttachmentHashValue = u64;
-
 const TAGS_SEPARATORS: [char; 2] = [';', ','];
 
 // Splits tags string into vector of tags
-pub fn split_tags(tags: &str) -> Vec<String> {
+pub(crate) fn split_tags(tags: &str) -> Vec<String> {
     let splits = tags.split(&TAGS_SEPARATORS[..]);
     splits
         .filter(|w| !w.is_empty())
@@ -47,12 +52,12 @@ pub fn split_tags(tags: &str) -> Vec<String> {
         .collect::<Vec<String>>()
 }
 
-pub fn join_tags(tag_vec: &Vec<String>) -> String {
+pub(crate) fn join_tags(tag_vec: &Vec<String>) -> String {
     tag_vec.join(";")
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct MemoryProtection {
+pub(crate) struct MemoryProtection {
     pub(crate) protect_title: bool,
     pub(crate) protect_notes: bool,
     pub(crate) protect_url: bool,
@@ -61,12 +66,12 @@ pub struct MemoryProtection {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct CustomIcons {
+pub(crate) struct CustomIcons {
     pub(crate) icons: Vec<Icon>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct Icon {
+pub(crate) struct Icon {
     pub(crate) uuid: Uuid,
     pub(crate) data: Vec<u8>,
     pub(crate) name: Option<String>, //KDBX 4.1

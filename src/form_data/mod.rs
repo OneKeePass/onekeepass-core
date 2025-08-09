@@ -1,12 +1,13 @@
 mod categories;
 mod db_setting;
 mod entry;
-mod parsing;
+pub(crate) mod parsing;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{db::KdbxFile, db_content::Meta, util};
+
 
 pub use self::categories::*;
 pub use self::entry::*;

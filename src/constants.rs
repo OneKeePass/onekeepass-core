@@ -165,6 +165,9 @@ pub mod entry_keyvalue_key {
     pub const PASSWORD: &str = "Password";
     pub const OTP: &str = "otp";
     pub const URL: &str = "URL";
+    pub const ADDITIONAL_URLS: &str = "Additional URLs";
+
+    pub const SSID: &str = "Base Station Name or SSID";
 
     pub const NUMBER: &str = "Number";
 

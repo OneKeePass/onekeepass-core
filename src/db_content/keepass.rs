@@ -8,20 +8,20 @@ use crate::error::{self, Result};
 use super::EntryType;
 
 #[derive(Debug, Clone)]
-pub struct KeepassFile {
+pub(crate) struct KeepassFile {
     pub(crate) meta: Meta,
     pub(crate) root: Root,
 }
 
 impl KeepassFile {
-    pub fn new() -> KeepassFile {
+    pub(crate) fn new() -> KeepassFile {
         KeepassFile {
             meta: Meta::new(),
             root: Root::new(),
         }
     }
 
-    pub fn empty_trash(&mut self) -> Result<()> {
+    pub(crate) fn empty_trash(&mut self) -> Result<()> {
         // The recycle_bin_uuid from the root itself used for now till we move the root 'recycle_bin_uuid'
         // to meta 'recycle_bin_uuid' instead of using share_meta_to_root and share_root_to_meta
         self.root.empty_trash(self.root.recycle_bin_uuid())
@@ -36,26 +36,27 @@ impl KeepassFile {
     // See 'empty_trash' method for additional comments
 
     // TODO: For now we are just delegating to 'root' and need to pass excluded group ids (recycle group id and template group id )
-    pub fn get_all_entries<'a>(&'a self, exclude: bool) -> Vec<&'a Entry> {
+    pub(crate) fn get_all_entries<'a>(&'a self, exclude: bool) -> Vec<&'a Entry> {
         self.root.get_all_entries(exclude)
     }
 
-    pub fn collect_all_active_entries<'a>(&'a self) -> Vec<&'a Entry> {
+    // Collects all entries that are not in recycle bin
+    pub(crate) fn collect_all_active_entries<'a>(&'a self) -> Vec<&'a Entry> {
         self.root
             .collect_all_active_entries(self.root.recycle_bin_uuid())
     }
 
-    pub fn collect_favorite_entries<'a>(&'a self) -> Vec<&'a Entry> {
+    pub(crate) fn collect_favorite_entries<'a>(&'a self) -> Vec<&'a Entry> {
         self.root
             .collect_favorite_entries(self.root.recycle_bin_uuid())
     }
 
-    pub fn deleted_entry_uuids(&self) -> Vec<Uuid> {
+    fn deleted_entry_uuids(&self) -> Vec<Uuid> {
         // TODO: Pass recycle bin group uuid from meta to root
         self.root.deleted_entry_uuids()
     }
 
-    pub fn deleted_group_uuids(&self) -> Vec<Uuid> {
+    pub(crate) fn deleted_group_uuids(&self) -> Vec<Uuid> {
         // TODO: Pass recycle bin group uuid from meta to root
         self.root.deleted_group_uuids()
     }
@@ -70,7 +71,7 @@ impl KeepassFile {
     //     }
     // }
 
-    pub fn delete_custom_entry_type_by_id(
+    pub(crate) fn delete_custom_entry_type_by_id(
         &mut self,
         entry_type_uuid: &Uuid,
     ) -> Result<Option<EntryType>> {
@@ -88,13 +89,13 @@ impl KeepassFile {
     }
 
     // Ensures that the meta share for the newly created entry is initialized properly
-    pub fn insert_entry(&mut self, mut entry: Entry) -> Result<()> {
+    pub(crate) fn insert_entry(&mut self, mut entry: Entry) -> Result<()> {
         entry.meta_share = self.meta.clone_meta_share();
         self.root.insert_entry(entry)
     }
 
     // Called after reading xml content
-    pub fn after_xml_reading(
+    pub(crate) fn after_xml_reading(
         &mut self,
         attachment_hash_indexed: &HashMap<i32, (AttachmentHashValue, usize)>,
     ) {
@@ -121,7 +122,7 @@ impl KeepassFile {
     }
 
     // Called before writing xml content
-    pub fn before_xml_writing(&mut self, hash_index_ref: &HashMap<AttachmentHashValue, i32>) {
+    pub(crate) fn before_xml_writing(&mut self, hash_index_ref: &HashMap<AttachmentHashValue, i32>) {
         self.meta.copy_to_custom_data();
 
         // Need to set the new index_refs of all attachments after writing the binaries

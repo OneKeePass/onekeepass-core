@@ -74,7 +74,7 @@ lazy_static! {
                     .set_require_protection(true),
                 FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword).set_require_protection(true),
                 FieldDef::new(URL),
-                FieldDef::new("Additional URLs"),
+                FieldDef::new(ADDITIONAL_URLS),
                 //FieldDef::new("Date created").set_data_type(FieldDataType::Date),
             ],
 
@@ -101,7 +101,7 @@ lazy_static! {
                 sections: vec![Section {
                     name: LOGIN_DETAILS.into(),
                     field_defs: vec![
-                        FieldDef::new("Base Station Name or SSID").required(),
+                        FieldDef::new(SSID).required(),
                         FieldDef::new(PASSWORD)
                             .required()
                             .set_require_protection(true),

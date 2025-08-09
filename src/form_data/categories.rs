@@ -174,7 +174,7 @@ impl From<&KeepassFile> for EntryCategoryInfo {
         let all_entries = CategoryDetail {
             title,
             display_title,
-            entries_count: all.len(), //k.get_all_entries(true).len(),
+            entries_count: all.len(), 
             groups_count: 0,
             icon_id: 0,
             icon_name: None,
@@ -188,7 +188,7 @@ impl From<&KeepassFile> for EntryCategoryInfo {
         let favorite_entries = CategoryDetail {
             title,
             display_title,
-            entries_count: k.collect_favorite_entries().len(), //k.get_all_entries(true).len(),
+            entries_count: k.collect_favorite_entries().len(), 
             groups_count: 0,
             icon_id: 0,
             icon_name: None,
