@@ -59,8 +59,22 @@ lazy_static! {
     };
 
     pub static ref DEFAULT_ENTRY_TYPE: EntryType = EntryType {
-        //try **(STANDARD_TYPE_UUIDS_BY_NAME.get(LOGIN).unwrap()),
-        //uuid::Builder::from_slice(&entry_type_uuid::LOGIN).unwrap().build(),
+        
+
+        // onekeepass_core::db_content::entry_type::EntryTypeV  pub(crate) fn changed(&self, other: &EntryType) -> bool
+        
+        // It appears we can add more sections or field defs to the standard entry types as long as FieldDef or Section are not changed
+        // We should be able to read the previously stored entry types data and use the latest defined standard entry type 
+        // This was tested briefly while introducing OTP to all , ADDITIONAL_URLS to BANK_ACCOUNT and CREDIT_DEBIT_CARD
+        
+        // Removed FieldDef.required() calls
+
+        // Similarly we can drop a section or field def from standard entry type definition (Not yet tested)
+
+        // Also see - pub(crate) fn changed(&self, other: &EntryType) -> bool of onekeepass_core::db_content::entry_type::EntryTypeV  
+        // Here we compare the entry type's section by section to identify any changes between incoming and standard type
+        // Not sure how this impacts if we add new section or field def, though did not see any issue so far.   
+
         uuid: build_uuid!(entry_type_uuid::LOGIN),
         name: LOGIN.into(),
         secondary_title: Some(USER_NAME.into()),
@@ -68,14 +82,11 @@ lazy_static! {
         sections: vec![Section {
             name: LOGIN_DETAILS.into(),
             field_defs: vec![
-                FieldDef::new(USER_NAME).required(),
-                FieldDef::new(PASSWORD)
-                    .required()
-                    .set_require_protection(true),
+                FieldDef::new(USER_NAME),
+                FieldDef::new(PASSWORD).set_require_protection(true),
                 FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword).set_require_protection(true),
                 FieldDef::new(URL),
                 FieldDef::new(ADDITIONAL_URLS),
-                //FieldDef::new("Date created").set_data_type(FieldDataType::Date),
             ],
 
         },
@@ -110,6 +121,8 @@ lazy_static! {
             },
         );
 
+        // Adding or removing more sections or field defs to the standard entry types - see comments above
+
         m.insert(
             build_uuid!(entry_type_uuid::CREDIT_DEBIT_CARD),
             EntryType {
@@ -121,12 +134,11 @@ lazy_static! {
                     Section {
                         name: LOGIN_DETAILS.into(),
                         field_defs: vec![
-                            FieldDef::new(USER_NAME).required(),
-                            FieldDef::new(PASSWORD)
-                                .required()
-                                .set_require_protection(true),
-                                FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword).set_require_protection(true),
-                            FieldDef::new(URL)
+                            FieldDef::new(USER_NAME),
+                            FieldDef::new(PASSWORD).set_require_protection(true),
+                            FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword).set_require_protection(true),
+                            FieldDef::new(URL),
+                            FieldDef::new(ADDITIONAL_URLS),
                         ],
                     },
                     Section {
@@ -136,14 +148,12 @@ lazy_static! {
                     Section {
                         name: CARD_DETAILS.into(),
                         field_defs: vec![
-                            FieldDef::new("Cardholder Name").required(),
-                            FieldDef::new("Brand").required(),
-                            FieldDef::new("Number").required(),
+                            FieldDef::new("Cardholder Name"),
+                            FieldDef::new("Brand"),
+                            FieldDef::new("Number"),
                             FieldDef::new("Expiration Month").set_data_type(FieldDataType::Month),
                             FieldDef::new("Expiration Year").set_data_type(FieldDataType::Year),
-                            FieldDef::new("CVC")
-                                .set_require_protection(true),
-                                //.set_help_text("Card Verification Value/Number"),
+                            FieldDef::new("CVC").set_require_protection(true),
                             FieldDef::new("PIN").set_require_protection(true),
                         ],
                     },
@@ -171,6 +181,8 @@ lazy_static! {
             },
         );
 
+        // Adding or removing more sections or field defs to the standard entry types - see comments above
+
         m.insert(
             build_uuid!(entry_type_uuid::BANK_ACCOUNT),
             EntryType {
@@ -182,12 +194,11 @@ lazy_static! {
                     Section {
                         name: LOGIN_DETAILS.into(),
                         field_defs: vec![
-                            FieldDef::new(USER_NAME).required(),
-                            FieldDef::new(PASSWORD)
-                                .required()
-                                .set_require_protection(true),
-                                FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword).set_require_protection(true),
-                            FieldDef::new(URL)
+                            FieldDef::new(USER_NAME),
+                            FieldDef::new(PASSWORD).set_require_protection(true),
+                            FieldDef::new(OTP).set_data_type(FieldDataType::OneTimePassword).set_require_protection(true),
+                            FieldDef::new(URL),
+                            FieldDef::new(ADDITIONAL_URLS),
                         ],
                     },
                     Section {
@@ -197,9 +208,9 @@ lazy_static! {
                     Section {
                         name: "Account Details".into(),
                         field_defs: vec![
-                            FieldDef::new("Account holder").required(),
-                            FieldDef::new("Account type").required(),
-                            FieldDef::new("Account number").required(),
+                            FieldDef::new("Account holder"),
+                            FieldDef::new("Account type"),
+                            FieldDef::new("Account number"),
                             FieldDef::new("Bank Code/Routing number"),
                             FieldDef::new("SWIFT"),
                         ],
