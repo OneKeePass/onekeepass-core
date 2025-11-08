@@ -246,7 +246,8 @@ pub(crate) struct EntryPlaceHolderParser<'a> {
     // Keeps track of the recursive call depths
     depth_counter: usize,
 
-    // All fields of an entry - keys are from field names (in uppercase) and values are from the field values
+    // All fields of an entry
+    // The keys of this map are from the kv field names (converted to UPPERCAE string) and values are from the kv field values
     entry_fields: &'a mut HashMap<String, String>,
 }
 
@@ -266,6 +267,9 @@ impl<'a> EntryPlaceHolderParser<'a> {
         }
     }
 
+    // Parses placeholders in field values and return the field names and values as HashMap
+    // The field names may be in UPPER CASE
+    // Returns an empty map if there is no parsing of field values
     pub(crate) fn resolve_place_holders(
         root: &'a Root,
         entry: &'a Entry,
@@ -296,6 +300,27 @@ impl<'a> EntryPlaceHolderParser<'a> {
         }
 
         entry_fields_with_place_holders
+    }
+
+    // Returns all entry fields of an entry after resolving field values if required
+    pub(crate) fn place_holder_resolved_entry_fields(
+        root: &'a Root,
+        entry: &'a Entry,
+    ) -> (HashMap<String, String>, HashMap<String, String>) {
+        let parsed_fields = Self::resolve_place_holders(root, entry);
+
+        let mut kvs = entry.field_values();
+
+        if !parsed_fields.is_empty() {
+            // one or more entry fields might have been parsed
+            for (field_name, field_value) in kvs.iter_mut() {
+                if let Some(parsed_field_val) = parsed_fields.get(&field_name.to_uppercase()) {
+                    // field_value is &mut String and *field_value is used to update this
+                    *field_value = parsed_field_val.clone();
+                }
+            }
+        }
+        return (parsed_fields,kvs);
     }
 
     pub(crate) fn modified_fields(&self) -> Vec<String> {

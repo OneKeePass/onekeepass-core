@@ -7,30 +7,6 @@ use regex::Regex;
 /// Returns true if there is a case sensitive match of term in any part of a field
 pub fn term_search_all_entry_fields(term: &str, entry: &Entry) -> Result<bool> {
     search_term_with_options(term, true, entry)
-    /*
-    // TODO: May need to form regular expression to make sure term is not a empty string
-    if term.trim().is_empty() {
-        return Ok(false);
-    }
-    let re = match Regex::new(term) {
-        Ok(reg) => reg,
-        Err(e) => {
-            error!("{}", e);
-            return Err(Error::RegexError(e));
-        }
-    };
-
-    //||  entry.key_values.iter().any( |k|  re.is_match(&k.value))
-
-    // Check if there is any match in the tags
-    let matched = re.is_match(&entry.tags)
-    // If there is a match in any of fields - title, user, password, url, notes, all custom fields..
-    ||  entry.entry_field.get_key_values().iter().any( |k|  re.is_match(&k.value))
-    // If there is a match in any attachment's name
-    || entry.binary_key_values.iter().any( |k|  re.is_match(&k.key));
-
-    Ok(matched)
-     */
 }
 
 // Searches the term with some regex options

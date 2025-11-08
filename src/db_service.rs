@@ -4,6 +4,9 @@
 mod attachment;
 mod io;
 
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub mod browser_extension;
+
 // Note: Moved module storage to db_service_ffi crate as it is used only in mobile apps for now
 
 // Modules storage and callback_service are used for now only in mobile apps
@@ -59,7 +62,7 @@ pub use crate::password_passphrase_generator::{
 };
 
 // See lib.rs where util module is reexported as service_util
-// another option is rename 'util' module as 'service_util' to avoid confilts with other crates 'util' module
+// TDOO: Rename 'util' module as 'service_util' to avoid confilts with other crates 'util' module
 pub use crate::service_util;
 
 pub use crate::db::{
@@ -584,6 +587,7 @@ pub fn search_term(db_key: &str, term: &str) -> Result<EntrySearchResult> {
             entry_items: vec![],
         };
 
+        // Use collect_all_active_entries instead of get_all_entries ?
         for e in k.get_all_entries(true) {
             if searcher::term_search_all_entry_fields(term, e)? {
                 let (t1, t2) = extract_entry_titles(e);
@@ -861,10 +865,6 @@ pub fn is_valid_otp_url(otp_url_str: &str) -> bool {
 pub fn entry_key_value_fields(db_key: &str, entry_uuid: &Uuid) -> Result<HashMap<String, String>> {
     main_content_action!(db_key, move |k: &KeepassFile| {
         EntryFormData::entry_key_value_fields(k, entry_uuid)
-        // match k.root.entry_by_id(entry_uuid) {
-        //     Some(e) => Ok(e.field_values()),
-        //     None => Err(Error::NotFound("No entry Entry found for the id".into())),
-        // }
     })
 }
 

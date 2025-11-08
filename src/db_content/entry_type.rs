@@ -290,9 +290,15 @@ impl VersionedEntryType {
                     // existing fields of the section from the built-in (predefined_et) Entrytype
                     // Here incoming_section will have only any non prededefined fields and they are added
                     // to the end of the existing field defs
+
+                    // Will the 'incoming_section' have any field_def that is already found in built_in_section?
+                    // May need to take care of this situation by adding the incoming field_def if not found in built_in_section
+                    // Otherwise, there will be duplcate definitions under this section
+
                     built_in_section
                         .field_defs
-                        .extend(incoming_section.field_defs.clone().into_iter())
+                        .extend(incoming_section.field_defs.clone().into_iter());
+
                 } else {
                     // section is a custom section and move that to the built_in_et (clone of predefined Entrytype)
                     built_in_et.sections.push(incoming_section.clone());

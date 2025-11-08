@@ -505,17 +505,19 @@ impl EntryFormData {
             .entry_by_id(entry_uuid)
             .ok_or(Error::NotFound("No entry Entry found for the id".into()))?;
 
-        let mut kvs = entry.field_values();
-        let parsed_fields = parsing::EntryPlaceHolderParser::resolve_place_holders(&kp.root, entry);
+        let (_,kvs) = parsing::EntryPlaceHolderParser::place_holder_resolved_entry_fields(&kp.root, entry);
 
-        if !parsed_fields.is_empty() {
-            for (field_name, field_value) in kvs.iter_mut() {
-                if let Some(parsed_field_val) = parsed_fields.get(&field_name.to_uppercase()) {
-                    // field_value is &mut String and *field_value is used to update this
-                    *field_value = parsed_field_val.clone();
-                }
-            }
-        }
+        // let mut kvs = entry.field_values();
+        // let parsed_fields = parsing::EntryPlaceHolderParser::resolve_place_holders(&kp.root, entry);
+
+        // if !parsed_fields.is_empty() {
+        //     for (field_name, field_value) in kvs.iter_mut() {
+        //         if let Some(parsed_field_val) = parsed_fields.get(&field_name.to_uppercase()) {
+        //             // field_value is &mut String and *field_value is used to update this
+        //             *field_value = parsed_field_val.clone();
+        //         }
+        //     }
+        // }
 
         Ok(kvs)
     }
@@ -536,6 +538,9 @@ impl EntryFormData {
 }
 
 impl Entry {
+    // When placeholder parsing is required,  all non empty entry fields are collected and 
+    // returned a map where keys are the UPPER CASE of entry field names. 
+    // Returns an empty map if there is no parsing is required 
     pub(crate) fn extract_place_holders(&self) -> HashMap<String, String> {
         let mut entry_fields_with_place_holders: HashMap<String, String> = HashMap::default();
 
@@ -548,14 +553,15 @@ impl Entry {
             }
         });
 
+        // if any place holder is found in any of the field values, then the field names are changed to be in UPPERCASE
         if parsing_required {
             // All non empty field values are collected to a HashMap irresespective whether the field
-            // contain placeholder or not
+            // contains any placeholder or not
             entry_fields_with_place_holders = self.entry_field.fields.values().into_iter().fold(
                 entry_fields_with_place_holders,
                 |mut acc, kvd| {
                     if !kvd.value.trim().is_empty() {
-                        // We make all keys to UpperCase
+                        // We make all keys to be in UPPER CASE before parsing
                         acc.insert(kvd.key.to_uppercase(), kvd.value.to_string());
                     }
                     acc
@@ -584,7 +590,7 @@ pub struct EntrySummary {
     pub uuid: String,
     pub parent_group_uuid: Uuid,
     pub title: Option<String>,
-    pub secondary_title: Option<String>, //usually the user name
+    pub secondary_title: Option<String>, // usually the user name
     pub icon_id: i32,
     pub history_index: Option<i32>,
     pub modified_time: Option<i64>,
@@ -627,7 +633,7 @@ impl EntrySummary {
 
     // Gets the secondary title to show in addition to main title while displaying
     // an entry item in a list - a UI specific thing
-    fn secondary_title(entry: &Entry, parsed_fields: &HashMap<String, String>) -> Option<String> {
+    pub(crate) fn secondary_title(entry: &Entry, parsed_fields: &HashMap<String, String>) -> Option<String> {
         if entry.entry_field.entry_type.name == CREDIT_DEBIT_CARD {
             entry.entry_field.find_key_value(NUMBER).map(|f| {
                 let s = f.value.trim();
@@ -681,7 +687,7 @@ impl EntrySummary {
         }
     }
 
-    pub fn entry_summary_data<'a>(
+    pub(crate) fn entry_summary_data<'a>(
         kp: &'a KeepassFile,
         entry_category: &'a categories::EntryCategory,
     ) -> Vec<EntrySummary> {
@@ -692,8 +698,10 @@ impl EntrySummary {
             let parsed_fields = parsing::EntryPlaceHolderParser::resolve_place_holders(&kp.root, e);
             let title = parsed_fields
                 .get(&title_upper)
-                .map_or_else(|| e.find_kv_field_value(TITLE), |s| Some(s.to_string())); //e.find_kv_field_value(TITLE);
+                .map_or_else(|| e.find_kv_field_value(TITLE), |s| Some(s.to_string())); 
+
             let secondary_title = EntrySummary::secondary_title(e, &parsed_fields);
+            
             summary_list.push(Self {
                 uuid: e.uuid.to_string(),
                 parent_group_uuid: e.parent_group_uuid(),

@@ -154,6 +154,7 @@ impl Root {
         self.recycle_bin_uuid
     }
 
+    // From meta the recycle group's uuid is set to root after reading the xml content
     pub(crate) fn set_recycle_bin_uuid(&mut self, uuid: Uuid) -> &mut Self {
         self.recycle_bin_uuid = uuid;
         self
@@ -277,20 +278,22 @@ impl Root {
     //     Ok(group.entry_uuids().is_empty() && group.sub_group_uuids().is_empty())
     // }
 
+    // Fix these duplicate implementations ?
+    // TODO: Verify whether we replace get_all_entries with collect_all_active_entries
+
     // Gets all entries. The flag exclude determines whether to include or exclude entries from the special groups in the list
     // TODO: intead of 'exclude', accept the list of group ids to exclude. See comments in 'KeepassFile'
     pub(crate) fn get_all_entries<'a>(&'a self, exclude: bool) -> Vec<&'a Entry> {
-        //let ids = if exclude {self.deleted_entry_uuids() } else {vec![]};
         self.all_entries
             .values()
             .filter(|x| {
                 if exclude {
-                    //if ids.contains(&x.uuid) {false} else {true}
+                    // For now only entries from recycle group is excluded
                     if &x.parent_group_uuid == &self.recycle_bin_uuid {
                         false
                     } else {
                         true
-                    } //For now only entries from recycle group is excluded
+                    }
                 } else {
                     true
                 }
@@ -298,7 +301,7 @@ impl Root {
             .collect()
     }
 
-    /// Collects all entries that are not in recycle bin
+    // Collects all entries that are not in recycle bin
     pub(crate) fn collect_all_active_entries<'a>(
         &'a self,
         recycle_group_uuid: Uuid,
