@@ -159,6 +159,16 @@ fn main_store() -> &'static MainStore {
     &MAIN_STORE
 }
 
+/// Inserts a `KdbxFile` directly into the in-memory cache.
+///
+/// Intended **only** for unit tests that need to populate the cache without
+/// going through the full disk-IO path (i.e. without calling `create_kdbx` or
+/// `load_kdbx`).
+#[cfg(test)]
+pub(crate) fn insert_kdbx_for_test(kdbx_file: KdbxFile) {
+    KdbxContext::insert(kdbx_file);
+}
+
 // Gets a ref to the main keepass content
 #[macro_export]
 macro_rules! to_keepassfile {
