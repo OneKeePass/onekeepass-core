@@ -6,7 +6,7 @@ use crate::constants::entry_keyvalue_key::PASSWORD;
 use crate::constants::entry_keyvalue_key::TITLE;
 use crate::constants::entry_keyvalue_key::URL;
 use crate::constants::entry_keyvalue_key::USER_NAME;
-use crate::db_content::{Entry, FieldDataType, KeepassFile, KeyValue};
+use crate::db_content::{Entry, FieldDataType, Group, KeepassFile, KeyValue};
 use crate::db_service::call_kdbx_context_mut_action;
 use crate::db_service::call_main_content_action;
 use crate::db_service::call_main_content_mut_action;
@@ -200,8 +200,27 @@ pub struct PasskeyStorageInfo {
     pub entry_uuid: Option<Uuid>,
     /// If `entry_uuid` is None, a new entry is created with this title.
     pub new_entry_name: Option<String>,
-    /// The group the new entry should be placed in. Defaults to root group if None.
+    /// UUID of an existing group to place the new entry in.
+    /// Ignored when `entry_uuid` is Some.
     pub group_uuid: Option<Uuid>,
+    /// When set and `group_uuid` is None, a new sub-group with this name is
+    /// created under root before the entry is inserted.
+    pub new_group_name: Option<String>,
+}
+
+/// A group descriptor returned by [`get_db_groups`].
+#[derive(Debug, Serialize)]
+pub struct GroupInfo {
+    pub group_uuid: String,
+    pub name: String,
+    pub parent_group_uuid: String,
+}
+
+/// A minimal entry descriptor returned by [`get_group_entries`].
+#[derive(Debug, Serialize)]
+pub struct EntryBasicInfo {
+    pub entry_uuid: String,
+    pub title: String,
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -252,6 +271,49 @@ pub fn get_db_name(db_key: &str) -> Result<String> {
     main_content_action!(db_key, action, no_times)
 }
 
+/// Returns all user-visible groups in the database (root and Recycle Bin excluded).
+pub fn get_db_groups(db_key: &str) -> Result<Vec<GroupInfo>> {
+    let action = |k: &KeepassFile| {
+        let root_uuid = k.root.root_uuid();
+        let groups = k
+            .root
+            .get_all_groups(true) // true = exclude special groups (Recycle Bin)
+            .into_iter()
+            .filter(|g| g.uuid != root_uuid)
+            .map(|g| GroupInfo {
+                group_uuid: g.uuid.to_string(),
+                name: g.name.clone(),
+                parent_group_uuid: g.parent_group_uuid.to_string(),
+            })
+            .collect();
+        Ok(groups)
+    };
+    main_content_action!(db_key, action, no_times)
+}
+
+/// Returns all active entries that belong directly to `group_uuid`.
+pub fn get_group_entries(db_key: &str, group_uuid: &Uuid) -> Result<Vec<EntryBasicInfo>> {
+    let action = |k: &KeepassFile| {
+        let group = k.root.group_by_id(group_uuid).ok_or_else(|| {
+            Error::NotFound(format!("Group {} not found", group_uuid))
+        })?;
+        let entries = group
+            .entry_uuids
+            .iter()
+            .filter_map(|entry_uuid| {
+                let entry = k.root.entry_by_id(entry_uuid)?;
+                let title = entry.find_kv_field_value(TITLE).unwrap_or_default();
+                Some(EntryBasicInfo {
+                    entry_uuid: entry_uuid.to_string(),
+                    title,
+                })
+            })
+            .collect();
+        Ok(entries)
+    };
+    main_content_action!(db_key, action, no_times)
+}
+
 /// Stores a newly created passkey in KDBX.
 ///
 /// If `info.entry_uuid` is `Some`, the passkey fields are appended to that
@@ -277,9 +339,19 @@ pub fn store_passkey_entry(db_key: &str, info: PasskeyStorageInfo) -> Result<()>
 
             // ── create new entry ─────────────────────────────────────────
             None => {
-                let parent_uuid = info.group_uuid.unwrap_or_else(|| k.root.root_uuid());
+                // Resolve the parent group: use existing group_uuid, create a new
+                // group from new_group_name, or fall back to root.
+                let parent_uuid = if let Some(ref new_name) = info.new_group_name {
+                    let mut new_group = Group::with_parent(&k.root.root_uuid());
+                    new_group.name = new_name.clone();
+                    let new_uuid = new_group.uuid;
+                    k.root.insert_group(new_group)?;
+                    new_uuid
+                } else {
+                    info.group_uuid.unwrap_or_else(|| k.root.root_uuid())
+                };
 
-                if k.root.group_by_id(&parent_uuid).is_none() {
+                if info.new_group_name.is_none() && k.root.group_by_id(&parent_uuid).is_none() {
                     return Err(Error::NotFound(format!(
                         "Target group {} not found",
                         parent_uuid
@@ -502,6 +574,7 @@ mod tests {
             entry_uuid: None,
             new_entry_name: Some(format!("{}-{}", db_key_prefix, rp_id)),
             group_uuid: None,
+            new_group_name: None,
         }
     }
 
@@ -541,6 +614,7 @@ mod tests {
             entry_uuid: None,
             new_entry_name: None,
             group_uuid: None,
+            new_group_name: None,
         };
 
         write_passkey_fields(&mut entry, &info);
@@ -605,6 +679,7 @@ mod tests {
             entry_uuid: None,
             new_entry_name: None, // rely on rp_name
             group_uuid: None,
+            new_group_name: None,
         };
         store_passkey_entry(db_key, info).expect("store_passkey_entry should succeed");
 
@@ -647,6 +722,7 @@ mod tests {
             entry_uuid: Some(entry_uuid),
             new_entry_name: None,
             group_uuid: None,
+            new_group_name: None,
         };
         store_passkey_entry(db_key, info).expect("store_passkey_entry (existing) should succeed");
 
@@ -677,6 +753,7 @@ mod tests {
             entry_uuid: Some(Uuid::new_v4()), // does not exist in the DB
             new_entry_name: None,
             group_uuid: None,
+            new_group_name: None,
         };
         let result = store_passkey_entry(db_key, info);
         assert!(result.is_err(), "should fail for a nonexistent entry UUID");
