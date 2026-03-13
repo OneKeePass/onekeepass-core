@@ -1061,6 +1061,170 @@ pub struct History {
     pub(crate) entries: Vec<Entry>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{BinaryKeyValue, Entry, EntryField, KeyValue};
+    use crate::db_content::entry_type::FieldDataType;
+    use uuid::Uuid;
+
+    fn make_kv(key: &str, value: &str, protected: bool) -> KeyValue {
+        KeyValue {
+            key: key.into(),
+            value: value.into(),
+            protected,
+            data_type: FieldDataType::default(),
+        }
+    }
+
+    // EntryField tests
+
+    #[test]
+    fn entry_field_insert_and_find_key_value() {
+        let mut ef = EntryField::default();
+        ef.insert_key_value(make_kv("Title", "My Bank", false));
+        let found = ef.find_key_value("Title");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().value, "My Bank");
+    }
+
+    #[test]
+    fn entry_field_find_missing_key_returns_none() {
+        let ef = EntryField::default();
+        assert!(ef.find_key_value("NonExistent").is_none());
+    }
+
+    #[test]
+    fn entry_field_insert_multiple_keys() {
+        let mut ef = EntryField::default();
+        ef.insert_key_value(make_kv("Title", "Bank", false));
+        ef.insert_key_value(make_kv("UserName", "alice", false));
+        ef.insert_key_value(make_kv("Password", "s3cr3t", true));
+        assert_eq!(ef.get_key_values().len(), 3);
+    }
+
+    #[test]
+    fn entry_field_update_value_existing_key() {
+        let mut ef = EntryField::default();
+        ef.insert_key_value(make_kv("Title", "Old Title", false));
+        ef.update_value("Title", "New Title");
+        assert_eq!(ef.find_key_value("Title").unwrap().value, "New Title");
+    }
+
+    #[test]
+    fn entry_field_update_value_missing_key_is_noop() {
+        let mut ef = EntryField::default();
+        ef.insert_key_value(make_kv("Title", "Unchanged", false));
+        ef.update_value("DoesNotExist", "ShouldNotAppear");
+        // Title must remain unchanged and the missing key must not be inserted
+        assert_eq!(ef.find_key_value("Title").unwrap().value, "Unchanged");
+        assert!(ef.find_key_value("DoesNotExist").is_none());
+    }
+
+    #[test]
+    fn entry_field_has_kdbx_url_true() {
+        let mut ef = EntryField::default();
+        ef.insert_key_value(make_kv("URL", "kdbx://child.kdbx", false));
+        assert!(ef.has_kdbx_url());
+    }
+
+    #[test]
+    fn entry_field_has_kdbx_url_false_for_https() {
+        let mut ef = EntryField::default();
+        ef.insert_key_value(make_kv("URL", "https://example.com", false));
+        assert!(!ef.has_kdbx_url());
+    }
+
+    #[test]
+    fn entry_field_has_kdbx_url_false_when_no_url() {
+        let ef = EntryField::default();
+        assert!(!ef.has_kdbx_url());
+    }
+
+    #[test]
+    fn entry_field_insert_key_values_batch() {
+        let mut ef = EntryField::default();
+        let kvs = vec![
+            make_kv("Title", "Gmail", false),
+            make_kv("UserName", "user@gmail.com", false),
+        ];
+        ef.insert_key_values(kvs);
+        assert!(ef.find_key_value("Title").is_some());
+        assert!(ef.find_key_value("UserName").is_some());
+    }
+
+    // Entry tests
+
+    #[test]
+    fn entry_new_has_default_uuid() {
+        let e = Entry::new();
+        assert_eq!(e.uuid, Uuid::default());
+    }
+
+    #[test]
+    fn entry_new_has_default_parent_uuid() {
+        let e = Entry::new();
+        assert_eq!(e.parent_group_uuid, Uuid::default());
+    }
+
+    #[test]
+    fn entry_new_has_no_otp_values() {
+        let e = Entry::new();
+        assert!(e.parsed_otp_values.is_none());
+    }
+
+    #[test]
+    fn entry_new_has_empty_tags() {
+        let e = Entry::new();
+        assert!(e.tags.is_empty());
+    }
+
+    #[test]
+    fn entry_set_parent_group_uuid() {
+        let mut e = Entry::new();
+        let parent_id = Uuid::new_v4();
+        e.set_parent_group_uuid(&parent_id);
+        assert_eq!(e.parent_group_uuid(), parent_id);
+    }
+
+    #[test]
+    fn entry_set_tags() {
+        let mut e = Entry::new();
+        e.set_tags("Work;Finance");
+        assert_eq!(e.tags, "Work;Finance");
+    }
+
+    #[test]
+    fn entry_get_uuid_matches_internal_uuid() {
+        let mut e = Entry::new();
+        e.uuid = Uuid::new_v4();
+        assert_eq!(e.get_uuid(), e.uuid);
+    }
+
+    #[test]
+    fn entry_new_has_empty_attachments() {
+        let e = Entry::new();
+        assert!(e.binary_key_values.is_empty());
+    }
+
+    #[test]
+    fn binary_key_value_key_field() {
+        let bkv = BinaryKeyValue {
+            key: "document.pdf".into(),
+            value: String::default(),
+            index_ref: 0,
+            data_hash: 0,
+            data_size: 0,
+        };
+        assert_eq!(bkv.key, "document.pdf");
+    }
+
+    #[test]
+    fn entry_new_has_empty_history() {
+        let e = Entry::new();
+        assert!(e.histories().is_empty());
+    }
+}
+
 /*
 fn parse_all_otp_fields(&mut self) {
         let otp_vals: HashMap<String, ParsedOtpData> = self

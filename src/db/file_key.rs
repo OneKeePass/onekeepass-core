@@ -155,7 +155,81 @@ impl KeyFileData {
 
 #[cfg(test)]
 mod tests {
-    use super::FileKey;
+    use super::{FileKey, KeyFileData};
+
+    // --- Non-ignored unit tests ---
+
+    #[test]
+    fn key_file_data_generate_produces_valid_data() {
+        let kfd = KeyFileData::generate_key_data().unwrap();
+        assert_eq!(kfd.version.as_deref(), Some("2.0"));
+        assert!(kfd.data.is_some());
+        assert!(kfd.hash.is_some());
+    }
+
+    #[test]
+    fn key_file_data_generate_and_verify_roundtrip() {
+        let kfd = KeyFileData::generate_key_data().unwrap();
+        let result = kfd.verify_checksum();
+        assert!(result.is_ok());
+        // Decoded data should be 32 bytes (256-bit key)
+        assert_eq!(result.unwrap().len(), 32);
+    }
+
+    #[test]
+    fn key_file_data_verify_tampered_hash_fails() {
+        let mut kfd = KeyFileData::generate_key_data().unwrap();
+        kfd.hash = Some("FFFFFFFF".into());
+        assert!(kfd.verify_checksum().is_err());
+    }
+
+    #[test]
+    fn key_file_data_verify_missing_data_fails() {
+        let kfd = KeyFileData {
+            version: Some("2.0".into()),
+            hash: Some("AABBCCDD".into()),
+            data: None,
+        };
+        assert!(kfd.verify_checksum().is_err());
+    }
+
+    #[test]
+    fn key_file_data_verify_missing_hash_fails() {
+        let kfd = KeyFileData {
+            version: Some("2.0".into()),
+            hash: None,
+            data: Some("AABBCCDD".into()),
+        };
+        assert!(kfd.verify_checksum().is_err());
+    }
+
+    #[test]
+    fn file_key_write_xml_produces_non_empty_output() {
+        let mut buf = Vec::new();
+        FileKey::write_xml(&mut buf).unwrap();
+        assert!(!buf.is_empty());
+        let xml = String::from_utf8(buf).unwrap();
+        assert!(xml.contains("KeyFile"));
+        assert!(xml.contains("Data"));
+    }
+
+    #[test]
+    fn file_key_from_none_returns_none() {
+        let result = FileKey::from(None).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn file_key_from_empty_string_returns_none() {
+        let result = FileKey::from(Some("")).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn file_key_from_whitespace_returns_none() {
+        let result = FileKey::from(Some("   ")).unwrap();
+        assert!(result.is_none());
+    }
 
     #[ignore]
     #[test]

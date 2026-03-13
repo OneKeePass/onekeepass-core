@@ -113,6 +113,122 @@ macro_rules! move_to_recycle_bin {
 
 pub(crate) use move_to_recycle_bin;
 
+#[cfg(test)]
+mod tests {
+    use super::{join_tags, split_tags, Times};
+
+    #[test]
+    fn split_tags_semicolon_separated() {
+        let result = split_tags("Work;Personal;Finance");
+        assert_eq!(result, vec!["Work", "Personal", "Finance"]);
+    }
+
+    #[test]
+    fn split_tags_comma_separated() {
+        let result = split_tags("Work,Personal,Finance");
+        assert_eq!(result, vec!["Work", "Personal", "Finance"]);
+    }
+
+    #[test]
+    fn split_tags_mixed_separators() {
+        let result = split_tags("Work;Personal,Finance");
+        assert_eq!(result, vec!["Work", "Personal", "Finance"]);
+    }
+
+    #[test]
+    fn split_tags_empty_string() {
+        let result = split_tags("");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn split_tags_whitespace_trimmed() {
+        let result = split_tags("Work; Personal ; Finance");
+        assert_eq!(result, vec!["Work", "Personal", "Finance"]);
+    }
+
+    #[test]
+    fn split_tags_trailing_separator() {
+        let result = split_tags("Work;Personal;");
+        assert_eq!(result, vec!["Work", "Personal"]);
+    }
+
+    #[test]
+    fn join_tags_multiple() {
+        let tags = vec!["Work".to_string(), "Personal".to_string(), "Finance".to_string()];
+        assert_eq!(join_tags(&tags), "Work;Personal;Finance");
+    }
+
+    #[test]
+    fn join_tags_empty_vec() {
+        let tags: Vec<String> = vec![];
+        assert_eq!(join_tags(&tags), "");
+    }
+
+    #[test]
+    fn join_tags_single() {
+        let tags = vec!["Work".to_string()];
+        assert_eq!(join_tags(&tags), "Work");
+    }
+
+    #[test]
+    fn split_join_roundtrip() {
+        let original = "Alpha;Beta;Gamma";
+        let split = split_tags(original);
+        let joined = join_tags(&split);
+        assert_eq!(joined, original);
+    }
+
+    #[test]
+    fn times_new_expires_is_false() {
+        let t = Times::new();
+        assert!(!t.expires);
+    }
+
+    #[test]
+    fn times_new_usage_count_is_zero() {
+        let t = Times::new();
+        assert_eq!(t.usage_count, 0);
+    }
+
+    #[test]
+    fn times_new_timestamps_are_equal() {
+        let t = Times::new();
+        // creation, modification and access should all be set to the same instant
+        assert_eq!(t.creation_time, t.last_modification_time);
+        assert_eq!(t.creation_time, t.last_access_time);
+    }
+
+    #[test]
+    fn times_update_modification_changes_times() {
+        use crate::util::test_clock;
+        test_clock::init_datetime(2024, 1, 1, 0, 0, 0);
+        let mut t = Times::new();
+        let original = t.last_modification_time;
+
+        test_clock::advance_by(60);
+        t.update_modification_time_now();
+
+        assert!(t.last_modification_time > original);
+        assert_eq!(t.last_modification_time, t.last_access_time);
+        // creation_time must not change
+        assert_eq!(t.creation_time, original);
+    }
+
+    #[test]
+    fn times_update_modification_explicit() {
+        use chrono::NaiveDate;
+        let fixed = NaiveDate::from_ymd_opt(2023, 6, 15)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let mut t = Times::new();
+        t.update_modification_time(fixed);
+        assert_eq!(t.last_modification_time, fixed);
+        assert_eq!(t.last_access_time, fixed);
+    }
+}
+
 // NaiveDateTime is ISO 8601 combined date and time without timezone.
 // All times of db are formed from util::now_utc() or UTC time string from UI
 // and thus in UTC timezone and represented as NaiveDateTime.
