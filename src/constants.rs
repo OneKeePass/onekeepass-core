@@ -82,6 +82,7 @@ pub mod standard_in_section_names {
     pub const LOGIN_DETAILS: &str = "Login Details";
     pub const ADDITIONAL_ONE_TIME_PASSWORDS: &str = "Additional One-Time Passwords";
     pub const CARD_DETAILS: &str = "Card Details";
+    pub const PASSKEY_DETAILS: &str = "Passkey Details";
 }
 
 #[allow(dead_code)]
@@ -177,6 +178,13 @@ pub mod entry_keyvalue_key {
     // pub const PRIORITY: &str = "Priority";
     // pub const SKIP_IF_NOT_EXISTS: &str = "SkipIfNotExists";
     // pub const SKIP_IF_KEY_FILE_NOT_EXISTS: &str = "SkipIfKeyFileNotExists";
+
+    // Passkey fields (KeePassXC-compatible)
+    pub const KPEX_PASSKEY_USERNAME: &str = "KPEX_PASSKEY_USERNAME";
+    pub const KPEX_PASSKEY_RELYING_PARTY: &str = "KPEX_PASSKEY_RELYING_PARTY";
+    pub const KPEX_PASSKEY_USER_HANDLE: &str = "KPEX_PASSKEY_USER_HANDLE";
+    pub const KPEX_PASSKEY_CREDENTIAL_ID: &str = "KPEX_PASSKEY_CREDENTIAL_ID";
+    pub const KPEX_PASSKEY_PRIVATE_KEY_PEM: &str = "KPEX_PASSKEY_PRIVATE_KEY_PEM";
 }
 
 // Note:

@@ -1638,6 +1638,127 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
+    // --- Non-ignored unit tests ---
+
+    #[test]
+    fn content_unescape_plain_string_unchanged() {
+        assert_eq!(content_unescape("hello world"), "hello world");
+    }
+
+    #[test]
+    fn content_unescape_ampersand_entity() {
+        assert_eq!(content_unescape("Tom &amp; Jerry"), "Tom & Jerry");
+    }
+
+    #[test]
+    fn content_unescape_lt_gt_entities() {
+        assert_eq!(content_unescape("a &lt; b &gt; c"), "a < b > c");
+    }
+
+    #[test]
+    fn content_unescape_apostrophe_entity() {
+        assert_eq!(content_unescape("Kim&apos;s idea"), "Kim's idea");
+    }
+
+    #[test]
+    fn content_unescape_quot_entity() {
+        assert_eq!(content_unescape("say &quot;hi&quot;"), "say \"hi\"");
+    }
+
+    #[test]
+    fn content_to_int_valid_number() {
+        assert_eq!(content_to_int("42".into()), 42);
+    }
+
+    #[test]
+    fn content_to_int_negative_number() {
+        assert_eq!(content_to_int("-7".into()), -7);
+    }
+
+    #[test]
+    fn content_to_int_zero() {
+        assert_eq!(content_to_int("0".into()), 0);
+    }
+
+    #[test]
+    fn content_to_int_invalid_returns_minus_one() {
+        assert_eq!(content_to_int("notanumber".into()), -1);
+    }
+
+    #[test]
+    fn content_to_int_empty_returns_minus_one() {
+        assert_eq!(content_to_int("".into()), -1);
+    }
+
+    #[test]
+    fn content_to_bool_true_lowercase() {
+        assert!(content_to_bool("true".into()));
+    }
+
+    #[test]
+    fn content_to_bool_true_uppercase() {
+        assert!(content_to_bool("True".into()));
+    }
+
+    #[test]
+    fn content_to_bool_true_mixed_case() {
+        assert!(content_to_bool("TRUE".into()));
+    }
+
+    #[test]
+    fn content_to_bool_false_string() {
+        assert!(!content_to_bool("false".into()));
+    }
+
+    #[test]
+    fn content_to_bool_empty_is_false() {
+        assert!(!content_to_bool("".into()));
+    }
+
+    #[test]
+    fn bool_to_xml_bool_true_produces_true_string() {
+        assert_eq!(bool_to_xml_bool(true), "True");
+    }
+
+    #[test]
+    fn bool_to_xml_bool_false_produces_false_string() {
+        assert_eq!(bool_to_xml_bool(false), "False");
+    }
+
+    #[test]
+    fn file_key_xml_roundtrip_produces_valid_checksum() {
+        use crate::db::KeyFileData;
+        let key_file_data = KeyFileData::generate_key_data().unwrap();
+
+        let mut xml_writer = FileKeyXmlWriter::new_with_indent(std::io::Cursor::new(Vec::new()));
+        xml_writer.write(&key_file_data).unwrap();
+
+        let v = xml_writer.writer.into_inner().into_inner();
+        let xs = std::str::from_utf8(&v).unwrap();
+
+        let mut reader = FileKeyXmlReader::new(xs.as_bytes());
+        let parsed: crate::error::Result<KeyFileData> = reader.parse();
+        assert!(parsed.is_ok());
+        assert!(parsed.unwrap().verify_checksum().is_ok());
+    }
+
+    #[test]
+    fn file_key_xml_contains_required_elements() {
+        use crate::db::KeyFileData;
+        let key_file_data = KeyFileData::generate_key_data().unwrap();
+
+        let mut xml_writer = FileKeyXmlWriter::new_with_indent(std::io::Cursor::new(Vec::new()));
+        xml_writer.write(&key_file_data).unwrap();
+
+        let v = xml_writer.writer.into_inner().into_inner();
+        let xml_str = std::str::from_utf8(&v).unwrap();
+
+        assert!(xml_str.contains("KeyFile"));
+        assert!(xml_str.contains("Version"));
+        assert!(xml_str.contains("2.0"));
+        assert!(xml_str.contains("Data"));
+    }
+
     // To see logging output during testing in VS Code
     fn init() {
         let _ = env_logger::builder()

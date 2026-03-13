@@ -6,6 +6,13 @@ use crate::constants::entry_keyvalue_key::PASSWORD;
 use crate::constants::entry_keyvalue_key::TITLE;
 use crate::constants::entry_keyvalue_key::URL;
 use crate::constants::entry_keyvalue_key::USER_NAME;
+use crate::constants::entry_keyvalue_key::{
+    KPEX_PASSKEY_CREDENTIAL_ID, KPEX_PASSKEY_PRIVATE_KEY_PEM,
+    KPEX_PASSKEY_RELYING_PARTY, KPEX_PASSKEY_USERNAME, KPEX_PASSKEY_USER_HANDLE,
+};
+use crate::constants::standard_in_section_names::{LOGIN_DETAILS, PASSKEY_DETAILS};
+use crate::constants::entry_type_uuid;
+use crate::form_data::KeyValueData;
 use crate::db_content::{Entry, FieldDataType, Group, KeepassFile, KeyValue};
 use crate::db_service::call_kdbx_context_mut_action;
 use crate::db_service::call_main_content_action;
@@ -23,12 +30,6 @@ use url::Url;
 use crate::main_content_action;
 use crate::main_content_mut_action;
 
-// ── KeePassXC-compatible custom field name constants ───────────────────────
-pub const KPXC_PASSKEY_CREDENTIAL_ID: &str = "KPXC_PASSKEY_CREDENTIAL_ID";
-pub const KPXC_PASSKEY_PRIVATE_KEY_PEM: &str = "KPXC_PASSKEY_PRIVATE_KEY_PEM";
-pub const KPXC_PASSKEY_RELYING_PARTY_ID: &str = "KPXC_PASSKEY_RELYING_PARTY_ID";
-pub const KPXC_PASSKEY_USERNAME: &str = "KPXC_PASSKEY_USERNAME";
-pub const KPXC_PASSKEY_USER_HANDLE: &str = "KPXC_PASSKEY_USER_HANDLE";
 
 #[derive(Default, Serialize, Debug)]
 pub struct MatchedDbEntries {
@@ -236,28 +237,28 @@ fn make_passkey_kv(key: &str, value: &str, protected: bool) -> KeyValue {
 
 fn write_passkey_fields(entry: &mut Entry, info: &PasskeyStorageInfo) {
     entry.entry_field.insert_key_value(make_passkey_kv(
-        KPXC_PASSKEY_CREDENTIAL_ID,
+        KPEX_PASSKEY_CREDENTIAL_ID,
         &info.credential_id_b64url,
         false,
     ));
     // Private key is stored as a KDBX-protected string (same tier as Password).
     entry.entry_field.insert_key_value(make_passkey_kv(
-        KPXC_PASSKEY_PRIVATE_KEY_PEM,
+        KPEX_PASSKEY_PRIVATE_KEY_PEM,
         &info.private_key_pem,
         true,
     ));
     entry.entry_field.insert_key_value(make_passkey_kv(
-        KPXC_PASSKEY_RELYING_PARTY_ID,
+        KPEX_PASSKEY_RELYING_PARTY,
         &info.rp_id,
         false,
     ));
     entry.entry_field.insert_key_value(make_passkey_kv(
-        KPXC_PASSKEY_USERNAME,
+        KPEX_PASSKEY_USERNAME,
         &info.username,
         false,
     ));
     entry.entry_field.insert_key_value(make_passkey_kv(
-        KPXC_PASSKEY_USER_HANDLE,
+        KPEX_PASSKEY_USER_HANDLE,
         &info.user_handle_b64url,
         false,
     ));
@@ -397,22 +398,22 @@ pub fn find_matching_passkeys(
                 .into_iter()
                 .filter_map(|entry| {
                     let stored_rp_id =
-                        entry.find_kv_field_value(KPXC_PASSKEY_RELYING_PARTY_ID)?;
+                        entry.find_kv_field_value(KPEX_PASSKEY_RELYING_PARTY)?;
                     if stored_rp_id != rp_id {
                         return None;
                     }
                     let cred_id =
-                        entry.find_kv_field_value(KPXC_PASSKEY_CREDENTIAL_ID)?;
+                        entry.find_kv_field_value(KPEX_PASSKEY_CREDENTIAL_ID)?;
                     if !allow_credential_ids.is_empty()
                         && !allow_credential_ids.contains(&cred_id)
                     {
                         return None;
                     }
                     let username = entry
-                        .find_kv_field_value(KPXC_PASSKEY_USERNAME)
+                        .find_kv_field_value(KPEX_PASSKEY_USERNAME)
                         .unwrap_or_default();
                     let user_handle = entry
-                        .find_kv_field_value(KPXC_PASSKEY_USER_HANDLE)
+                        .find_kv_field_value(KPEX_PASSKEY_USER_HANDLE)
                         .unwrap_or_default();
                     Some(PasskeySummary {
                         entry_uuid: entry.get_uuid().to_string(),
@@ -446,27 +447,27 @@ pub fn get_passkey_for_assertion(db_key: &str, entry_uuid: &Uuid) -> Result<Pass
         })?;
 
         let credential_id = entry
-            .find_kv_field_value(KPXC_PASSKEY_CREDENTIAL_ID)
-            .ok_or_else(|| Error::NotFound("KPXC_PASSKEY_CREDENTIAL_ID not found".into()))?;
+            .find_kv_field_value(KPEX_PASSKEY_CREDENTIAL_ID)
+            .ok_or_else(|| Error::NotFound("KPEX_PASSKEY_CREDENTIAL_ID not found".into()))?;
 
         let private_key_pem = entry
-            .find_kv_field_value(KPXC_PASSKEY_PRIVATE_KEY_PEM)
+            .find_kv_field_value(KPEX_PASSKEY_PRIVATE_KEY_PEM)
             .ok_or_else(|| {
-                Error::NotFound("KPXC_PASSKEY_PRIVATE_KEY_PEM not found".into())
+                Error::NotFound("KPEX_PASSKEY_PRIVATE_KEY_PEM not found".into())
             })?;
 
         let rp_id = entry
-            .find_kv_field_value(KPXC_PASSKEY_RELYING_PARTY_ID)
+            .find_kv_field_value(KPEX_PASSKEY_RELYING_PARTY)
             .ok_or_else(|| {
-                Error::NotFound("KPXC_PASSKEY_RELYING_PARTY_ID not found".into())
+                Error::NotFound("KPEX_PASSKEY_RELYING_PARTY not found".into())
             })?;
 
         let username = entry
-            .find_kv_field_value(KPXC_PASSKEY_USERNAME)
+            .find_kv_field_value(KPEX_PASSKEY_USERNAME)
             .unwrap_or_default();
 
         let user_handle = entry
-            .find_kv_field_value(KPXC_PASSKEY_USER_HANDLE)
+            .find_kv_field_value(KPEX_PASSKEY_USER_HANDLE)
             .unwrap_or_default();
 
         Ok(PasskeyEntry {
@@ -480,6 +481,76 @@ pub fn get_passkey_for_assertion(db_key: &str, entry_uuid: &Uuid) -> Result<Pass
     };
 
     main_content_action!(db_key, action)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn passkey_kvds(info: &PasskeyStorageInfo) -> Vec<KeyValueData> {
+    vec![
+        KeyValueData::new_simple(KPEX_PASSKEY_USERNAME, &info.username, false),
+        KeyValueData::new_simple(KPEX_PASSKEY_RELYING_PARTY, &info.rp_id, false),
+        KeyValueData::new_simple(KPEX_PASSKEY_USER_HANDLE, &info.user_handle_b64url, true),
+        KeyValueData::new_simple(KPEX_PASSKEY_CREDENTIAL_ID, &info.credential_id_b64url, true),
+        KeyValueData::new_simple(KPEX_PASSKEY_PRIVATE_KEY_PEM, &info.private_key_pem, true),
+    ]
+}
+
+/// Creates or updates a passkey entry via the form-data API, then saves the
+/// database to disk (with backup).
+///
+/// This is the preferred high-level entry point for passkey storage.
+/// `store_passkey_entry` remains available for direct low-level use if needed.
+pub fn create_and_store_passkey(
+    db_key: &str,
+    info: PasskeyStorageInfo,
+    backup_file_name: Option<&str>,
+) -> Result<()> {
+    match info.entry_uuid {
+        Some(entry_uuid) => {
+            // Attach/replace passkey section on an existing entry
+            let mut form_data = super::get_entry_form_data_by_id(db_key, &entry_uuid)?;
+            form_data.set_or_replace_section_fields(PASSKEY_DETAILS, passkey_kvds(&info));
+            super::update_entry_from_form_data(db_key, form_data)?;
+        }
+        None => {
+            // Resolve the target parent group UUID
+            let parent_uuid: Uuid = if let Some(ref new_name) = info.new_group_name {
+                // Create a new group under root
+                let root_uuid =
+                    main_content_action!(db_key, |k: &KeepassFile| Ok(k.root.root_uuid()))?;
+                let mut new_group = Group::with_parent(&root_uuid);
+                new_group.name = new_name.clone();
+                let gid = new_group.uuid;
+                super::insert_group(db_key, new_group)?;
+                gid
+            } else {
+                match info.group_uuid {
+                    Some(uuid) => uuid,
+                    None => {
+                        main_content_action!(db_key, |k: &KeepassFile| Ok(k.root.root_uuid()))?
+                    }
+                }
+            };
+
+            let login_type_uuid = crate::build_uuid!(entry_type_uuid::LOGIN);
+            let mut form_data =
+                super::new_entry_form_data_by_id(db_key, &login_type_uuid, Some(&parent_uuid))?;
+
+            let title = info
+                .new_entry_name
+                .clone()
+                .unwrap_or_else(|| info.rp_name.clone());
+            form_data.set_title(title);
+            form_data.set_field_value_in_section(LOGIN_DETAILS, USER_NAME, &info.username);
+            form_data.set_field_value_in_section(LOGIN_DETAILS, URL, &info.rp_id);
+            form_data.set_or_replace_section_fields(PASSKEY_DETAILS, passkey_kvds(&info));
+
+            super::insert_entry_from_form_data(db_key, form_data)?;
+        }
+    }
+
+    super::save_kdbx_with_backup(db_key, backup_file_name, false)?;
+    Ok(())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -582,16 +653,16 @@ mod tests {
 
     #[test]
     fn test_make_passkey_kv_protected_flag() {
-        let kv = make_passkey_kv(KPXC_PASSKEY_PRIVATE_KEY_PEM, "secret-pem", true);
-        assert_eq!(kv.key, KPXC_PASSKEY_PRIVATE_KEY_PEM);
+        let kv = make_passkey_kv(KPEX_PASSKEY_PRIVATE_KEY_PEM, "secret-pem", true);
+        assert_eq!(kv.key, KPEX_PASSKEY_PRIVATE_KEY_PEM);
         assert_eq!(kv.value, "secret-pem");
         assert!(kv.protected, "private key field must be protected");
     }
 
     #[test]
     fn test_make_passkey_kv_unprotected_flag() {
-        let kv = make_passkey_kv(KPXC_PASSKEY_CREDENTIAL_ID, "cred-abc", false);
-        assert_eq!(kv.key, KPXC_PASSKEY_CREDENTIAL_ID);
+        let kv = make_passkey_kv(KPEX_PASSKEY_CREDENTIAL_ID, "cred-abc", false);
+        assert_eq!(kv.key, KPEX_PASSKEY_CREDENTIAL_ID);
         assert_eq!(kv.value, "cred-abc");
         assert!(!kv.protected, "credential-id field must not be protected");
     }
@@ -620,23 +691,23 @@ mod tests {
         write_passkey_fields(&mut entry, &info);
 
         assert_eq!(
-            entry.find_kv_field_value(KPXC_PASSKEY_CREDENTIAL_ID).as_deref(),
+            entry.find_kv_field_value(KPEX_PASSKEY_CREDENTIAL_ID).as_deref(),
             Some("cred-id-xyz")
         );
         assert_eq!(
-            entry.find_kv_field_value(KPXC_PASSKEY_PRIVATE_KEY_PEM).as_deref(),
+            entry.find_kv_field_value(KPEX_PASSKEY_PRIVATE_KEY_PEM).as_deref(),
             Some("pem-content")
         );
         assert_eq!(
-            entry.find_kv_field_value(KPXC_PASSKEY_RELYING_PARTY_ID).as_deref(),
+            entry.find_kv_field_value(KPEX_PASSKEY_RELYING_PARTY).as_deref(),
             Some("example.com")
         );
         assert_eq!(
-            entry.find_kv_field_value(KPXC_PASSKEY_USERNAME).as_deref(),
+            entry.find_kv_field_value(KPEX_PASSKEY_USERNAME).as_deref(),
             Some("alice@example.com")
         );
         assert_eq!(
-            entry.find_kv_field_value(KPXC_PASSKEY_USER_HANDLE).as_deref(),
+            entry.find_kv_field_value(KPEX_PASSKEY_USER_HANDLE).as_deref(),
             Some("dXNlcg")
         );
     }
