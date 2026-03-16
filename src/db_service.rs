@@ -4,6 +4,9 @@
 mod attachment;
 mod io;
 
+// Passkey DB types and functions — compiled on all platforms (no cfg gate).
+pub mod passkey;
+
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub mod browser_extension;
 
