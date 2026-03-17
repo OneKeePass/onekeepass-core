@@ -360,10 +360,12 @@ pub fn sign_assertion_with_hash(
     sig_input.extend_from_slice(client_data_hash);
 
     let signature: Signature = signing_key.sign(&sig_input);
+
     let sig_der = signature.to_der();
 
     Ok(PasskeyAssertionWithHashResult {
-        signature_b64url: BASE64URL_NOPAD.encode(sig_der.as_bytes()),
+        signature_b64url: BASE64URL_NOPAD.encode(signature.to_bytes().as_ref()),
+        // signature_b64url: BASE64URL_NOPAD.encode(sig_der.as_bytes()),
         authenticator_data_b64url: BASE64URL_NOPAD.encode(&auth_data),
         credential_id_b64url: credential_id_b64url.to_string(),
         user_handle_b64url: user_handle_b64url.to_string(),

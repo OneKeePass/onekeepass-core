@@ -307,6 +307,43 @@ pub fn find_matching_passkeys(
     Ok(summaries)
 }
 
+// Returns all passkey entries across the supplied databases — used by the iOS
+// credential-identity registration step (no rpId or credentialId filter).
+pub fn get_all_passkeys(db_keys: &[String]) -> Result<Vec<PasskeySummary>> {
+    let mut summaries = Vec::new();
+    for db_key in db_keys {
+        let action = |k: &KeepassFile| {
+            let matches: Vec<PasskeySummary> = k
+                .collect_all_active_entries()
+                .into_iter()
+                .filter_map(|entry| {
+                    let rp_id = entry.find_kv_field_value(KPEX_PASSKEY_RELYING_PARTY)?;
+                    let cred_id = entry.find_kv_field_value(KPEX_PASSKEY_CREDENTIAL_ID)?;
+                    let username = entry
+                        .find_kv_field_value(KPEX_PASSKEY_USERNAME)
+                        .unwrap_or_default();
+                    let user_handle = entry
+                        .find_kv_field_value(KPEX_PASSKEY_USER_HANDLE)
+                        .unwrap_or_default();
+                    Some(PasskeySummary {
+                        entry_uuid: entry.get_uuid().to_string(),
+                        db_key: db_key.clone(),
+                        credential_id_b64url: cred_id,
+                        rp_id,
+                        username,
+                        user_handle_b64url: user_handle,
+                    })
+                })
+                .collect();
+            Ok(matches)
+        };
+        if let Ok(mut db_matches) = main_content_action!(db_key, action, no_times) {
+            summaries.append(&mut db_matches);
+        }
+    }
+    Ok(summaries)
+}
+
 // Returns full private-key material needed to sign a WebAuthn assertion.
 pub fn get_passkey_for_assertion(db_key: &str, entry_uuid: &Uuid) -> Result<PasskeyEntry> {
     let action = |k: &KeepassFile| {
