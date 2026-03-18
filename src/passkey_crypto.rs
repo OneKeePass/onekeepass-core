@@ -116,7 +116,7 @@ fn build_auth_data_create(
     let mut buf = Vec::with_capacity(32 + 1 + 4 + 16 + 2 + credential_id.len() + cose_public_key.len());
 
     buf.extend_from_slice(&Sha256::digest(rp_id.as_bytes()));   // rpIdHash
-    buf.push(0x45);                                              // flags: UP|UV|AT
+    buf.push(0x5D);                                              // flags: UP|UV|BE|BS|AT
     buf.extend_from_slice(&0u32.to_be_bytes());                  // signCount = 0
     buf.extend_from_slice(&[0u8; 16]);                           // aaguid = zeros
     buf.extend_from_slice(&(credential_id.len() as u16).to_be_bytes());
@@ -130,13 +130,13 @@ fn build_auth_data_create(
 // Layout:
 // ```text
 // rpIdHash  (32 bytes)
-// flags     (1 byte)   UP=1, UV=1 → 0x05
+// flags     (1 byte)   UP=1, UV=1, BE=1, BS=1 → 0x1D
 // signCount (4 bytes)  big-endian
 // ```
 fn build_auth_data_get(rp_id: &str, sign_count: u32) -> Vec<u8> {
     let mut buf = Vec::with_capacity(37);
     buf.extend_from_slice(&Sha256::digest(rp_id.as_bytes()));
-    buf.push(0x05); // UP|UV
+    buf.push(0x1D); // UP|UV|BE|BS
     buf.extend_from_slice(&sign_count.to_be_bytes());
     buf
 }
@@ -364,8 +364,7 @@ pub fn sign_assertion_with_hash(
     let sig_der = signature.to_der();
 
     Ok(PasskeyAssertionWithHashResult {
-        signature_b64url: BASE64URL_NOPAD.encode(signature.to_bytes().as_ref()),
-        // signature_b64url: BASE64URL_NOPAD.encode(sig_der.as_bytes()),
+        signature_b64url: BASE64URL_NOPAD.encode(sig_der.as_bytes()),
         authenticator_data_b64url: BASE64URL_NOPAD.encode(&auth_data),
         credential_id_b64url: credential_id_b64url.to_string(),
         user_handle_b64url: user_handle_b64url.to_string(),
@@ -548,7 +547,7 @@ mod tests {
 
         let expected_hash: Vec<u8> = Sha256::digest(rp_id.as_bytes()).to_vec();
         assert_eq!(&auth_data[..32], expected_hash.as_slice());
-        assert_eq!(auth_data[32], 0x45);
+        assert_eq!(auth_data[32], 0x5D);
         assert_eq!(&auth_data[33..37], &[0u8; 4]);
     }
 
@@ -562,7 +561,7 @@ mod tests {
 
         let expected_hash: Vec<u8> = Sha256::digest(rp_id.as_bytes()).to_vec();
         assert_eq!(&auth_data[..32], expected_hash.as_slice());
-        assert_eq!(auth_data[32], 0x05);
+        assert_eq!(auth_data[32], 0x1D);
 
         let count_bytes = sign_count.to_be_bytes();
         assert_eq!(&auth_data[33..37], &count_bytes);
