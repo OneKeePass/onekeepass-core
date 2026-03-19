@@ -94,6 +94,21 @@ pub struct PasskeyAssertionWithHashResult {
     pub rp_id: String,
 }
 
+// Registration result for callers that already hold the pre-computed
+// `clientDataHash` (e.g. iOS autofill — the OS provides it directly).
+#[derive(Debug, Serialize)]
+pub struct PasskeyCreationWithHashResult {
+    // CBOR-encoded attestation object, base64url.
+    pub attestation_object_b64url: String,
+    pub credential_id_b64url: String,
+    // PKCS#8 PEM private key — must be stored as a protected string.
+    pub private_key_pem: String,
+    pub rp_id: String,
+    pub rp_name: String,
+    pub username: String,
+    pub user_handle_b64url: String,
+}
+
 // ── authData builders ─────────────────────────────────────────────────────────
 
 // Builds the authenticator data blob for a *registration* ceremony.
@@ -269,6 +284,46 @@ pub fn create_passkey(options_json: &str, origin: &str) -> Result<PasskeyCreatio
         username,
         user_handle_b64url,
         origin: origin.to_string(),
+    })
+}
+
+// Performs a WebAuthn registration ceremony for callers that already hold
+// the pre-computed `clientDataHash` (e.g. iOS autofill extension).
+//
+// Generates a new P-256 key pair, builds the attestation object (fmt="none"),
+// and returns the individual fields needed by `ASPasskeyRegistrationCredential`
+// plus the private key PEM for storage.
+pub fn create_passkey_with_hash(
+    rp_id: &str,
+    rp_name: &str,
+    user_name: &str,
+    user_handle_b64url: &str,
+    _client_data_hash: &[u8],
+) -> Result<PasskeyCreationWithHashResult> {
+    let signing_key = SigningKey::random(&mut OsRng);
+
+    let mut cred_id_bytes = [0u8; 16];
+    OsRng.fill_bytes(&mut cred_id_bytes);
+    let credential_id_b64url = BASE64URL_NOPAD.encode(&cred_id_bytes);
+
+    let cose_key_bytes = encode_cose_key(signing_key.verifying_key())?;
+    let auth_data = build_auth_data_create(rp_id, &cred_id_bytes, &cose_key_bytes);
+    let attestation_object = encode_attestation_object(auth_data)?;
+    let attestation_object_b64url = BASE64URL_NOPAD.encode(&attestation_object);
+
+    let pem = signing_key
+        .to_pkcs8_pem(LineEnding::LF)
+        .map_err(|e| Error::UnexpectedError(format!("PEM encoding failed: {}", e)))?;
+    let private_key_pem = pem.as_str().to_string();
+
+    Ok(PasskeyCreationWithHashResult {
+        attestation_object_b64url,
+        credential_id_b64url,
+        private_key_pem,
+        rp_id: rp_id.to_string(),
+        rp_name: rp_name.to_string(),
+        username: user_name.to_string(),
+        user_handle_b64url: user_handle_b64url.to_string(),
     })
 }
 

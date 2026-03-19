@@ -4,7 +4,7 @@
 // It replaces the passkey section that previously lived inside
 // `db_service::browser_extension` (which is desktop-only).
 
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
 use crate::constants::entry_keyvalue_key::{TITLE, URL, USER_NAME};
@@ -57,6 +57,7 @@ pub struct PasskeySummary {
 }
 
 // Describes where (and how) to persist a newly created passkey.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PasskeyStorageInfo {
     pub credential_id_b64url: String,
     pub private_key_pem: String,
