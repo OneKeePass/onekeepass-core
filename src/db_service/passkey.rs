@@ -15,9 +15,9 @@ use crate::constants::entry_keyvalue_key::{
 use crate::constants::standard_in_section_names::{LOGIN_DETAILS, PASSKEY_DETAILS};
 use crate::constants::entry_type_uuid;
 use crate::form_data::KeyValueData;
-use crate::db_content::{Entry, FieldDataType, Group, KeepassFile, KeyValue};
+use crate::db_content::{ Group, KeepassFile};
 use crate::db_service::{
-    call_main_content_action, call_main_content_mut_action, call_kdbx_context_mut_action,
+    call_main_content_action, call_kdbx_context_mut_action,
     KdbxContext,
 };
 use crate::error::Error;
@@ -27,7 +27,7 @@ use crate::util;
 // NOTE: To use these macros in this module, we need to import all fns used
 // inside the macro expansion as well.
 use crate::main_content_action;
-use crate::main_content_mut_action;
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -97,6 +97,10 @@ pub struct EntryBasicInfo {
 // Private helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+// #[cfg(test)]
+use crate::db_content::{Entry, FieldDataType, KeyValue};
+
+#[cfg(test)]
 fn make_passkey_kv(key: &str, value: &str, protected: bool) -> KeyValue {
     KeyValue {
         key: key.to_string(),
@@ -106,6 +110,7 @@ fn make_passkey_kv(key: &str, value: &str, protected: bool) -> KeyValue {
     }
 }
 
+#[cfg(test)]
 fn write_passkey_fields(entry: &mut Entry, info: &PasskeyStorageInfo) {
     entry.entry_field.insert_key_value(make_passkey_kv(
         KPEX_PASSKEY_CREDENTIAL_ID,
@@ -142,6 +147,61 @@ fn passkey_kvds(info: &PasskeyStorageInfo) -> Vec<KeyValueData> {
         KeyValueData::new_simple(KPEX_PASSKEY_CREDENTIAL_ID, &info.credential_id_b64url, true),
         KeyValueData::new_simple(KPEX_PASSKEY_PRIVATE_KEY_PEM, &info.private_key_pem, true),
     ]
+}
+
+// Writes a passkey into the in-memory KDBX structure for `db_key`.
+//
+// Shared by `store_passkey_entry` (mobile) and `create_and_store_passkey` (desktop).
+// Does NOT save the database to disk.
+fn apply_passkey_storage(db_key: &str, info: &PasskeyStorageInfo) -> Result<()> {
+    match info.entry_uuid {
+        Some(uuid) => {
+            // Update an existing entry via EntryFormData so that
+            // update_entry_from_form_data -> Entry::update() creates history.
+            let mut form_data = super::get_entry_form_data_by_id(db_key, &uuid)?;
+            // Reflect the passkey username in the standard UserName field.
+            form_data.set_field_value_in_section(LOGIN_DETAILS, USER_NAME, &info.username);
+            // Replace all passkey custom fields.
+            form_data.set_or_replace_section_fields(PASSKEY_DETAILS, passkey_kvds(info));
+            super::update_entry_from_form_data(db_key, form_data)
+        }
+        None => {
+            // Resolve or create the parent group.
+            let parent_uuid: Uuid = if let Some(ref new_name) = info.new_group_name {
+                let root_uuid =
+                    main_content_action!(db_key, |k: &KeepassFile| Ok(k.root.root_uuid()))?;
+                let mut new_group = Group::with_parent(&root_uuid);
+                new_group.name = new_name.clone();
+                let gid = new_group.uuid;
+                super::insert_group(db_key, new_group)?;
+                gid
+            } else {
+                match info.group_uuid {
+                    Some(uuid) => uuid,
+                    None => {
+                        main_content_action!(db_key, |k: &KeepassFile| Ok(k.root.root_uuid()))?
+                    }
+                }
+            };
+
+            let login_type_uuid = crate::build_uuid!(entry_type_uuid::LOGIN);
+            let mut form_data =
+                super::new_entry_form_data_by_id(db_key, &login_type_uuid, Some(&parent_uuid))?;
+            let title = info
+                .new_entry_name
+                .clone()
+                .unwrap_or_else(|| info.rp_name.clone());
+            form_data.set_title(title);
+            form_data.set_field_value_in_section(LOGIN_DETAILS, USER_NAME, &info.username);
+            form_data.set_field_value_in_section(
+                LOGIN_DETAILS,
+                URL,
+                &format!("https://{}", &info.rp_id),
+            );
+            form_data.set_or_replace_section_fields(PASSKEY_DETAILS, passkey_kvds(info));
+            super::insert_entry_from_form_data(db_key, form_data)
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -199,60 +259,10 @@ pub fn get_group_entries(db_key: &str, group_uuid: &Uuid) -> Result<Vec<EntryBas
 
 // Stores a newly created passkey in KDBX (in-memory only; does not save to disk).
 //
-// If `info.entry_uuid` is `Some`, the passkey fields are appended to that
-// existing entry.  Otherwise a new Login entry is created.
+// If `info.entry_uuid` is `Some`, the existing entry is updated (with history).
+// Otherwise a new Login entry is created.
 pub fn store_passkey_entry(db_key: &str, info: PasskeyStorageInfo) -> Result<()> {
-    let action = |k: &mut KeepassFile| -> Result<()> {
-        match info.entry_uuid {
-            Some(uuid) => {
-                let entry = k.root.entry_by_id_mut(&uuid).ok_or_else(|| {
-                    Error::NotFound(format!("Entry {} not found for passkey storage", uuid))
-                })?;
-                write_passkey_fields(entry, &info);
-                if entry.find_kv_field_value(URL).unwrap_or_default().is_empty() {
-                    entry
-                        .entry_field
-                        .update_value(URL, &format!("https://{}", &info.rp_id));
-                }
-                entry.update_modification_time_now();
-            }
-            None => {
-                let parent_uuid = if let Some(ref new_name) = info.new_group_name {
-                    let mut new_group = Group::with_parent(&k.root.root_uuid());
-                    new_group.name = new_name.clone();
-                    let new_uuid = new_group.uuid;
-                    k.root.insert_group(new_group)?;
-                    new_uuid
-                } else {
-                    info.group_uuid.unwrap_or_else(|| k.root.root_uuid())
-                };
-
-                if info.new_group_name.is_none() && k.root.group_by_id(&parent_uuid).is_none() {
-                    return Err(Error::NotFound(format!(
-                        "Target group {} not found",
-                        parent_uuid
-                    )));
-                }
-
-                let mut entry = Entry::new_login_entry(Some(&parent_uuid));
-                let title = info
-                    .new_entry_name
-                    .as_deref()
-                    .unwrap_or(&info.rp_name)
-                    .to_string();
-                entry.entry_field.update_value(TITLE, &title);
-                entry
-                    .entry_field
-                    .update_value(URL, &format!("https://{}", &info.rp_id));
-                entry.entry_field.update_value(USER_NAME, &info.username);
-                write_passkey_fields(&mut entry, &info);
-                k.insert_entry(entry)?;
-            }
-        }
-        Ok(())
-    };
-
-    main_content_mut_action!(db_key, action)
+    apply_passkey_storage(db_key, &info)
 }
 
 // Searches all provided databases for passkey entries matching `rp_id`.
@@ -395,54 +405,14 @@ pub fn get_passkey_for_assertion(db_key: &str, entry_uuid: &Uuid) -> Result<Pass
 // Creates or updates a passkey entry via the form-data API, then saves the
 // database to disk (with backup).
 //
-// This is the preferred high-level entry point for passkey storage.
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows",))]
+// This is the preferred high-level entry point for passkey storage on desktop.
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub fn create_and_store_passkey(
     db_key: &str,
     info: PasskeyStorageInfo,
     backup_file_name: Option<&str>,
 ) -> Result<()> {
-    match info.entry_uuid {
-        Some(entry_uuid) => {
-            let mut form_data = super::get_entry_form_data_by_id(db_key, &entry_uuid)?;
-            form_data.set_or_replace_section_fields(PASSKEY_DETAILS, passkey_kvds(&info));
-            super::update_entry_from_form_data(db_key, form_data)?;
-        }
-        None => {
-            let parent_uuid: Uuid = if let Some(ref new_name) = info.new_group_name {
-                let root_uuid =
-                    main_content_action!(db_key, |k: &KeepassFile| Ok(k.root.root_uuid()))?;
-                let mut new_group = Group::with_parent(&root_uuid);
-                new_group.name = new_name.clone();
-                let gid = new_group.uuid;
-                super::insert_group(db_key, new_group)?;
-                gid
-            } else {
-                match info.group_uuid {
-                    Some(uuid) => uuid,
-                    None => {
-                        main_content_action!(db_key, |k: &KeepassFile| Ok(k.root.root_uuid()))?
-                    }
-                }
-            };
-
-            let login_type_uuid = crate::build_uuid!(entry_type_uuid::LOGIN);
-            let mut form_data =
-                super::new_entry_form_data_by_id(db_key, &login_type_uuid, Some(&parent_uuid))?;
-
-            let title = info
-                .new_entry_name
-                .clone()
-                .unwrap_or_else(|| info.rp_name.clone());
-            form_data.set_title(title);
-            form_data.set_field_value_in_section(LOGIN_DETAILS, USER_NAME, &info.username);
-            form_data.set_field_value_in_section(LOGIN_DETAILS, URL, &info.rp_id);
-            form_data.set_or_replace_section_fields(PASSKEY_DETAILS, passkey_kvds(&info));
-
-            super::insert_entry_from_form_data(db_key, form_data)?;
-        }
-    }
-
+    apply_passkey_storage(db_key, &info)?;
     super::save_kdbx_with_backup(db_key, backup_file_name, false)?;
     Ok(())
 }
