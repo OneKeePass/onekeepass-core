@@ -214,11 +214,11 @@ pub fn get_db_name(db_key: &str) -> Result<String> {
     main_content_action!(db_key, action, no_times)
 }
 
-// Returns all user-visible groups in the database (root excluded).
+// Returns all user-visible groups in the database (root excluded), sorted by name.
 pub fn get_db_groups(db_key: &str) -> Result<Vec<GroupInfo>> {
     let action = |k: &KeepassFile| {
         let root_uuid = k.root.root_uuid();
-        let groups = k
+        let mut groups: Vec<GroupInfo> = k
             .root
             .get_all_groups(true)
             .into_iter()
@@ -229,18 +229,19 @@ pub fn get_db_groups(db_key: &str) -> Result<Vec<GroupInfo>> {
                 parent_group_uuid: g.parent_group_uuid.to_string(),
             })
             .collect();
+        groups.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         Ok(groups)
     };
     main_content_action!(db_key, action, no_times)
 }
 
-// Returns all active entries that belong directly to `group_uuid`.
+// Returns all active entries that belong directly to `group_uuid`, sorted by title.
 pub fn get_group_entries(db_key: &str, group_uuid: &Uuid) -> Result<Vec<EntryBasicInfo>> {
     let action = |k: &KeepassFile| {
         let group = k.root.group_by_id(group_uuid).ok_or_else(|| {
             Error::NotFound(format!("Group {} not found", group_uuid))
         })?;
-        let entries = group
+        let mut entries: Vec<EntryBasicInfo> = group
             .entry_uuids
             .iter()
             .filter_map(|entry_uuid| {
@@ -252,6 +253,7 @@ pub fn get_group_entries(db_key: &str, group_uuid: &Uuid) -> Result<Vec<EntryBas
                 })
             })
             .collect();
+        entries.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
         Ok(entries)
     };
     main_content_action!(db_key, action, no_times)
