@@ -100,13 +100,34 @@ pub struct PasskeyAssertionWithHashResult {
 pub struct PasskeyCreationWithHashResult {
     // CBOR-encoded attestation object, base64url.
     pub attestation_object_b64url: String,
+    // Raw authenticator data, base64url — for response.authenticatorData in RegistrationResponseJSON.
+    pub auth_data_b64url: String,
     pub credential_id_b64url: String,
     // PKCS#8 PEM private key — must be stored as a protected string.
     pub private_key_pem: String,
+    // SPKI DER-encoded public key, base64url — for response.publicKey in RegistrationResponseJSON.
+    pub public_key_b64url: String,
     pub rp_id: String,
     pub rp_name: String,
     pub username: String,
     pub user_handle_b64url: String,
+}
+
+// ── SPKI encoding ───────────────────────────────────────────────────────────
+
+// DER prefix for a P-256 SubjectPublicKeyInfo: SEQUENCE { SEQUENCE { OID ecPublicKey, OID prime256v1 }, BIT STRING }
+const P256_SPKI_PREFIX: &[u8] = &[
+    0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01,
+    0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
+];
+
+// Encodes a P-256 verifying key as SPKI DER, then base64url (no padding).
+fn encode_public_key_spki(verifying_key: &p256::ecdsa::VerifyingKey) -> String {
+    let encoded_point = verifying_key.to_encoded_point(false);
+    let mut spki = Vec::with_capacity(91);
+    spki.extend_from_slice(P256_SPKI_PREFIX);
+    spki.extend_from_slice(encoded_point.as_bytes());
+    BASE64URL_NOPAD.encode(&spki)
 }
 
 // ── authData builders ─────────────────────────────────────────────────────────
@@ -248,15 +269,7 @@ pub fn create_passkey(options_json: &str, origin: &str) -> Result<PasskeyCreatio
         .map_err(|e| Error::UnexpectedError(format!("PEM encoding failed: {}", e)))?;
     let private_key_pem = pem.as_str().to_string();
 
-    let encoded_point = signing_key.verifying_key().to_encoded_point(false);
-    const P256_SPKI_PREFIX: &[u8] = &[
-        0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01,
-        0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
-    ];
-    let mut public_key_spki = Vec::with_capacity(91);
-    public_key_spki.extend_from_slice(P256_SPKI_PREFIX);
-    public_key_spki.extend_from_slice(encoded_point.as_bytes());
-    let public_key_b64url = BASE64URL_NOPAD.encode(&public_key_spki);
+    let public_key_b64url = encode_public_key_spki(signing_key.verifying_key());
 
     let credential_json = serde_json::to_string(&serde_json::json!({
         "id":   credential_id_b64url,
@@ -308,6 +321,7 @@ pub fn create_passkey_with_hash(
 
     let cose_key_bytes = encode_cose_key(signing_key.verifying_key())?;
     let auth_data = build_auth_data_create(rp_id, &cred_id_bytes, &cose_key_bytes);
+    let auth_data_b64url = BASE64URL_NOPAD.encode(&auth_data);
     let attestation_object = encode_attestation_object(auth_data)?;
     let attestation_object_b64url = BASE64URL_NOPAD.encode(&attestation_object);
 
@@ -316,10 +330,14 @@ pub fn create_passkey_with_hash(
         .map_err(|e| Error::UnexpectedError(format!("PEM encoding failed: {}", e)))?;
     let private_key_pem = pem.as_str().to_string();
 
+    let public_key_b64url = encode_public_key_spki(signing_key.verifying_key());
+
     Ok(PasskeyCreationWithHashResult {
         attestation_object_b64url,
+        auth_data_b64url,
         credential_id_b64url,
         private_key_pem,
+        public_key_b64url,
         rp_id: rp_id.to_string(),
         rp_name: rp_name.to_string(),
         username: user_name.to_string(),
