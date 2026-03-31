@@ -214,15 +214,17 @@ pub fn get_db_name(db_key: &str) -> Result<String> {
     main_content_action!(db_key, action, no_times)
 }
 
-// Returns all user-visible groups in the database (root excluded), sorted by name.
+// Returns all user-visible groups in the database, sorted by name.
+// Root group is included. Recycle bin group and any groups deleted into trash are excluded.
 pub fn get_db_groups(db_key: &str) -> Result<Vec<GroupInfo>> {
     let action = |k: &KeepassFile| {
-        let root_uuid = k.root.root_uuid();
+        let deleted_uuids: std::collections::HashSet<Uuid> =
+            k.deleted_group_uuids().into_iter().collect();
         let mut groups: Vec<GroupInfo> = k
             .root
             .get_all_groups(true)
             .into_iter()
-            .filter(|g| g.uuid != root_uuid)
+            .filter(|g| !deleted_uuids.contains(&g.uuid))
             .map(|g| GroupInfo {
                 group_uuid: g.uuid.to_string(),
                 name: g.name.clone(),
