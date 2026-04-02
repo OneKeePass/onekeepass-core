@@ -2,14 +2,21 @@
 //
 // Compiled on all platforms (desktop, iOS, Android) — no `#[cfg]` gate.
 // All private-key material stays inside this module (and the KDBX database).
+//
+// Supported COSE algorithms:
+//   -7   ES256  — ECDSA P-256 with SHA-256   (existing)
+//   -8   EdDSA  — Ed25519                    (added)
+//   -257 RS256  — RSASSA-PKCS1-v1.5 / RSA-2048 with SHA-256 (added)
 
 use data_encoding::BASE64URL_NOPAD;
+use ed25519_dalek::SigningKey as Ed25519SigningKey;
 use p256::{
     ecdsa::{signature::Signer, Signature, SigningKey},
     pkcs8::{DecodePrivateKey, EncodePrivateKey, LineEnding},
     EncodedPoint,
 };
 use rand_core::{OsRng, RngCore};
+use rsa::{pkcs1v15::SigningKey as RsaSigningKey, traits::PublicKeyParts, RsaPrivateKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -32,11 +39,18 @@ struct UserInfo {
 }
 
 #[derive(Debug, Deserialize)]
+struct PubKeyCredParam {
+    alg: i64,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CreationOptions {
     rp: RpInfo,
     user: UserInfo,
     challenge: String, // base64url
+    #[serde(default)]
+    pub_key_cred_params: Vec<PubKeyCredParam>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -111,6 +125,8 @@ pub struct PasskeyCreationWithHashResult {
     pub rp_name: String,
     pub username: String,
     pub user_handle_b64url: String,
+    // COSE algorithm identifier: -7 (ES256), -8 (EdDSA), -257 (RS256).
+    pub algorithm: i64,
 }
 
 // ── SPKI encoding ───────────────────────────────────────────────────────────
@@ -121,6 +137,11 @@ const P256_SPKI_PREFIX: &[u8] = &[
     0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
 ];
 
+// DER prefix for an Ed25519 SubjectPublicKeyInfo: SEQUENCE { SEQUENCE { OID id-EdDSA (1.3.101.112) }, BIT STRING }
+const ED25519_SPKI_PREFIX: &[u8] = &[
+    0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+];
+
 // Encodes a P-256 verifying key as SPKI DER, then base64url (no padding).
 fn encode_public_key_spki(verifying_key: &p256::ecdsa::VerifyingKey) -> String {
     let encoded_point = verifying_key.to_encoded_point(false);
@@ -128,6 +149,24 @@ fn encode_public_key_spki(verifying_key: &p256::ecdsa::VerifyingKey) -> String {
     spki.extend_from_slice(P256_SPKI_PREFIX);
     spki.extend_from_slice(encoded_point.as_bytes());
     BASE64URL_NOPAD.encode(&spki)
+}
+
+// Encodes an Ed25519 verifying key as SPKI DER, then base64url (no padding).
+fn encode_public_key_spki_ed25519(verifying_key: &ed25519_dalek::VerifyingKey) -> String {
+    let mut spki = Vec::with_capacity(ED25519_SPKI_PREFIX.len() + 32);
+    spki.extend_from_slice(ED25519_SPKI_PREFIX);
+    spki.extend_from_slice(verifying_key.as_bytes());
+    BASE64URL_NOPAD.encode(&spki)
+}
+
+// Encodes an RSA public key as SPKI DER, then base64url (no padding).
+fn encode_public_key_spki_rsa(private_key: &RsaPrivateKey) -> Result<String> {
+    use rsa::pkcs8::EncodePublicKey as _;
+    let public_key = private_key.to_public_key();
+    let spki_der = public_key
+        .to_public_key_der()
+        .map_err(|e| Error::UnexpectedError(format!("RSA SPKI encoding failed: {}", e)))?;
+    Ok(BASE64URL_NOPAD.encode(spki_der.as_bytes()))
 }
 
 // ── authData builders ─────────────────────────────────────────────────────────
@@ -207,6 +246,57 @@ fn encode_cose_key(verifying_key: &p256::ecdsa::VerifyingKey) -> Result<Vec<u8>>
     Ok(buf)
 }
 
+// Encodes an Ed25519 verifying key as a COSE_Key OKP map (RFC 8152 §13.2).
+// kty=1 (OKP), alg=-8 (EdDSA), crv=-1 (Ed25519), x=raw 32-byte public key.
+fn encode_cose_key_ed25519(verifying_key: &ed25519_dalek::VerifyingKey) -> Result<Vec<u8>> {
+    use ciborium::value::Value;
+    let cose_key = Value::Map(vec![
+        (Value::Integer(1i64.into()), Value::Integer(1i64.into())),     // kty: OKP
+        (Value::Integer(3i64.into()), Value::Integer((-8i64).into())),  // alg: EdDSA
+        (Value::Integer((-1i64).into()), Value::Integer(6i64.into())),  // crv: Ed25519
+        (Value::Integer((-2i64).into()), Value::Bytes(verifying_key.as_bytes().to_vec())), // x
+    ]);
+    let mut buf = Vec::new();
+    ciborium::ser::into_writer(&cose_key, &mut buf)
+        .map_err(|e| Error::UnexpectedError(format!("Ed25519 COSE key CBOR encoding failed: {}", e)))?;
+    Ok(buf)
+}
+
+// Encodes an RSA public key as a COSE_Key map (RFC 8230).
+// kty=3 (RSA), alg=-257 (RS256), n=modulus bytes, e=exponent bytes.
+fn encode_cose_key_rsa(private_key: &RsaPrivateKey) -> Result<Vec<u8>> {
+    use ciborium::value::Value;
+    let public_key = private_key.to_public_key();
+    let n_bytes = public_key.n().to_bytes_be();
+    let e_bytes = public_key.e().to_bytes_be();
+    let cose_key = Value::Map(vec![
+        (Value::Integer(1i64.into()), Value::Integer(3i64.into())),       // kty: RSA
+        (Value::Integer(3i64.into()), Value::Integer((-257i64).into())),  // alg: RS256
+        (Value::Integer((-1i64).into()), Value::Bytes(n_bytes)),           // n: modulus
+        (Value::Integer((-2i64).into()), Value::Bytes(e_bytes)),           // e: exponent
+    ]);
+    let mut buf = Vec::new();
+    ciborium::ser::into_writer(&cose_key, &mut buf)
+        .map_err(|e| Error::UnexpectedError(format!("RSA COSE key CBOR encoding failed: {}", e)))?;
+    Ok(buf)
+}
+
+// Detects the COSE algorithm from a PKCS#8 PEM private key (mirrors KeepassXC's algo_name()).
+// Returns -7 (ES256/P-256), -257 (RS256/RSA), or -8 (EdDSA/Ed25519).
+// Tries P-256 first since all existing entries are P-256.
+pub fn detect_algorithm_from_pem(private_key_pem: &str) -> i64 {
+    if SigningKey::from_pkcs8_pem(private_key_pem).is_ok() {
+        return -7;
+    }
+    {
+        use rsa::pkcs8::DecodePrivateKey as _;
+        if RsaPrivateKey::from_pkcs8_pem(private_key_pem).is_ok() {
+            return -257;
+        }
+    }
+    -8 // Ed25519
+}
+
 // Encodes the attestation object (CBOR map with `fmt`, `attStmt`, `authData`).
 fn encode_attestation_object(auth_data: Vec<u8>) -> Result<Vec<u8>> {
     use ciborium::value::Value;
@@ -228,9 +318,9 @@ fn encode_attestation_object(auth_data: Vec<u8>) -> Result<Vec<u8>> {
 
 // Performs a WebAuthn registration ceremony for the given creation options.
 //
-// Generates a P-256 key pair, builds all required WebAuthn structures, and
-// returns both the credential JSON (for the site) and the key material (for
-// KDBX storage).
+// Selects the algorithm from pubKeyCredParams (first supported: -7, -8, -257; default -7),
+// generates a key pair, builds all required WebAuthn structures, and returns both the
+// credential JSON (for the site) and the key material (for KDBX storage).
 pub fn create_passkey(options_json: &str, origin: &str) -> Result<PasskeyCreationResult> {
     let opts: CreationOptions = serde_json::from_str(options_json)
         .map_err(|e| Error::UnexpectedError(format!("Invalid creation options JSON: {}", e)))?;
@@ -243,17 +333,18 @@ pub fn create_passkey(options_json: &str, origin: &str) -> Result<PasskeyCreatio
         .decode(opts.challenge.as_bytes())
         .map_err(|e| Error::UnexpectedError(format!("Invalid challenge encoding: {}", e)))?;
 
-    let signing_key = SigningKey::random(&mut OsRng);
+    // Select algorithm: first supported alg in RP's preferred order.
+    const SUPPORTED: &[i64] = &[-7, -8, -257];
+    let algorithm = opts
+        .pub_key_cred_params
+        .iter()
+        .find(|p| SUPPORTED.contains(&p.alg))
+        .map(|p| p.alg)
+        .unwrap_or(-7);
 
     let mut cred_id_bytes = [0u8; 16];
     OsRng.fill_bytes(&mut cred_id_bytes);
     let credential_id_b64url = BASE64URL_NOPAD.encode(&cred_id_bytes);
-
-    let cose_key_bytes = encode_cose_key(signing_key.verifying_key())?;
-    let auth_data = build_auth_data_create(&rp_id, &cred_id_bytes, &cose_key_bytes);
-
-    let auth_data_b64url = BASE64URL_NOPAD.encode(&auth_data);
-    let attestation_object = encode_attestation_object(auth_data)?;
 
     let client_data = serde_json::json!({
         "type": "webauthn.create",
@@ -264,12 +355,49 @@ pub fn create_passkey(options_json: &str, origin: &str) -> Result<PasskeyCreatio
     let client_data_json = serde_json::to_string(&client_data)
         .map_err(|e| Error::UnexpectedError(format!("clientDataJSON serialization failed: {}", e)))?;
 
-    let pem = signing_key
-        .to_pkcs8_pem(LineEnding::LF)
-        .map_err(|e| Error::UnexpectedError(format!("PEM encoding failed: {}", e)))?;
-    let private_key_pem = pem.as_str().to_string();
+    // Generate key pair, COSE key, SPKI, and PEM based on the chosen algorithm.
+    let (cose_key_bytes, public_key_b64url, private_key_pem) = match algorithm {
+        -8 => {
+            use ed25519_dalek::pkcs8::{EncodePrivateKey as _, KeypairBytes};
+            let sk = Ed25519SigningKey::generate(&mut OsRng);
+            let vk = &sk.verifying_key();
+            let cose = encode_cose_key_ed25519(&vk)?;
+            let spki = encode_public_key_spki_ed25519(&vk);
+            // Use KeypairBytes with public_key=None to produce PKCS#8 V1 (version=0, no embedded
+            // public key). ed25519-dalek v2 normally embeds the public key (V2/OneAsymmetricKey)
+            // which Botan 2.x (used by KeepassXC) cannot load.
+            let keypair_bytes = KeypairBytes { secret_key: sk.to_bytes(), public_key: None };
+            let pem = keypair_bytes
+                .to_pkcs8_pem(LineEnding::LF)
+                .map_err(|e| Error::UnexpectedError(format!("Ed25519 PEM encoding failed: {}", e)))?;
+            (cose, spki, pem.as_str().to_string())
+        }
+        -257 => {
+            use rsa::pkcs8::EncodePrivateKey as _;
+            let sk = RsaPrivateKey::new(&mut OsRng, 2048)
+                .map_err(|e| Error::UnexpectedError(format!("RSA key generation failed: {}", e)))?;
+            let cose = encode_cose_key_rsa(&sk)?;
+            let spki = encode_public_key_spki_rsa(&sk)?;
+            let pem = sk
+                .to_pkcs8_pem(LineEnding::LF)
+                .map_err(|e| Error::UnexpectedError(format!("RSA PEM encoding failed: {}", e)))?;
+            (cose, spki, pem.as_str().to_string())
+        }
+        _ => {
+            // -7: ES256 / P-256 (default)
+            let sk = SigningKey::random(&mut OsRng);
+            let cose = encode_cose_key(sk.verifying_key())?;
+            let spki = encode_public_key_spki(sk.verifying_key());
+            let pem = sk
+                .to_pkcs8_pem(LineEnding::LF)
+                .map_err(|e| Error::UnexpectedError(format!("PEM encoding failed: {}", e)))?;
+            (cose, spki, pem.as_str().to_string())
+        }
+    };
 
-    let public_key_b64url = encode_public_key_spki(signing_key.verifying_key());
+    let auth_data = build_auth_data_create(&rp_id, &cred_id_bytes, &cose_key_bytes);
+    let auth_data_b64url = BASE64URL_NOPAD.encode(&auth_data);
+    let attestation_object = encode_attestation_object(auth_data)?;
 
     let credential_json = serde_json::to_string(&serde_json::json!({
         "id":   credential_id_b64url,
@@ -282,7 +410,7 @@ pub fn create_passkey(options_json: &str, origin: &str) -> Result<PasskeyCreatio
             "authenticatorData":  auth_data_b64url,
             "clientDataJSON":     BASE64URL_NOPAD.encode(client_data_json.as_bytes()),
             "publicKey":          public_key_b64url,
-            "publicKeyAlgorithm": -7_i64,
+            "publicKeyAlgorithm": algorithm,
             "transports":         ["internal"],
         },
     }))
@@ -301,36 +429,67 @@ pub fn create_passkey(options_json: &str, origin: &str) -> Result<PasskeyCreatio
 }
 
 // Performs a WebAuthn registration ceremony for callers that already hold
-// the pre-computed `clientDataHash` (e.g. iOS autofill extension).
+// the pre-computed `clientDataHash` (e.g. iOS autofill / Android Credential Manager).
 //
-// Generates a new P-256 key pair, builds the attestation object (fmt="none"),
-// and returns the individual fields needed by `ASPasskeyRegistrationCredential`
-// plus the private key PEM for storage.
+// `algorithm` selects the key type: -7 (ES256/P-256), -8 (EdDSA/Ed25519), -257 (RS256/RSA-2048).
+// Generates a key pair, builds the attestation object (fmt="none"), and returns the individual
+// fields needed by the platform credential API plus the private key PEM for storage.
 pub fn create_passkey_with_hash(
     rp_id: &str,
     rp_name: &str,
     user_name: &str,
     user_handle_b64url: &str,
     _client_data_hash: &[u8],
+    algorithm: i64,
 ) -> Result<PasskeyCreationWithHashResult> {
-    let signing_key = SigningKey::random(&mut OsRng);
-
     let mut cred_id_bytes = [0u8; 16];
     OsRng.fill_bytes(&mut cred_id_bytes);
     let credential_id_b64url = BASE64URL_NOPAD.encode(&cred_id_bytes);
 
-    let cose_key_bytes = encode_cose_key(signing_key.verifying_key())?;
+    // Generate key pair, COSE key, SPKI, and PEM based on the chosen algorithm.
+    let (cose_key_bytes, public_key_b64url, private_key_pem) = match algorithm {
+        -8 => {
+            use ed25519_dalek::pkcs8::{EncodePrivateKey as _, KeypairBytes};
+            let sk = Ed25519SigningKey::generate(&mut OsRng);
+            let vk = sk.verifying_key();
+            let cose = encode_cose_key_ed25519(&vk)?;
+            let spki = encode_public_key_spki_ed25519(&vk);
+            // Use KeypairBytes with public_key=None to produce PKCS#8 V1 (version=0, no embedded
+            // public key). ed25519-dalek v2 normally embeds the public key (V2/OneAsymmetricKey)
+            // which Botan 2.x (used by KeepassXC) cannot load.
+            let keypair_bytes = KeypairBytes { secret_key: sk.to_bytes(), public_key: None };
+            let pem = keypair_bytes
+                .to_pkcs8_pem(LineEnding::LF)
+                .map_err(|e| Error::UnexpectedError(format!("Ed25519 PEM encoding failed: {}", e)))?;
+            (cose, spki, pem.as_str().to_string())
+        }
+        -257 => {
+            use rsa::pkcs8::EncodePrivateKey as _;
+            let sk = RsaPrivateKey::new(&mut OsRng, 2048)
+                .map_err(|e| Error::UnexpectedError(format!("RSA key generation failed: {}", e)))?;
+            let cose = encode_cose_key_rsa(&sk)?;
+            let spki = encode_public_key_spki_rsa(&sk)?;
+            let pem = sk
+                .to_pkcs8_pem(LineEnding::LF)
+                .map_err(|e| Error::UnexpectedError(format!("RSA PEM encoding failed: {}", e)))?;
+            (cose, spki, pem.as_str().to_string())
+        }
+        _ => {
+            // -7: ES256 / P-256 (default)
+            let sk = SigningKey::random(&mut OsRng);
+            let cose = encode_cose_key(sk.verifying_key())?;
+            let spki = encode_public_key_spki(sk.verifying_key());
+            let pem = sk
+                .to_pkcs8_pem(LineEnding::LF)
+                .map_err(|e| Error::UnexpectedError(format!("PEM encoding failed: {}", e)))?;
+            (cose, spki, pem.as_str().to_string())
+        }
+    };
+
     let auth_data = build_auth_data_create(rp_id, &cred_id_bytes, &cose_key_bytes);
     let auth_data_b64url = BASE64URL_NOPAD.encode(&auth_data);
     let attestation_object = encode_attestation_object(auth_data)?;
     let attestation_object_b64url = BASE64URL_NOPAD.encode(&attestation_object);
-
-    let pem = signing_key
-        .to_pkcs8_pem(LineEnding::LF)
-        .map_err(|e| Error::UnexpectedError(format!("PEM encoding failed: {}", e)))?;
-    let private_key_pem = pem.as_str().to_string();
-
-    let public_key_b64url = encode_public_key_spki(signing_key.verifying_key());
 
     Ok(PasskeyCreationWithHashResult {
         attestation_object_b64url,
@@ -342,6 +501,7 @@ pub fn create_passkey_with_hash(
         rp_name: rp_name.to_string(),
         username: user_name.to_string(),
         user_handle_b64url: user_handle_b64url.to_string(),
+        algorithm,
     })
 }
 
@@ -380,16 +540,12 @@ pub fn sign_assertion(
 
     let auth_data = build_auth_data_get(effective_rp_id, 0u32);
 
-    let signing_key = SigningKey::from_pkcs8_pem(private_key_pem)
-        .map_err(|e| Error::UnexpectedError(format!("Failed to decode private key PEM: {}", e)))?;
-
     let client_data_hash = Sha256::digest(client_data_json.as_bytes());
     let mut sig_input = Vec::with_capacity(auth_data.len() + 32);
     sig_input.extend_from_slice(&auth_data);
     sig_input.extend_from_slice(&client_data_hash);
 
-    let signature: Signature = signing_key.sign(&sig_input);
-    let sig_der = signature.to_der();
+    let sig_b64url = sign_with_pem(private_key_pem, &sig_input)?;
 
     let credential_json = serde_json::to_string(&serde_json::json!({
         "id":   credential_id_b64url,
@@ -400,7 +556,7 @@ pub fn sign_assertion(
         "response": {
             "authenticatorData": BASE64URL_NOPAD.encode(&auth_data),
             "clientDataJSON":    BASE64URL_NOPAD.encode(client_data_json.as_bytes()),
-            "signature":         BASE64URL_NOPAD.encode(sig_der.as_bytes()),
+            "signature":         sig_b64url,
             "userHandle":        user_handle_b64url,
         },
     }))
@@ -415,6 +571,7 @@ pub fn sign_assertion(
 // iOS autofill provides `clientDataHash` directly (the OS computes it before
 // invoking the extension), so there is no `options_json` or `origin` to pass.
 // The result contains all fields needed to construct `ASPasskeyAssertionCredential`.
+// The algorithm is auto-detected from the PKCS#8 PEM (see `detect_algorithm_from_pem`).
 pub fn sign_assertion_with_hash(
     credential_id_b64url: &str,
     rp_id: &str,
@@ -424,25 +581,56 @@ pub fn sign_assertion_with_hash(
 ) -> Result<PasskeyAssertionWithHashResult> {
     let auth_data = build_auth_data_get(rp_id, 0u32);
 
-    let signing_key = SigningKey::from_pkcs8_pem(private_key_pem)
-        .map_err(|e| Error::UnexpectedError(format!("Failed to decode private key PEM: {}", e)))?;
-
     // Sign: authenticatorData || clientDataHash
     let mut sig_input = Vec::with_capacity(auth_data.len() + client_data_hash.len());
     sig_input.extend_from_slice(&auth_data);
     sig_input.extend_from_slice(client_data_hash);
 
-    let signature: Signature = signing_key.sign(&sig_input);
-
-    let sig_der = signature.to_der();
+    let sig_b64url = sign_with_pem(private_key_pem, &sig_input)?;
 
     Ok(PasskeyAssertionWithHashResult {
-        signature_b64url: BASE64URL_NOPAD.encode(sig_der.as_bytes()),
+        signature_b64url: sig_b64url,
         authenticator_data_b64url: BASE64URL_NOPAD.encode(&auth_data),
         credential_id_b64url: credential_id_b64url.to_string(),
         user_handle_b64url: user_handle_b64url.to_string(),
         rp_id: rp_id.to_string(),
     })
+}
+
+// Signs `message` with the private key in `private_key_pem`, auto-detecting the algorithm.
+// Returns the base64url-encoded signature bytes.
+// Signature formats:
+//   -7  (ES256): DER-encoded ECDSA signature
+//   -8  (EdDSA): raw 64-byte Ed25519 signature
+//   -257 (RS256): raw RSA-PKCS1v1.5 signature bytes
+fn sign_with_pem(private_key_pem: &str, message: &[u8]) -> Result<String> {
+    let algorithm = detect_algorithm_from_pem(private_key_pem);
+    match algorithm {
+        -257 => {
+            use rsa::pkcs8::DecodePrivateKey as _;
+            use rsa::signature::SignatureEncoding;
+            let rsa_key = RsaPrivateKey::from_pkcs8_pem(private_key_pem)
+                .map_err(|e| Error::UnexpectedError(format!("RSA PEM decode failed: {}", e)))?;
+            let signing_key = RsaSigningKey::<Sha256>::new(rsa_key);
+            let sig = signing_key.sign(message);
+            Ok(BASE64URL_NOPAD.encode(sig.to_bytes().as_ref()))
+        }
+        -8 => {
+            use ed25519_dalek::{pkcs8::DecodePrivateKey as _, Signer as _};
+            let ed_key = Ed25519SigningKey::from_pkcs8_pem(private_key_pem)
+                .map_err(|e| Error::UnexpectedError(format!("Ed25519 PEM decode failed: {}", e)))?;
+            let sig = ed_key.sign(message);
+            Ok(BASE64URL_NOPAD.encode(&sig.to_bytes()))
+        }
+        _ => {
+            // -7: ES256 / P-256
+            let signing_key = SigningKey::from_pkcs8_pem(private_key_pem)
+                .map_err(|e| Error::UnexpectedError(format!("Failed to decode private key PEM: {}", e)))?;
+            let signature: Signature = signing_key.sign(message);
+            let sig_der = signature.to_der();
+            Ok(BASE64URL_NOPAD.encode(sig_der.as_bytes()))
+        }
+    }
 }
 
 // ── Unit tests ────────────────────────────────────────────────────────────────
@@ -638,5 +826,191 @@ mod tests {
 
         let count_bytes = sign_count.to_be_bytes();
         assert_eq!(&auth_data[33..37], &count_bytes);
+    }
+
+    fn creation_options_with_alg(rp_id: &str, alg: i64) -> String {
+        let challenge = BASE64URL_NOPAD.encode(b"test-challenge-alg");
+        let user_id = BASE64URL_NOPAD.encode(b"user-id-bytes");
+        serde_json::json!({
+            "rp": { "id": rp_id, "name": "Test Site" },
+            "user": { "id": user_id, "name": "alice@example.com", "displayName": "Alice" },
+            "challenge": challenge,
+            "pubKeyCredParams": [{ "type": "public-key", "alg": alg }],
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn ed25519_create_and_sign_with_hash_roundtrip() {
+        let rp_id = "ed25519.example.com";
+        let opts = creation_options_with_alg(rp_id, -8);
+        let created = create_passkey(&opts, "https://ed25519.example.com")
+            .expect("Ed25519 passkey creation should succeed");
+
+        assert_eq!(detect_algorithm_from_pem(&created.private_key_pem), -8);
+
+        let client_data_hash = Sha256::digest(b"ed25519-client-data");
+        let result = sign_assertion_with_hash(
+            &created.credential_id_b64url,
+            rp_id,
+            &created.user_handle_b64url,
+            &created.private_key_pem,
+            &client_data_hash,
+        )
+        .expect("Ed25519 assertion signing should succeed");
+
+        assert!(!result.signature_b64url.is_empty());
+        assert!(!result.authenticator_data_b64url.is_empty());
+        assert_eq!(result.credential_id_b64url, created.credential_id_b64url);
+        assert_eq!(result.rp_id, rp_id);
+    }
+
+    #[test]
+    fn rsa_create_and_sign_with_hash_roundtrip() {
+        let rp_id = "rsa.example.com";
+        let opts = creation_options_with_alg(rp_id, -257);
+        let created = create_passkey(&opts, "https://rsa.example.com")
+            .expect("RSA passkey creation should succeed");
+
+        assert_eq!(detect_algorithm_from_pem(&created.private_key_pem), -257);
+
+        let client_data_hash = Sha256::digest(b"rsa-client-data");
+        let result = sign_assertion_with_hash(
+            &created.credential_id_b64url,
+            rp_id,
+            &created.user_handle_b64url,
+            &created.private_key_pem,
+            &client_data_hash,
+        )
+        .expect("RSA assertion signing should succeed");
+
+        assert!(!result.signature_b64url.is_empty());
+        assert!(!result.authenticator_data_b64url.is_empty());
+        assert_eq!(result.credential_id_b64url, created.credential_id_b64url);
+        assert_eq!(result.rp_id, rp_id);
+    }
+
+    #[test]
+    fn create_passkey_with_hash_ed25519_roundtrip() {
+        let rp_id = "ed25519-hash.example.com";
+        let user_handle = BASE64URL_NOPAD.encode(b"user-handle");
+        let client_data_hash = Sha256::digest(b"client-data-json");
+
+        let created = create_passkey_with_hash(
+            rp_id,
+            "Test Site",
+            "alice@example.com",
+            &user_handle,
+            &client_data_hash,
+            -8,
+        )
+        .expect("Ed25519 create_passkey_with_hash should succeed");
+
+        assert_eq!(created.algorithm, -8);
+        assert!(!created.private_key_pem.is_empty());
+        assert!(!created.attestation_object_b64url.is_empty());
+
+        let sig_result = sign_assertion_with_hash(
+            &created.credential_id_b64url,
+            rp_id,
+            &created.user_handle_b64url,
+            &created.private_key_pem,
+            &client_data_hash,
+        )
+        .expect("Ed25519 sign after create_passkey_with_hash should succeed");
+
+        assert!(!sig_result.signature_b64url.is_empty());
+    }
+
+    #[test]
+    fn create_passkey_with_hash_rsa_roundtrip() {
+        let rp_id = "rsa-hash.example.com";
+        let user_handle = BASE64URL_NOPAD.encode(b"user-handle");
+        let client_data_hash = Sha256::digest(b"client-data-json");
+
+        let created = create_passkey_with_hash(
+            rp_id,
+            "Test Site",
+            "alice@example.com",
+            &user_handle,
+            &client_data_hash,
+            -257,
+        )
+        .expect("RSA create_passkey_with_hash should succeed");
+
+        assert_eq!(created.algorithm, -257);
+        assert!(!created.private_key_pem.is_empty());
+        assert!(!created.attestation_object_b64url.is_empty());
+
+        let sig_result = sign_assertion_with_hash(
+            &created.credential_id_b64url,
+            rp_id,
+            &created.user_handle_b64url,
+            &created.private_key_pem,
+            &client_data_hash,
+        )
+        .expect("RSA sign after create_passkey_with_hash should succeed");
+
+        assert!(!sig_result.signature_b64url.is_empty());
+    }
+
+    #[test]
+    fn detect_algorithm_identifies_p256() {
+        let opts = creation_options_with_alg("p256.example.com", -7);
+        let created = create_passkey(&opts, "https://p256.example.com").unwrap();
+        assert_eq!(detect_algorithm_from_pem(&created.private_key_pem), -7);
+    }
+
+    #[test]
+    fn detect_algorithm_identifies_ed25519() {
+        let opts = creation_options_with_alg("ed.example.com", -8);
+        let created = create_passkey(&opts, "https://ed.example.com").unwrap();
+        assert_eq!(detect_algorithm_from_pem(&created.private_key_pem), -8);
+    }
+
+    #[test]
+    fn detect_algorithm_identifies_rsa() {
+        let opts = creation_options_with_alg("rsa.example.com", -257);
+        let created = create_passkey(&opts, "https://rsa.example.com").unwrap();
+        assert_eq!(detect_algorithm_from_pem(&created.private_key_pem), -257);
+    }
+
+    #[test]
+    fn algo_selection_picks_first_supported_from_list() {
+        let rp_id = "multi.example.com";
+        let challenge = BASE64URL_NOPAD.encode(b"multi-alg-challenge");
+        let user_id = BASE64URL_NOPAD.encode(b"user-id");
+        // RP prefers -8 first, then -7
+        let opts = serde_json::json!({
+            "rp": { "id": rp_id, "name": "Multi Alg Site" },
+            "user": { "id": user_id, "name": "bob@example.com" },
+            "challenge": challenge,
+            "pubKeyCredParams": [
+                { "type": "public-key", "alg": -8 },
+                { "type": "public-key", "alg": -7 },
+            ],
+        })
+        .to_string();
+        let created = create_passkey(&opts, "https://multi.example.com").unwrap();
+        // Should pick -8 (first in list that is supported)
+        assert_eq!(detect_algorithm_from_pem(&created.private_key_pem), -8);
+    }
+
+    #[test]
+    fn algo_selection_defaults_to_p256_when_none_match() {
+        let rp_id = "unknown.example.com";
+        let challenge = BASE64URL_NOPAD.encode(b"unknown-alg-challenge");
+        let user_id = BASE64URL_NOPAD.encode(b"user-id");
+        // RP only advertises an unknown algorithm
+        let opts = serde_json::json!({
+            "rp": { "id": rp_id, "name": "Unknown Alg Site" },
+            "user": { "id": user_id, "name": "charlie@example.com" },
+            "challenge": challenge,
+            "pubKeyCredParams": [{ "type": "public-key", "alg": -999 }],
+        })
+        .to_string();
+        let created = create_passkey(&opts, "https://unknown.example.com").unwrap();
+        // Should fall back to -7 (P-256)
+        assert_eq!(detect_algorithm_from_pem(&created.private_key_pem), -7);
     }
 }
