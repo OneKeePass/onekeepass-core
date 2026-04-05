@@ -104,6 +104,23 @@ impl From<&KeyValueData> for FieldDef {
 }
 
 impl KeyValueData {
+    // Creates a simple KV data entry for use when building form data programmatically
+    // (e.g. from Rust code in onekeepass-core rather than from a UI JSON payload)
+    pub(crate) fn new_simple(key: &str, value: &str, protected: bool) -> Self {
+        Self {
+            key: key.to_string(),
+            value: Some(value.to_string()),
+            protected,
+            required: false,
+            helper_text: None,
+            data_type: FieldDataType::default(),
+            standard_field: false,
+            select_field_options: None,
+            password_score: None,
+            current_opt_token: None,
+        }
+    }
+
     fn generate_otp(&mut self, parsed_otp_values: &Option<HashMap<String, OtpData>>) {
         if self.data_type == FieldDataType::OneTimePassword {
             if let Some(parsed_otp_data) =
@@ -208,6 +225,30 @@ pub struct EntryFormData {
 }
 
 impl EntryFormData {
+    // Sets the entry title. Used when building form data programmatically within the core.
+    pub(crate) fn set_title(&mut self, title: String) {
+        self.title = title;
+    }
+
+    // Sets the value of a specific field within a named section.
+    // No-op if the section or the field key does not exist.
+    pub(crate) fn set_field_value_in_section(&mut self, section_name: &str, key: &str, value: &str) {
+        if let Some(kvds) = self.section_fields.get_mut(section_name) {
+            if let Some(kvd) = kvds.iter_mut().find(|k| k.key == key) {
+                kvd.value = Some(value.to_string());
+            }
+        }
+    }
+
+    // Replaces (or inserts) the full list of KV fields for a named section.
+    // Also ensures the section name appears in section_names.
+    pub(crate) fn set_or_replace_section_fields(&mut self, section_name: &str, kvds: Vec<KeyValueData>) {
+        self.section_fields.insert(section_name.to_string(), kvds);
+        if !self.section_names.contains(&section_name.to_string()) {
+            self.section_names.push(section_name.to_string());
+        }
+    }
+
     // Creates the EntryFormData from the given entry and is ready to be used by UI layer
     fn from_entry(entry: &Entry) -> Self {
         let entry_type_name = entry.entry_field.entry_type.name.clone();

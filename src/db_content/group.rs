@@ -205,3 +205,101 @@ impl Group {
         println!("name is {}", self.name);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Group;
+    use uuid::Uuid;
+
+    #[test]
+    fn group_new_has_default_uuid() {
+        let g = Group::new();
+        assert_eq!(g.uuid, Uuid::default());
+    }
+
+    #[test]
+    fn group_new_has_folder_icon() {
+        let g = Group::new();
+        assert_eq!(g.icon_id, 48);
+    }
+
+    #[test]
+    fn group_new_marked_category_true() {
+        let g = Group::new();
+        assert!(g.marked_category);
+    }
+
+    #[test]
+    fn group_new_with_id_has_non_default_uuid() {
+        let g = Group::new_with_id();
+        assert_ne!(g.uuid, Uuid::default());
+    }
+
+    #[test]
+    fn group_new_with_id_uuids_are_unique() {
+        let g1 = Group::new_with_id();
+        let g2 = Group::new_with_id();
+        assert_ne!(g1.uuid, g2.uuid);
+    }
+
+    #[test]
+    fn group_with_parent_sets_parent_uuid() {
+        let parent_id = Uuid::new_v4();
+        let g = Group::with_parent(&parent_id);
+        assert_eq!(g.parent_group_uuid, parent_id);
+        assert_ne!(g.uuid, Uuid::default());
+    }
+
+    #[test]
+    fn group_set_name_updates_name() {
+        let mut g = Group::new_with_id();
+        g.set_name("Passwords");
+        assert_eq!(g.name(), "Passwords");
+    }
+
+    #[test]
+    fn group_set_notes_updates_notes() {
+        let mut g = Group::new_with_id();
+        g.set_notes("My group notes");
+        assert_eq!(g._notes(), "My group notes");
+    }
+
+    #[test]
+    fn group_clear_children_empties_lists() {
+        let mut g = Group::new_with_id();
+        g.entry_uuids.push(Uuid::new_v4());
+        g.group_uuids.push(Uuid::new_v4());
+        g.clear_children();
+        assert!(g.entry_uuids().is_empty());
+        assert!(g.sub_group_uuids().is_empty());
+    }
+
+    #[test]
+    fn group_mark_as_category() {
+        let mut g = Group::new_with_id();
+        g.marked_category = false;
+        g.mark_as_category();
+        assert!(g.is_in_category());
+    }
+
+    #[test]
+    fn group_set_parent_group_uuid() {
+        let mut g = Group::new_with_id();
+        let parent_id = Uuid::new_v4();
+        g.set_parent_group_uuid(&parent_id);
+        assert_eq!(g.parent_group_uuid(), parent_id);
+    }
+
+    #[test]
+    fn group_get_uuid_returns_correct_uuid() {
+        let g = Group::new_with_id();
+        assert_eq!(g.get_uuid(), g.uuid);
+    }
+
+    #[test]
+    fn group_new_has_empty_children() {
+        let g = Group::new();
+        assert!(g.entry_uuids().is_empty());
+        assert!(g.sub_group_uuids().is_empty());
+    }
+}

@@ -226,6 +226,96 @@ mod tests {
 
     use crate::password_passphrase_generator::password_generator::*;
 
+    // --- Non-ignored unit tests ---
+
+    #[test]
+    fn generate_default_length_is_8() {
+        let opts = PasswordGenerationOptions::new();
+        let pwd = opts.generate().unwrap();
+        assert_eq!(pwd.len(), 8);
+    }
+
+    #[test]
+    fn generate_custom_length() {
+        let mut opts = PasswordGenerationOptions::new();
+        opts.length = 20;
+        let pwd = opts.generate().unwrap();
+        assert_eq!(pwd.len(), 20);
+    }
+
+    #[test]
+    fn generate_uppercase_only_contains_uppercase() {
+        let opts = PasswordGenerationOptions {
+            length: 16,
+            numbers: false,
+            lowercase_letters: false,
+            uppercase_letters: true,
+            symbols: false,
+            spaces: false,
+            exclude_similar_characters: false,
+            strict: true,
+        };
+        let pwd = opts.generate().unwrap();
+        assert!(pwd.chars().all(|c| c.is_uppercase()));
+    }
+
+    #[test]
+    fn generate_numbers_only_contains_digits() {
+        let opts = PasswordGenerationOptions {
+            length: 12,
+            numbers: true,
+            lowercase_letters: false,
+            uppercase_letters: false,
+            symbols: false,
+            spaces: false,
+            exclude_similar_characters: false,
+            strict: true,
+        };
+        let pwd = opts.generate().unwrap();
+        assert!(pwd.chars().all(|c| c.is_ascii_digit()));
+    }
+
+    #[test]
+    fn password_score_boundary_very_dangerous() {
+        let score = PasswordScore::from(0.0_f64);
+        assert!(matches!(score, PasswordScore::VeryDangerous { .. }));
+
+        let score = PasswordScore::from(20.0_f64);
+        assert!(matches!(score, PasswordScore::VeryDangerous { .. }));
+    }
+
+    #[test]
+    fn password_score_boundary_dangerous() {
+        let score = PasswordScore::from(20.1_f64);
+        assert!(matches!(score, PasswordScore::Dangerous { .. }));
+
+        let score = PasswordScore::from(40.0_f64);
+        assert!(matches!(score, PasswordScore::Dangerous { .. }));
+    }
+
+    #[test]
+    fn password_score_boundary_good() {
+        let score = PasswordScore::from(80.1_f64);
+        assert!(matches!(score, PasswordScore::Good { .. }));
+
+        let score = PasswordScore::from(90.0_f64);
+        assert!(matches!(score, PasswordScore::Good { .. }));
+    }
+
+    #[test]
+    fn password_score_boundary_invulnerable() {
+        let score = PasswordScore::from(99.5_f64);
+        assert!(matches!(score, PasswordScore::Invulnerable { .. }));
+    }
+
+    #[test]
+    fn analyzed_password_length_matches_input() {
+        let mut opts = PasswordGenerationOptions::new();
+        opts.length = 15;
+        let analyzed = opts.analyzed_password().unwrap();
+        assert_eq!(analyzed.length, 15);
+    }
+
     #[ignore]
     #[test]
     fn verify_password_1() {

@@ -614,6 +614,74 @@ pub(crate) fn place_holder_marker_found(input: &str) -> bool {
 mod tests {
     use super::*;
 
+    // --- Non-ignored unit tests ---
+
+    #[test]
+    fn place_holder_marker_found_with_placeholder() {
+        assert!(place_holder_marker_found("{USERNAME}"));
+    }
+
+    #[test]
+    fn place_holder_marker_found_embedded_in_text() {
+        assert!(place_holder_marker_found("Hello {TITLE} world"));
+    }
+
+    #[test]
+    fn place_holder_marker_found_ref_placeholder() {
+        assert!(place_holder_marker_found("{REF:P@I:46C9B1FFBD4ABC4BBB260C6190BAD20C}"));
+    }
+
+    #[test]
+    fn place_holder_marker_not_found_plain_string() {
+        assert!(!place_holder_marker_found("no placeholder here"));
+    }
+
+    #[test]
+    fn place_holder_marker_not_found_empty_string() {
+        assert!(!place_holder_marker_found(""));
+    }
+
+    #[test]
+    fn place_holder_marker_not_found_only_open_brace() {
+        // No closing brace — should not match
+        assert!(!place_holder_marker_found("prefix{no_close"));
+    }
+
+    #[test]
+    fn parse_place_holder_name_ref_prefix_detected() {
+        let r = parse_place_holder_name("REF:P@I:SOMEUUID");
+        assert!(r.is_ok());
+        assert_eq!(r.unwrap().1, PlaceHolderType::Reference);
+    }
+
+    #[test]
+    fn parse_place_holder_name_custom_field_detected() {
+        let r = parse_place_holder_name("S:MY FIELD");
+        assert!(r.is_ok());
+        assert_eq!(r.unwrap().1, PlaceHolderType::CustomField("MY FIELD"));
+    }
+
+    #[test]
+    fn parse_place_holder_name_any_name_for_standard_field() {
+        let r = parse_place_holder_name("TITLE");
+        assert!(r.is_ok());
+        assert_eq!(r.unwrap().1, PlaceHolderType::AnyName);
+    }
+
+    #[test]
+    fn parse_place_holder_name_any_name_for_username() {
+        let r = parse_place_holder_name("USERNAME");
+        assert!(r.is_ok());
+        assert_eq!(r.unwrap().1, PlaceHolderType::AnyName);
+    }
+
+    #[test]
+    fn parse_place_holder_name_ref_with_leading_space() {
+        let r = parse_place_holder_name(" REF:T@I:UUID");
+        assert!(r.is_ok());
+        assert_eq!(r.unwrap().1, PlaceHolderType::Reference);
+    }
+
     #[ignore]
     #[test]
     fn verify_place_holder_name_parsing() {

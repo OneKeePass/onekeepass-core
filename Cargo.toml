@@ -1,6 +1,6 @@
 [package]
 name = "onekeepass-core"
-version = "0.19.0"
+version = "0.20.0"
 authors = ["jeyasankar"]
 edition = "2021"
 
@@ -64,6 +64,14 @@ reqwest_dav = {version = "0.1.15", default-features = false,features = ["rustls-
 ## rusqlite = { version = "0.32.0", features = ["bundled"] }
 
 botan = {version = "0.11.1", features = ["vendored"] }
+
+# Passkey / WebAuthn cryptography (shared across desktop and mobile)
+p256           = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
+ed25519-dalek  = { version = "2", features = ["pkcs8", "rand_core"] }
+rsa            = { version = "0.9", features = ["sha2"] }
+sha2           = "0.10"
+ciborium       = "0.2"
+rand_core      = { version = "0.6", features = ["getrandom"] }
 
 
 [dependencies.passwords]

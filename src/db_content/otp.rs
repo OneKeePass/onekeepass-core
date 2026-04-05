@@ -911,6 +911,205 @@ mod tests {
             od.ttl()
         );
     }
+
+    // --- Non-ignored unit tests ---
+
+    #[test]
+    fn from_key_valid_secret_has_defaults() {
+        // GEZDGNBVGY3TQOJQ is the base32 encoding of "12345678901234567890"
+        let od = OtpData::from_key("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ").unwrap();
+        assert_eq!(od.period, 30);
+        assert_eq!(od.digits, 6);
+        assert_eq!(od.algorithm, OtpAlgorithm::SHA1);
+        assert!(od.issuer.is_none());
+    }
+
+    #[test]
+    fn from_key_strips_spaces_and_uppercases() {
+        // Spaces are removed and the key is uppercased before decoding
+        let result = OtpData::from_key("GEZD GNBV GY3T QOJQ GEZD GNBV GY3T QOJQ");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn from_key_empty_returns_error() {
+        let result = OtpData::from_key("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn from_key_whitespace_only_returns_error() {
+        let result = OtpData::from_key("   ");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn from_key_invalid_base32_returns_error() {
+        // '1', '8', '9' are not valid base32 characters
+        let result = OtpData::from_key("INVALID!!!!");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn from_key_get_secret_base32_roundtrip() {
+        let key = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+        let od = OtpData::from_key(key).unwrap();
+        assert_eq!(od.get_secret_base32(), key);
+    }
+
+    #[test]
+    fn from_url_basic_totp_parsed() {
+        let url = "otpauth://totp/Github:john.doe%40github.com?issuer=Github&secret=KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ&digits=6&algorithm=SHA1";
+        let od = OtpData::from_url(url).unwrap();
+        assert_eq!(od.digits, 6);
+        assert_eq!(od.period, 30);
+        assert_eq!(od.algorithm, OtpAlgorithm::SHA1);
+        assert_eq!(od.issuer.as_deref(), Some("Github"));
+    }
+
+    #[test]
+    fn from_url_sha256_algorithm_parsed() {
+        let url = "otpauth://totp/None?secret=HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ&digits=8&period=30&algorithm=SHA256";
+        let od = OtpData::from_url(url).unwrap();
+        assert_eq!(od.algorithm, OtpAlgorithm::SHA256);
+        assert_eq!(od.digits, 8);
+    }
+
+    #[test]
+    fn from_url_sha512_algorithm_parsed() {
+        let url = "otpauth://totp/None?secret=HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ&algorithm=SHA512";
+        let od = OtpData::from_url(url).unwrap();
+        assert_eq!(od.algorithm, OtpAlgorithm::SHA512);
+    }
+
+    #[test]
+    fn from_url_hotp_is_rejected() {
+        let result = OtpData::from_url("otpauth://hotp/Github?secret=KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn from_url_missing_secret_is_error() {
+        let result = OtpData::from_url("otpauth://totp/GitHub:test");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn from_url_non_otpauth_scheme_is_error() {
+        let result = OtpData::from_url("https://example.com/totp?secret=KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn from_url_digits_above_max_is_error() {
+        let url = "otpauth://totp/None?secret=HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ&digits=11";
+        assert!(OtpData::from_url(url).is_err());
+    }
+
+    #[test]
+    fn from_url_digits_below_min_is_error() {
+        let url = "otpauth://totp/None?secret=HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ&digits=5";
+        assert!(OtpData::from_url(url).is_err());
+    }
+
+    #[test]
+    fn from_url_period_above_max_is_error() {
+        let url = "otpauth://totp/None?secret=HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ&period=61";
+        assert!(OtpData::from_url(url).is_err());
+    }
+
+    #[test]
+    fn from_url_period_zero_is_error() {
+        let url = "otpauth://totp/None?secret=HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ&period=0";
+        assert!(OtpData::from_url(url).is_err());
+    }
+
+    #[test]
+    fn from_url_roundtrip_via_get_url() {
+        let od = OtpData::new(
+            OtpAlgorithm::SHA1,
+            "KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ",
+            6,
+            30,
+            Some("Github".to_string()),
+            Some("john.doe@github.com".to_string()),
+        )
+        .unwrap();
+        let url = od.get_url();
+        let od2 = OtpData::from_url(&url).unwrap();
+        assert_eq!(od.get_secret_base32(), od2.get_secret_base32());
+        assert_eq!(od.digits, od2.digits);
+        assert_eq!(od.period, od2.period);
+        assert_eq!(od.algorithm, od2.algorithm);
+    }
+
+    #[test]
+    fn get_url_omits_default_digits_and_period() {
+        // Default: digits=6, period=30, algorithm=SHA1 — none of these should appear in URL
+        let od = OtpData::new(
+            OtpAlgorithm::SHA1,
+            "KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ",
+            6,
+            30,
+            None,
+            Some("user".to_string()),
+        )
+        .unwrap();
+        let url = od.get_url();
+        assert!(!url.contains("digits="));
+        assert!(!url.contains("period="));
+        assert!(!url.contains("algorithm="));
+    }
+
+    #[test]
+    fn generate_token_with_rfc_sha1_vector() {
+        // RFC 6238 Appendix B: SHA1, time=59 → "94287082" (8 digits)
+        let od = OtpData::new(
+            OtpAlgorithm::SHA1,
+            "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+            8,
+            30,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(od.generate(59).unwrap(), "94287082");
+    }
+
+    #[test]
+    fn otp_settings_from_key_creates_correct_url() {
+        let settings = OtpSettings {
+            secret_or_url: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".into(),
+            period: None,
+            digits: None,
+            hash_algorithm: None,
+        };
+        let url = settings.otp_url().unwrap();
+        assert!(url.starts_with("otpauth://totp/"));
+        assert!(url.contains("secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"));
+    }
+
+    #[test]
+    fn otp_settings_period_out_of_range_is_error() {
+        let settings = OtpSettings {
+            secret_or_url: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".into(),
+            period: Some(0),
+            digits: None,
+            hash_algorithm: None,
+        };
+        assert!(OtpData::from_otp_settings(&settings).is_err());
+    }
+
+    #[test]
+    fn otp_settings_digits_out_of_range_is_error() {
+        let settings = OtpSettings {
+            secret_or_url: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TFOQ".into(),
+            period: None,
+            digits: Some(11),
+            hash_algorithm: None,
+        };
+        assert!(OtpData::from_otp_settings(&settings).is_err());
+    }
 }
 
 /*

@@ -4,6 +4,9 @@
 mod attachment;
 mod io;
 
+// Passkey DB types and functions — compiled on all platforms (no cfg gate).
+pub mod passkey;
+
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub mod browser_extension;
 
@@ -157,6 +160,16 @@ type MainStore = Arc<Mutex<HashMap<String, KdbxContext>>>;
 fn main_store() -> &'static MainStore {
     static MAIN_STORE: Lazy<MainStore> = Lazy::new(Default::default);
     &MAIN_STORE
+}
+
+/// Inserts a `KdbxFile` directly into the in-memory cache.
+///
+/// Intended **only** for unit tests that need to populate the cache without
+/// going through the full disk-IO path (i.e. without calling `create_kdbx` or
+/// `load_kdbx`).
+#[cfg(test)]
+pub(crate) fn insert_kdbx_for_test(kdbx_file: KdbxFile) {
+    KdbxContext::insert(kdbx_file);
 }
 
 // Gets a ref to the main keepass content

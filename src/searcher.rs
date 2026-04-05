@@ -218,6 +218,120 @@ mod tests {
 
         println!("m is {}", m);
     }
+
+    // --- Non-ignored unit tests ---
+
+    fn make_test_entry() -> Entry {
+        let mut e = Entry::new();
+        e.tags = "Banks;Finance".into();
+        e.entry_field.insert_key_value(KeyValue {
+            key: "Title".into(),
+            value: "MyBank".into(),
+            protected: false,
+            data_type: FieldDataType::default(),
+        });
+        e.entry_field.insert_key_value(KeyValue {
+            key: "UserName".into(),
+            value: "alice".into(),
+            protected: false,
+            data_type: FieldDataType::default(),
+        });
+        e.entry_field.insert_key_value(KeyValue {
+            key: "Password".into(),
+            value: "Secr3t!".into(),
+            protected: true,
+            data_type: FieldDataType::default(),
+        });
+        e.entry_field.insert_key_value(KeyValue {
+            key: "URL".into(),
+            value: "https://mybank.com".into(),
+            protected: false,
+            data_type: FieldDataType::default(),
+        });
+        e
+    }
+
+    #[test]
+    fn search_matches_title_case_insensitive() {
+        let e = make_test_entry();
+        assert!(search_term_with_options("mybank", true, &e).unwrap());
+        assert!(search_term_with_options("MYBANK", true, &e).unwrap());
+    }
+
+    #[test]
+    fn search_does_not_match_title_wrong_case_sensitive() {
+        let e = make_test_entry();
+        // "MyBank" matches exactly (case-sensitive)
+        assert!(search_term_with_options("MyBank", false, &e).unwrap());
+        // "ALICE" does not match "alice" when case-sensitive
+        assert!(!search_term_with_options("ALICE", false, &e).unwrap());
+    }
+
+    #[test]
+    fn search_matches_tag_case_insensitive() {
+        let e = make_test_entry();
+        assert!(search_term_with_options("Banks", true, &e).unwrap());
+        assert!(search_term_with_options("finance", true, &e).unwrap());
+    }
+
+    #[test]
+    fn search_matches_protected_password_field() {
+        let e = make_test_entry();
+        assert!(search_term_with_options("Secr3t", true, &e).unwrap());
+    }
+
+    #[test]
+    fn search_matches_url_field() {
+        let e = make_test_entry();
+        assert!(search_term_with_options("mybank.com", true, &e).unwrap());
+    }
+
+    #[test]
+    fn search_empty_term_returns_false() {
+        let e = make_test_entry();
+        assert!(!search_term_with_options("", true, &e).unwrap());
+    }
+
+    #[test]
+    fn search_whitespace_only_returns_false() {
+        let e = make_test_entry();
+        assert!(!search_term_with_options("   ", true, &e).unwrap());
+    }
+
+    #[test]
+    fn search_no_match_returns_false() {
+        let e = make_test_entry();
+        assert!(!search_term_with_options("xyznonexistent", true, &e).unwrap());
+    }
+
+    #[test]
+    fn search_invalid_regex_returns_error() {
+        let e = make_test_entry();
+        let result = search_term_with_options("user\\", true, &e);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn search_matches_attachment_name() {
+        use crate::db_content::BinaryKeyValue;
+        let mut e = Entry::new();
+        e.binary_key_values.push(BinaryKeyValue {
+            key: "resume.pdf".into(),
+            value: String::default(),
+            index_ref: 0,
+            data_hash: 0,
+            data_size: 0,
+        });
+        assert!(search_term_with_options("resume", true, &e).unwrap());
+        assert!(!search_term_with_options("cover_letter", true, &e).unwrap());
+    }
+
+    #[test]
+    fn term_search_all_entry_fields_is_case_insensitive() {
+        let e = make_test_entry();
+        assert!(term_search_all_entry_fields("mybank", &e).unwrap());
+        assert!(term_search_all_entry_fields("ALICE", &e).unwrap());
+    }
 }
 
 // #[derive(Serialize, Deserialize)]

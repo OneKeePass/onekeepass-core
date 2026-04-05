@@ -342,10 +342,13 @@ fn general_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
 
 fn group_category_details(keepass_file: &KeepassFile) -> Vec<CategoryDetail> {
     let mut group_categories: Vec<CategoryDetail> = vec![];
+    let deleted_uuids: std::collections::HashSet<Uuid> =
+        keepass_file.deleted_group_uuids().into_iter().collect();
 
-    // By calling get_all_groups with true we are excluding recycle bin group from category
+    // get_all_groups(true) excludes the recycle bin group itself;
+    // the deleted_uuids filter excludes groups deleted into the recycle bin.
     for group in keepass_file.root.get_all_groups(true) {
-        if group.is_in_category() {
+        if !deleted_uuids.contains(&group.uuid) && group.is_in_category() {
             group_categories.push(CategoryDetail {
                 title: group.name.clone(),
                 display_title: None,
@@ -437,5 +440,58 @@ pub fn combined_category_details(
         general_categories,
         grouping_kind,
         grouped_categories,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EntryCategoryGrouping;
+
+    #[test]
+    fn entry_category_grouping_from_types_string() {
+        assert!(matches!(
+            EntryCategoryGrouping::from("Types"),
+            EntryCategoryGrouping::AsTypes
+        ));
+    }
+
+    #[test]
+    fn entry_category_grouping_from_tags_string() {
+        assert!(matches!(
+            EntryCategoryGrouping::from("Tags"),
+            EntryCategoryGrouping::AsTags
+        ));
+    }
+
+    #[test]
+    fn entry_category_grouping_from_categories_string() {
+        assert!(matches!(
+            EntryCategoryGrouping::from("Categories"),
+            EntryCategoryGrouping::AsGroupCategories
+        ));
+    }
+
+    #[test]
+    fn entry_category_grouping_from_group_string() {
+        assert!(matches!(
+            EntryCategoryGrouping::from("Group"),
+            EntryCategoryGrouping::AsGroupCategories
+        ));
+    }
+
+    #[test]
+    fn entry_category_grouping_from_unknown_defaults_to_group_categories() {
+        assert!(matches!(
+            EntryCategoryGrouping::from("SomethingUnknown"),
+            EntryCategoryGrouping::AsGroupCategories
+        ));
+    }
+
+    #[test]
+    fn entry_category_grouping_from_empty_defaults_to_group_categories() {
+        assert!(matches!(
+            EntryCategoryGrouping::from(""),
+            EntryCategoryGrouping::AsGroupCategories
+        ));
     }
 }

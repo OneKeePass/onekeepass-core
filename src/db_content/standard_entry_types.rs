@@ -88,11 +88,20 @@ lazy_static! {
                 FieldDef::new(URL),
                 FieldDef::new(ADDITIONAL_URLS),
             ],
-
         },
         Section {
             name: ADDITIONAL_ONE_TIME_PASSWORDS.into(),
             field_defs: vec![],
+        },
+        Section {
+            name: PASSKEY_DETAILS.into(),
+            field_defs: vec![
+                FieldDef::new(KPEX_PASSKEY_USERNAME),
+                FieldDef::new(KPEX_PASSKEY_RELYING_PARTY),
+                FieldDef::new(KPEX_PASSKEY_USER_HANDLE).set_require_protection(true),
+                FieldDef::new(KPEX_PASSKEY_CREDENTIAL_ID).set_require_protection(true),
+                FieldDef::new(KPEX_PASSKEY_PRIVATE_KEY_PEM).set_require_protection(true),
+            ],
         },
         ],
     };

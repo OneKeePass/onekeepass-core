@@ -1,5 +1,10 @@
+// Browser extension credential lookup helpers (desktop only).
+//
+// Passkey types and functions have moved to [`super::passkey`] which is
+// compiled on all platforms.  This module re-exports the types that existing
+// desktop callers referenced via `browser_extension::`.
+
 use serde::Serialize;
-use uuid::Uuid;
 
 use crate::constants::entry_keyvalue_key::ADDITIONAL_URLS;
 use crate::constants::entry_keyvalue_key::PASSWORD;
@@ -7,9 +12,7 @@ use crate::constants::entry_keyvalue_key::TITLE;
 use crate::constants::entry_keyvalue_key::URL;
 use crate::constants::entry_keyvalue_key::USER_NAME;
 use crate::db_content::KeepassFile;
-use crate::db_service::call_kdbx_context_mut_action;
-use crate::db_service::call_main_content_action;
-use crate::db_service::KdbxContext;
+use crate::db_service::{call_main_content_action, call_kdbx_context_mut_action, KdbxContext};
 use crate::error::Error;
 use crate::error::Result;
 use crate::form_data::parsing::EntryPlaceHolderParser;
@@ -17,9 +20,23 @@ use crate::form_data::EntrySummary;
 use crate::util;
 
 use url::Url;
+use uuid::Uuid;
 
-// NOTE: To use this macro in this module, we need to import all fns that used in that macros as well to this module
+// NOTE: To use these macros in this module, we need to import all fns used
+// inside the macro expansion as well.
 use crate::main_content_action;
+
+// Re-export passkey types for backward compatibility with desktop callers that
+// previously imported them from this module.
+pub use super::passkey::{
+    EntryBasicInfo, GroupInfo, PasskeyEntry, PasskeySummary, PasskeyStorageInfo,
+    create_and_store_passkey, find_matching_passkeys, get_db_groups, get_db_name,
+    get_group_entries, get_passkey_for_assertion, store_passkey_entry,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Browser credential lookup (URL-based, non-passkey)
+// ─────────────────────────────────────────────────────────────────────────────
 
 #[derive(Default, Serialize, Debug)]
 pub struct MatchedDbEntries {
@@ -103,7 +120,7 @@ fn find_matching_entries_in_db(db_key: &str, input_url: &str) -> Result<MatchedD
 
                     // The final matched flag should be true to consider
                     if !matched {
-                        // No match either with entry url or with additional url 
+                        // No match either with entry url or with additional url
                         return None;
                     }
                 }
@@ -143,7 +160,6 @@ fn url_matched(input: &str, entry_field_val: &str) -> bool {
         return false;
     };
 
-
     // log::debug!("entry_url.scheme {:?}, entry_url.domain {:?}, entry_url.path {}",entry_url.scheme(),entry_url.domain(),entry_url.path() );
 
     input_url.scheme() == entry_url.scheme()
@@ -153,7 +169,8 @@ fn url_matched(input: &str, entry_field_val: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::db_service::browser_extension::url_matched;
+    use super::*;
+
     #[ignore]
     #[test]
     fn verify_url_matching() {
@@ -170,21 +187,3 @@ mod tests {
         println!("r2 is {}", r);
     }
 }
-
-
-/*
-
-fn main() {
-    let text = "apple banana cherry";
-    let fruits: Vec<&str> = text.split_whitespace().collect();
-    println!("{:?}", fruits); // Output: ["apple", "banana", "cherry"]
-}
-
-
-fn main() {
-    let text = "apple\tbanana\ncherry";
-    let fruits: Vec<&str> = text.split(|c: char| c.is_whitespace()).collect();
-    println!("{:?}", fruits); // Output: ["apple", "banana", "cherry"]
-}
-
-*/
