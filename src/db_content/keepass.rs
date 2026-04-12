@@ -94,6 +94,17 @@ impl KeepassFile {
         self.root.insert_entry(entry)
     }
 
+    // Cross-db move variant. Rebinds meta_share to this KeepassFile's meta (so the
+    // entry's EntryType lookups resolve against the target db's custom entry types)
+    // and then inserts without pushing onto the parent's entry_uuids list.
+    pub(crate) fn insert_entry_cross_db(&mut self, mut entry: Entry) -> Result<()> {
+        entry.meta_share = self.meta.clone_meta_share();
+        for h in entry.history.entries.iter_mut() {
+            h.meta_share = self.meta.clone_meta_share();
+        }
+        self.root.insert_entry_cross_db(entry)
+    }
+
     // Called after reading xml content
     pub(crate) fn after_xml_reading(
         &mut self,

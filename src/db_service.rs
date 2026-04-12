@@ -997,6 +997,151 @@ pub fn move_entry(db_key: &str, entry_uuid: Uuid, new_parent_id: Uuid) -> Result
     })
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CrossDbMoveSummary {
+    pub moved_entry_count: usize,
+    pub moved_group_count: usize,
+    pub source_db_key: String,
+    pub target_db_key: String,
+    pub target_parent_group_name: String,
+}
+
+pub fn move_entry_to_other_db(
+    source_db_key: &str,
+    entry_uuid: &Uuid,
+    target_db_key: &str,
+    target_parent_group_uuid: &Uuid,
+) -> Result<CrossDbMoveSummary> {
+    if source_db_key == target_db_key {
+        return Err(Error::UnexpectedError(
+            "Source and target databases must be different for cross-db move".into(),
+        ));
+    }
+
+    let summary = {
+        let mut store = main_store().lock().unwrap();
+        let [target_opt, source_opt] =
+            store.get_disjoint_mut([target_db_key, source_db_key]);
+        let target_ctx = target_opt
+            .ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
+        let source_ctx = source_opt
+            .ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
+
+        // Copy all source attachments into the target. The storage is content-addressed
+        // by hash so unreferenced extras are filtered out at save time.
+        let source_attachments = source_ctx.kdbx_file.attachmentset().clone();
+        target_ctx
+            .kdbx_file
+            .insert_or_update_with_attachmentset(&source_attachments);
+
+        let result = {
+            let source_kp = source_ctx
+                .kdbx_file
+                .keepass_main_content
+                .as_mut()
+                .ok_or_else(|| {
+                    Error::NotFound("Source keepass main content is not available".into())
+                })?;
+            let target_kp = target_ctx
+                .kdbx_file
+                .keepass_main_content
+                .as_mut()
+                .ok_or_else(|| {
+                    Error::NotFound("Target keepass main content is not available".into())
+                })?;
+            crate::db_content::move_entry_between_keepass_files(
+                source_kp,
+                target_kp,
+                entry_uuid,
+                target_parent_group_uuid,
+            )?
+        };
+
+        let now = util::now_utc();
+        source_ctx.last_write_time = now;
+        source_ctx.save_pending = true;
+        target_ctx.last_write_time = now;
+        target_ctx.save_pending = true;
+
+        CrossDbMoveSummary {
+            moved_entry_count: result.moved_entry_uuids.len(),
+            moved_group_count: result.moved_group_uuids.len(),
+            source_db_key: source_db_key.to_string(),
+            target_db_key: target_db_key.to_string(),
+            target_parent_group_name: result.target_parent_group_name,
+        }
+    };
+
+    Ok(summary)
+}
+
+pub fn move_group_to_other_db(
+    source_db_key: &str,
+    group_uuid: &Uuid,
+    target_db_key: &str,
+    target_parent_group_uuid: &Uuid,
+) -> Result<CrossDbMoveSummary> {
+    if source_db_key == target_db_key {
+        return Err(Error::UnexpectedError(
+            "Source and target databases must be different for cross-db move".into(),
+        ));
+    }
+
+    let summary = {
+        let mut store = main_store().lock().unwrap();
+        let [target_opt, source_opt] =
+            store.get_disjoint_mut([target_db_key, source_db_key]);
+        let target_ctx = target_opt
+            .ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
+        let source_ctx = source_opt
+            .ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
+
+        let source_attachments = source_ctx.kdbx_file.attachmentset().clone();
+        target_ctx
+            .kdbx_file
+            .insert_or_update_with_attachmentset(&source_attachments);
+
+        let result = {
+            let source_kp = source_ctx
+                .kdbx_file
+                .keepass_main_content
+                .as_mut()
+                .ok_or_else(|| {
+                    Error::NotFound("Source keepass main content is not available".into())
+                })?;
+            let target_kp = target_ctx
+                .kdbx_file
+                .keepass_main_content
+                .as_mut()
+                .ok_or_else(|| {
+                    Error::NotFound("Target keepass main content is not available".into())
+                })?;
+            crate::db_content::move_group_between_keepass_files(
+                source_kp,
+                target_kp,
+                group_uuid,
+                target_parent_group_uuid,
+            )?
+        };
+
+        let now = util::now_utc();
+        source_ctx.last_write_time = now;
+        source_ctx.save_pending = true;
+        target_ctx.last_write_time = now;
+        target_ctx.save_pending = true;
+
+        CrossDbMoveSummary {
+            moved_entry_count: result.moved_entry_uuids.len(),
+            moved_group_count: result.moved_group_uuids.len(),
+            source_db_key: source_db_key.to_string(),
+            target_db_key: target_db_key.to_string(),
+            target_parent_group_name: result.target_parent_group_name,
+        }
+    };
+
+    Ok(summary)
+}
+
 pub fn remove_entry_permanently(db_key: &str, entry_uuid: Uuid) -> Result<()> {
     main_content_mut_action!(db_key, move |k: &mut KeepassFile| {
         k.root.remove_entry_permanently(entry_uuid)
