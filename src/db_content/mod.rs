@@ -10,7 +10,8 @@ mod root;
 mod standard_entry_types;
 
 pub(crate) use self::cross_db_move::{
-    move_entry_between_keepass_files, move_group_between_keepass_files, CrossDbMoveResult,
+    clone_entry_to_other_db, move_entry_between_keepass_files, move_group_between_keepass_files,
+    CrossDbMoveResult,
 };
 
 pub(crate) use self::custom_data::{CustomData, Item};

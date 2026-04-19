@@ -1006,6 +1006,14 @@ pub struct CrossDbMoveSummary {
     pub target_parent_group_name: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CrossDbCloneSummary {
+    pub new_entry_uuid: Uuid,
+    pub source_db_key: String,
+    pub target_db_key: String,
+    pub target_parent_group_name: String,
+}
+
 pub fn move_entry_to_other_db(
     source_db_key: &str,
     entry_uuid: &Uuid,
@@ -1136,6 +1144,81 @@ pub fn move_group_to_other_db(
             source_db_key: source_db_key.to_string(),
             target_db_key: target_db_key.to_string(),
             target_parent_group_name: result.target_parent_group_name,
+        }
+    };
+
+    Ok(summary)
+}
+
+pub fn clone_entry_to_other_db(
+    source_db_key: &str,
+    entry_uuid: &Uuid,
+    target_db_key: &str,
+    target_parent_group_uuid: &Uuid,
+) -> Result<CrossDbCloneSummary> {
+    if source_db_key == target_db_key {
+        return Err(Error::UnexpectedError(
+            "Source and target databases must be different for cross-db clone".into(),
+        ));
+    }
+
+    let summary = {
+        let mut store = main_store().lock().unwrap();
+        let [target_opt, source_opt] =
+            store.get_disjoint_mut([target_db_key, source_db_key]);
+        let target_ctx = target_opt
+            .ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
+        let source_ctx = source_opt
+            .ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
+
+        // Copy all source attachments into target (content-addressed; unreferenced extras
+        // are filtered at save time — same approach as move)
+        let source_attachments = source_ctx.kdbx_file.attachmentset().clone();
+        target_ctx
+            .kdbx_file
+            .insert_or_update_with_attachmentset(&source_attachments);
+
+        let new_entry_uuid = {
+            let source_kp = source_ctx
+                .kdbx_file
+                .keepass_main_content
+                .as_ref() // immutable — clone_entry_to_other_db only reads source
+                .ok_or_else(|| {
+                    Error::NotFound("Source keepass main content is not available".into())
+                })?;
+            let target_kp = target_ctx
+                .kdbx_file
+                .keepass_main_content
+                .as_mut()
+                .ok_or_else(|| {
+                    Error::NotFound("Target keepass main content is not available".into())
+                })?;
+            crate::db_content::clone_entry_to_other_db(
+                source_kp,
+                target_kp,
+                entry_uuid,
+                target_parent_group_uuid,
+            )?
+        };
+
+        let target_parent_group_name = target_ctx
+            .kdbx_file
+            .keepass_main_content
+            .as_ref()
+            .and_then(|kp| kp.root.group_by_id(target_parent_group_uuid))
+            .map(|g| g.name.clone())
+            .unwrap_or_default();
+
+        // Only target is modified — source is unchanged
+        let now = util::now_utc();
+        target_ctx.last_write_time = now;
+        target_ctx.save_pending = true;
+
+        CrossDbCloneSummary {
+            new_entry_uuid,
+            source_db_key: source_db_key.to_string(),
+            target_db_key: target_db_key.to_string(),
+            target_parent_group_name,
         }
     };
 

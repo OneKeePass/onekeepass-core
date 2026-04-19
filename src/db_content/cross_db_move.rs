@@ -18,6 +18,64 @@ pub(crate) struct CrossDbMoveResult {
     pub(crate) target_parent_group_name: String,
 }
 
+pub(crate) fn clone_entry_to_other_db(
+    source: &KeepassFile,
+    target: &mut KeepassFile,
+    entry_uuid: &Uuid,
+    target_parent_group_uuid: &Uuid,
+) -> Result<Uuid> {
+    let source_entry = source
+        .root
+        .entry_by_id(entry_uuid)
+        .ok_or_else(|| Error::NotFound("Source entry not found".into()))?
+        .clone();
+
+    // Source entry must not be in the recycle bin
+    if is_inside_recycle_bin(&source.root, &source_entry.parent_group_uuid) {
+        return Err(Error::DataError(
+            "Entries inside the recycle bin cannot be cloned to another database",
+        ));
+    }
+
+    validate_target_parent(&target.root, target_parent_group_uuid)?;
+
+    let mut cloned = source_entry;
+
+    // New UUID - no collision check needed (new identity, not a preserved UUID)
+    cloned.uuid = uuid::Uuid::new_v4();
+    cloned.parent_group_uuid = *target_parent_group_uuid;
+
+    // Always clear history for cross-db clone
+    cloned.delete_history_entries();
+
+    // Collect icons/types now (history already cleared, so only main entry is scanned)
+    let mut icon_uuids: Vec<Uuid> = Vec::new();
+    collect_entry_icon_uuids(&cloned, &mut icon_uuids);
+
+    let mut entry_type_uuids: Vec<Uuid> = Vec::new();
+    collect_entry_type_uuids(&cloned, &mut entry_type_uuids);
+
+    let icons_to_copy = collect_owned_icons(&source.meta, &icon_uuids);
+    let entry_types_to_copy = collect_owned_entry_types(&source.meta, &entry_type_uuids);
+
+    copy_custom_icons_into(&mut target.meta, icons_to_copy);
+    copy_custom_entry_types_into(&mut target.meta, entry_types_to_copy);
+
+    // Reset all timestamps
+    let n = util::now_utc();
+    cloned.times.creation_time = n;
+    cloned.times.last_modification_time = n;
+    cloned.times.last_access_time = n;
+    cloned.times.location_changed = n;
+
+    let new_uuid = cloned.uuid;
+
+    // insert_entry rebinds meta_share to target and pushes uuid onto parent's entry_uuids list
+    target.insert_entry(cloned)?;
+
+    Ok(new_uuid)
+}
+
 pub(crate) fn move_entry_between_keepass_files(
     source: &mut KeepassFile,
     target: &mut KeepassFile,
