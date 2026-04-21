@@ -177,7 +177,10 @@ impl<'a> Merger<'a> {
             .ok_or_else(|| "Root target group is not found")?;
 
         // We determine whether source and target dbs are same or not
-        // based on the db's root group uuid
+        // based on the db's root group uuid. Here we are assuming that 
+        // this is true across different implementations of Keepass. This is true in OneKeePass
+        // If that assumption is not correct for other implementation, we need another method of establishing 
+        // whether the source and the destination dbs are copies of the same db 
         if source_root_group.get_uuid() == target_root_group.get_uuid() {
             // Source root group is newer than target root group
             if source_root_group.last_modification_time()
@@ -196,8 +199,8 @@ impl<'a> Merger<'a> {
                 );
             }
 
-            // Need to enusre that both source and target use the same recycle group
-            // We may need to do this for any other special groups as when introduced
+            // Need to ensure that both source and target use the same recycle group
+            // We may also need to do this for any other special groups as when introduced
             let source_recycle_bin_uuid = self.source_db.root.recycle_bin_uuid();
             self.target_db
                 .root
@@ -246,7 +249,7 @@ impl<'a> Merger<'a> {
             // TODO:
             // Copy any custom entry type definitions stored in custom data of source meta to meta's custom data of target
 
-            // Copy all deleted objects from sourc db to target
+            // Copy all deleted objects from source db to target
         }
 
         self.merge_result.finalize_merge_done();
@@ -306,6 +309,7 @@ impl<'a> Merger<'a> {
         }
     }
 
+    // Recursively merges the groups
     fn merge_groups(&mut self, source_group: &Group) -> Result<()> {
         // log::debug!(
         //     "-- GROUP merge_groups is called for source_group {} ",
@@ -398,6 +402,7 @@ impl<'a> Merger<'a> {
         Ok(())
     }
 
+    // Recursively merges the entries
     fn merge_entries(&mut self, source_group: &Group) -> Result<()> {
         let source_db_root = &self.source_db.root;
 
@@ -589,6 +594,12 @@ impl<'a> Merger<'a> {
         for (uuid, last_modification_time) in deleted_object_entries {
             if let Some(d) = merged_deleted_objects_m.get(&uuid) {
                 if last_modification_time < d.deletion_time {
+                    // If the entry is alive in the source database, the source explicitly
+                    // carries it as a live entry. The deletion record is stale — skip removal.
+                    if self.source_db.root.entry_by_id(&uuid).is_some() {
+                        continue;
+                    }
+
                     let name = self
                         .target_db
                         .root
@@ -635,6 +646,12 @@ impl<'a> Merger<'a> {
                 // This group is modified later in one db after deletion in another db
                 // Skip this group from deletion
                 if last_modification_time > d.deletion_time {
+                    continue;
+                }
+
+                // If the group is alive in the source database, the deletion record is stale.
+                // A live group in source takes precedence over the deleted_objects entry.
+                if self.source_db.root.group_by_id(&uuid).is_some() {
                     continue;
                 }
 

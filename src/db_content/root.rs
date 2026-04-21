@@ -118,6 +118,8 @@ impl Root {
         self.deleted_objects.push(deleted_object);
     }
 
+    // Add the uuid to the "DeletedObjects" to mark permanent removal of a group or an Entry.
+    // Useful during merging dbs. See aslo comments about DELETED_OBJECTS in src/constants.rs 
     pub(crate) fn add_deleted_object_by_id(&mut self, uuid: Uuid) {
         self.deleted_objects.push(DeletedObject {
             uuid,

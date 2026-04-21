@@ -18,7 +18,7 @@ pub mod browser_extension;
 // #[cfg(any( target_os = "ios",target_os = "android"))]
 // pub mod storage;
 
-use crate::db::KdbxFile;
+use crate::db::{self, KdbxFile};
 use crate::db_content::{standard_types_ordered_by_id, Entry, KeepassFile, OtpData};
 use crate::db_merge;
 use crate::form_data;
@@ -1347,6 +1347,54 @@ pub fn merge_databases(
     }
 
     Ok(merge_result)
+}
+
+// Desktop-only: merges the on-disk version of the DB into the in-memory version.
+// Uses the stored composite key — no credential re-entry needed.
+// Sets save_pending = true on success so the UI knows unsaved changes exist.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub fn merge_kdbx_with_disk_version(db_key: &str) -> Result<MergeResult> {
+    call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
+        // Load the on-disk version which will decrypted using the stored composite key.
+        let mut reader = db::open_db_file(db_key)?;
+        
+        debug!("The db file {} is loaded to merge", &db_key);
+        
+        // if let Some(kc) = ctx.kdbx_file.keepass_main_content.as_ref() {
+        //     debug!("before merging Ctx all entries count{} ", kc.root.all_entries().len());
+        // } 
+
+        // debug!(ctx.kdbx_file.all_entries);
+        // db::reload() clones ctx.kdbx_file (including encrypted composite key) and decrypts.
+        // If the on-disk file was re-encrypted with different credentials, reload returns
+        // HeaderHmacHashCheckFailed — remap it to a specific error so the frontend can
+        // show a targeted message instead of a generic "invalid credentials" prompt.
+        let disk_kdbx = db::reload(&mut reader, &ctx.kdbx_file).map_err(|e| match e {
+            Error::HeaderHmacHashCheckFailed => Error::MergeFailedCredentialsChanged,
+            other => other,
+        })?;
+        
+        debug!("Db is reloaded from file system");
+
+        // if let Some(kc) = disk_kdbx.keepass_main_content.as_ref() {
+        //     debug!("Disk all entries count {} ", kc.root.all_entries().len());
+        // } 
+
+        // Merge: disk version = source, in-memory version = target
+        let merge_result =
+            db_merge::Merger::from_kdbx_file(&disk_kdbx, &mut ctx.kdbx_file).merge()?;
+
+        // Update checksum to the on-disk state so the watcher won't re-fire for this change.
+        // calculate_db_file_checksum rewinds reader internally before reading.
+        ctx.kdbx_file.checksum_hash = db::calculate_db_file_checksum(&mut reader)?;
+        ctx.save_pending = true;
+
+        // if let Some(kc) = ctx.kdbx_file.keepass_main_content.as_ref() {
+        //     debug!("After merging Ctx all entries count{} ", kc.root.all_entries().len());
+        // } 
+
+        Ok(merge_result)
+    })
 }
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
