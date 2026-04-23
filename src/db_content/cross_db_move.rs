@@ -98,8 +98,9 @@ pub(crate) fn move_entry_between_keepass_files(
     validate_target_parent(&target.root, target_parent_group_uuid)?;
 
     if target.root.entry_by_id(entry_uuid).is_some() {
-        return Err(Error::DataError(
-            "An entry with the same uuid already exists in the target database",
+        return Err(Error::DataError("ErrorEntryUuidExistsInTarget"
+            // "An entry with the same uuid already exists in the target database. \
+            //  If these databases are copies, use 'Merge Opened Databases' from the Database menu.",
         ));
     }
 
@@ -186,15 +187,15 @@ pub(crate) fn move_group_between_keepass_files(
 
     for gid in &all_subtree_group_ids {
         if target.root.group_by_id(gid).is_some() {
-            return Err(Error::DataError(
-                "A group with the same uuid already exists in the target database",
+            return Err(Error::DataError("ErrorGroupUuidExistsInTarget"
+                // "A group with the same uuid already exists in the target database",
             ));
         }
     }
     for eid in &subtree_entry_ids {
         if target.root.entry_by_id(eid).is_some() {
-            return Err(Error::DataError(
-                "An entry with the same uuid already exists in the target database",
+            return Err(Error::DataError("ErrorEntryUuidExistsInTarget"
+                // "An entry with the same uuid already exists in the target database",
             ));
         }
     }

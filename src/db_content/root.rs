@@ -798,12 +798,14 @@ impl Root {
     pub(crate) fn insert_entry_cross_db(&mut self, mut entry: Entry) -> Result<()> {
         if self.all_entries.contains_key(&entry.uuid) {
             return Err(Error::DataError(
-                "insert_entry_cross_db: an entry with the same uuid already exists",
+                "ErrorEntryUuidExistsInTarget"
+                //"insert_entry_cross_db: an entry with the same uuid already exists",
             ));
         }
         if !self.all_groups.contains_key(&entry.parent_group_uuid) {
-            return Err(Error::NotFound(
-                "insert_entry_cross_db: parent group is not present in target".into(),
+            return Err(Error::DataError(
+                "ErrorGroupUuidExistsInTarget"
+                //"insert_entry_cross_db: parent group is not present in target".into(),
             ));
         }
         entry.complete_insert();
@@ -822,7 +824,8 @@ impl Root {
     ) -> Result<()> {
         if self.all_groups.contains_key(&group.uuid) {
             return Err(Error::DataError(
-                "insert_group_cross_db: a group with the same uuid already exists",
+                "ErrorEntryUuidExistsInTarget"
+                // "insert_group_cross_db: a group with the same uuid already exists",
             ));
         }
         if !self.all_groups.contains_key(&group.parent_group_uuid) {
