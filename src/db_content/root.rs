@@ -118,6 +118,8 @@ impl Root {
         self.deleted_objects.push(deleted_object);
     }
 
+    // Add the uuid to the "DeletedObjects" to mark permanent removal of a group or an Entry.
+    // Useful during merging dbs. See aslo comments about DELETED_OBJECTS in src/constants.rs 
     pub(crate) fn add_deleted_object_by_id(&mut self, uuid: Uuid) {
         self.deleted_objects.push(DeletedObject {
             uuid,
@@ -769,6 +771,132 @@ impl Root {
         Ok(())
     }
 
+    // Removes an entry from all_entries and from its parent's entry_uuids, regardless of
+    // whether the entry sits inside the recycle bin. A DeletedObject marker is added so a
+    // future merge of the source db against a peer knows the entry left this database.
+    pub(crate) fn remove_entry_cross_db_move(&mut self, entry_uuid: &Uuid) -> Result<()> {
+        verify_uuid!(self, *entry_uuid, all_entries);
+
+        let entry = self
+            .all_entries
+            .remove(entry_uuid)
+            .ok_or_else(|| "The entry is not found in All entries")?;
+
+        if let Some(old_parent) = self.all_groups.get_mut(&entry.parent_group_uuid) {
+            old_parent.entry_uuids.retain(|&id| id != *entry_uuid);
+        }
+
+        self.add_deleted_object_by_id(*entry_uuid);
+
+        Ok(())
+    }
+
+    // Inserts an entry whose parent group is already present in this db (having been
+    // inserted in the same cross-db operation). Unlike insert_entry, the parent's
+    // entry_uuids list is NOT touched because the cloned parent already carries this
+    // entry's uuid.
+    pub(crate) fn insert_entry_cross_db(&mut self, mut entry: Entry) -> Result<()> {
+        if self.all_entries.contains_key(&entry.uuid) {
+            return Err(Error::DataError(
+                "ErrorEntryUuidExistsInTarget"
+                //"insert_entry_cross_db: an entry with the same uuid already exists",
+            ));
+        }
+        if !self.all_groups.contains_key(&entry.parent_group_uuid) {
+            return Err(Error::DataError(
+                "ErrorGroupUuidExistsInTarget"
+                //"insert_entry_cross_db: parent group is not present in target".into(),
+            ));
+        }
+        entry.complete_insert();
+        self.all_entries.insert(entry.uuid, entry);
+        Ok(())
+    }
+
+    // Inserts a group into all_groups. When append_to_parent is true, the group's uuid
+    // is appended to its parent's group_uuids (used for the top-level of a moved subtree).
+    // When false (used for descendant groups of a moved subtree), the parent already
+    // carries the child uuid via the cloned parent's preserved group_uuids list.
+    pub(crate) fn insert_group_cross_db(
+        &mut self,
+        group: Group,
+        append_to_parent: bool,
+    ) -> Result<()> {
+        if self.all_groups.contains_key(&group.uuid) {
+            return Err(Error::DataError(
+                "ErrorEntryUuidExistsInTarget"
+                // "insert_group_cross_db: a group with the same uuid already exists",
+            ));
+        }
+        if !self.all_groups.contains_key(&group.parent_group_uuid) {
+            return Err(Error::NotFound(
+                "insert_group_cross_db: parent group is not present in target".into(),
+            ));
+        }
+        if append_to_parent {
+            self.all_groups
+                .entry(group.parent_group_uuid)
+                .and_modify(|g| g.group_uuids.push(group.uuid));
+        }
+        self.all_groups.insert(group.uuid, group);
+        Ok(())
+    }
+
+    // Removes a whole subtree rooted at group_uuid regardless of recycle-bin state.
+    // Walks the subtree leaf-first: entries first, then descendant groups bottom-up,
+    // then the top-level group itself. Each removed uuid is recorded in deleted_objects.
+    // Rejects removal of the root group.
+    pub(crate) fn remove_group_subtree_cross_db_move(
+        &mut self,
+        group_uuid: &Uuid,
+    ) -> Result<()> {
+        verify_uuid!(self, *group_uuid, all_groups);
+
+        if *group_uuid == self.root_uuid {
+            return Err(Error::DataError(
+                "remove_group_subtree_cross_db_move: the root group cannot be removed",
+            ));
+        }
+
+        // Collect all descendant entries and groups.
+        let entry_ids = self.children_entry_uuids(group_uuid);
+        let descendant_group_ids = self.children_groups_uuids(group_uuid);
+
+        // Remove all entries first (from any depth in the subtree). Mark each deleted.
+        for eid in entry_ids {
+            let entry = self
+                .all_entries
+                .remove(&eid)
+                .ok_or_else(|| "A subtree entry is not found in All entries")?;
+            if let Some(parent) = self.all_groups.get_mut(&entry.parent_group_uuid) {
+                parent.entry_uuids.retain(|&id| id != eid);
+            }
+            self.add_deleted_object_by_id(eid);
+        }
+
+        // Remove descendant groups. children_groups_uuids returns descendants excluding
+        // the starting group; order is parent-before-children so we iterate in reverse
+        // to remove leaves first (safer if any integrity check ever walks children).
+        for gid in descendant_group_ids.into_iter().rev() {
+            self.all_groups
+                .remove(&gid)
+                .ok_or_else(|| "A subtree group is not found in All groups")?;
+            self.add_deleted_object_by_id(gid);
+        }
+
+        // Remove the top-level group itself and detach it from its parent.
+        let g = self
+            .all_groups
+            .remove(group_uuid)
+            .ok_or_else(|| "The top-level group is not found in All groups")?;
+        if let Some(parent) = self.all_groups.get_mut(&g.parent_group_uuid) {
+            parent.group_uuids.retain(|&id| id != *group_uuid);
+        }
+        self.add_deleted_object_by_id(*group_uuid);
+
+        Ok(())
+    }
+
     /// Moves a group from one parent group to another group
     pub fn move_group(&mut self, group_uuid: Uuid, new_parent_id: Uuid) -> Result<()> {
         verify_uuid!(self, group_uuid, all_groups);
@@ -1212,7 +1340,7 @@ impl Root {
     }
 
     // Gets all sub groups' uuids found under a group with the group_uuid
-    fn children_groups_uuids(&self, group_uuid: &Uuid) -> Vec<Uuid> {
+    pub(crate) fn children_groups_uuids(&self, group_uuid: &Uuid) -> Vec<Uuid> {
         let mut acc = InOrderIds {
             ids: vec![],
             entry_ids_wanted: false,

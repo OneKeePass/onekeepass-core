@@ -18,7 +18,7 @@ pub mod browser_extension;
 // #[cfg(any( target_os = "ios",target_os = "android"))]
 // pub mod storage;
 
-use crate::db::KdbxFile;
+use crate::db::{self, KdbxFile};
 use crate::db_content::{standard_types_ordered_by_id, Entry, KeepassFile, OtpData};
 use crate::db_merge;
 use crate::form_data;
@@ -997,6 +997,234 @@ pub fn move_entry(db_key: &str, entry_uuid: Uuid, new_parent_id: Uuid) -> Result
     })
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CrossDbMoveSummary {
+    pub moved_entry_count: usize,
+    pub moved_group_count: usize,
+    pub source_db_key: String,
+    pub target_db_key: String,
+    pub target_parent_group_name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CrossDbCloneSummary {
+    pub new_entry_uuid: Uuid,
+    pub source_db_key: String,
+    pub target_db_key: String,
+    pub target_parent_group_name: String,
+}
+
+pub fn move_entry_to_other_db(
+    source_db_key: &str,
+    entry_uuid: &Uuid,
+    target_db_key: &str,
+    target_parent_group_uuid: &Uuid,
+) -> Result<CrossDbMoveSummary> {
+    if source_db_key == target_db_key {
+        return Err(Error::UnexpectedError(
+            "Source and target databases must be different for cross-db move".into(),
+        ));
+    }
+
+    let summary = {
+        let mut store = main_store().lock().unwrap();
+        let [target_opt, source_opt] =
+            store.get_disjoint_mut([target_db_key, source_db_key]);
+        let target_ctx = target_opt
+            .ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
+        let source_ctx = source_opt
+            .ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
+
+        // Copy all source attachments into the target. The storage is content-addressed
+        // by hash so unreferenced extras are filtered out at save time.
+        let source_attachments = source_ctx.kdbx_file.attachmentset().clone();
+        target_ctx
+            .kdbx_file
+            .insert_or_update_with_attachmentset(&source_attachments);
+
+        let result = {
+            let source_kp = source_ctx
+                .kdbx_file
+                .keepass_main_content
+                .as_mut()
+                .ok_or_else(|| {
+                    Error::NotFound("Source keepass main content is not available".into())
+                })?;
+            let target_kp = target_ctx
+                .kdbx_file
+                .keepass_main_content
+                .as_mut()
+                .ok_or_else(|| {
+                    Error::NotFound("Target keepass main content is not available".into())
+                })?;
+            crate::db_content::move_entry_between_keepass_files(
+                source_kp,
+                target_kp,
+                entry_uuid,
+                target_parent_group_uuid,
+            )?
+        };
+
+        let now = util::now_utc();
+        source_ctx.last_write_time = now;
+        source_ctx.save_pending = true;
+        target_ctx.last_write_time = now;
+        target_ctx.save_pending = true;
+
+        CrossDbMoveSummary {
+            moved_entry_count: result.moved_entry_uuids.len(),
+            moved_group_count: result.moved_group_uuids.len(),
+            source_db_key: source_db_key.to_string(),
+            target_db_key: target_db_key.to_string(),
+            target_parent_group_name: result.target_parent_group_name,
+        }
+    };
+
+    Ok(summary)
+}
+
+pub fn move_group_to_other_db(
+    source_db_key: &str,
+    group_uuid: &Uuid,
+    target_db_key: &str,
+    target_parent_group_uuid: &Uuid,
+) -> Result<CrossDbMoveSummary> {
+    if source_db_key == target_db_key {
+        return Err(Error::UnexpectedError(
+            "Source and target databases must be different for cross-db move".into(),
+        ));
+    }
+
+    let summary = {
+        let mut store = main_store().lock().unwrap();
+        let [target_opt, source_opt] =
+            store.get_disjoint_mut([target_db_key, source_db_key]);
+        let target_ctx = target_opt
+            .ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
+        let source_ctx = source_opt
+            .ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
+
+        let source_attachments = source_ctx.kdbx_file.attachmentset().clone();
+        target_ctx
+            .kdbx_file
+            .insert_or_update_with_attachmentset(&source_attachments);
+
+        let result = {
+            let source_kp = source_ctx
+                .kdbx_file
+                .keepass_main_content
+                .as_mut()
+                .ok_or_else(|| {
+                    Error::NotFound("Source keepass main content is not available".into())
+                })?;
+            let target_kp = target_ctx
+                .kdbx_file
+                .keepass_main_content
+                .as_mut()
+                .ok_or_else(|| {
+                    Error::NotFound("Target keepass main content is not available".into())
+                })?;
+            crate::db_content::move_group_between_keepass_files(
+                source_kp,
+                target_kp,
+                group_uuid,
+                target_parent_group_uuid,
+            )?
+        };
+
+        let now = util::now_utc();
+        source_ctx.last_write_time = now;
+        source_ctx.save_pending = true;
+        target_ctx.last_write_time = now;
+        target_ctx.save_pending = true;
+
+        CrossDbMoveSummary {
+            moved_entry_count: result.moved_entry_uuids.len(),
+            moved_group_count: result.moved_group_uuids.len(),
+            source_db_key: source_db_key.to_string(),
+            target_db_key: target_db_key.to_string(),
+            target_parent_group_name: result.target_parent_group_name,
+        }
+    };
+
+    Ok(summary)
+}
+
+pub fn clone_entry_to_other_db(
+    source_db_key: &str,
+    entry_uuid: &Uuid,
+    target_db_key: &str,
+    target_parent_group_uuid: &Uuid,
+) -> Result<CrossDbCloneSummary> {
+    if source_db_key == target_db_key {
+        return Err(Error::UnexpectedError(
+            "Source and target databases must be different for cross-db clone".into(),
+        ));
+    }
+
+    let summary = {
+        let mut store = main_store().lock().unwrap();
+        let [target_opt, source_opt] =
+            store.get_disjoint_mut([target_db_key, source_db_key]);
+        let target_ctx = target_opt
+            .ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
+        let source_ctx = source_opt
+            .ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
+
+        // Copy all source attachments into target (content-addressed; unreferenced extras
+        // are filtered at save time — same approach as move)
+        let source_attachments = source_ctx.kdbx_file.attachmentset().clone();
+        target_ctx
+            .kdbx_file
+            .insert_or_update_with_attachmentset(&source_attachments);
+
+        let new_entry_uuid = {
+            let source_kp = source_ctx
+                .kdbx_file
+                .keepass_main_content
+                .as_ref() // immutable — clone_entry_to_other_db only reads source
+                .ok_or_else(|| {
+                    Error::NotFound("Source keepass main content is not available".into())
+                })?;
+            let target_kp = target_ctx
+                .kdbx_file
+                .keepass_main_content
+                .as_mut()
+                .ok_or_else(|| {
+                    Error::NotFound("Target keepass main content is not available".into())
+                })?;
+            crate::db_content::clone_entry_to_other_db(
+                source_kp,
+                target_kp,
+                entry_uuid,
+                target_parent_group_uuid,
+            )?
+        };
+
+        let target_parent_group_name = target_ctx
+            .kdbx_file
+            .keepass_main_content
+            .as_ref()
+            .and_then(|kp| kp.root.group_by_id(target_parent_group_uuid))
+            .map(|g| g.name.clone())
+            .unwrap_or_default();
+
+        // Only target is modified — source is unchanged
+        let now = util::now_utc();
+        target_ctx.last_write_time = now;
+        target_ctx.save_pending = true;
+
+        CrossDbCloneSummary {
+            new_entry_uuid,
+            source_db_key: source_db_key.to_string(),
+            target_db_key: target_db_key.to_string(),
+            target_parent_group_name,
+        }
+    };
+
+    Ok(summary)
+}
+
 pub fn remove_entry_permanently(db_key: &str, entry_uuid: Uuid) -> Result<()> {
     main_content_mut_action!(db_key, move |k: &mut KeepassFile| {
         k.root.remove_entry_permanently(entry_uuid)
@@ -1119,6 +1347,54 @@ pub fn merge_databases(
     }
 
     Ok(merge_result)
+}
+
+// Desktop-only: merges the on-disk version of the DB into the in-memory version.
+// Uses the stored composite key — no credential re-entry needed.
+// Sets save_pending = true on success so the UI knows unsaved changes exist.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub fn merge_kdbx_with_disk_version(db_key: &str) -> Result<MergeResult> {
+    call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
+        // Load the on-disk version which will decrypted using the stored composite key.
+        let mut reader = db::open_db_file(db_key)?;
+        
+        debug!("The db file {} is loaded to merge", &db_key);
+        
+        // if let Some(kc) = ctx.kdbx_file.keepass_main_content.as_ref() {
+        //     debug!("before merging Ctx all entries count{} ", kc.root.all_entries().len());
+        // } 
+
+        // debug!(ctx.kdbx_file.all_entries);
+        // db::reload() clones ctx.kdbx_file (including encrypted composite key) and decrypts.
+        // If the on-disk file was re-encrypted with different credentials, reload returns
+        // HeaderHmacHashCheckFailed — remap it to a specific error so the frontend can
+        // show a targeted message instead of a generic "invalid credentials" prompt.
+        let disk_kdbx = db::reload(&mut reader, &ctx.kdbx_file).map_err(|e| match e {
+            Error::HeaderHmacHashCheckFailed => Error::MergeFailedCredentialsChanged,
+            other => other,
+        })?;
+        
+        debug!("Db is reloaded from file system");
+
+        // if let Some(kc) = disk_kdbx.keepass_main_content.as_ref() {
+        //     debug!("Disk all entries count {} ", kc.root.all_entries().len());
+        // } 
+
+        // Merge: disk version = source, in-memory version = target
+        let merge_result =
+            db_merge::Merger::from_kdbx_file(&disk_kdbx, &mut ctx.kdbx_file).merge()?;
+
+        // Update checksum to the on-disk state so the watcher won't re-fire for this change.
+        // calculate_db_file_checksum rewinds reader internally before reading.
+        ctx.kdbx_file.checksum_hash = db::calculate_db_file_checksum(&mut reader)?;
+        ctx.save_pending = true;
+
+        // if let Some(kc) = ctx.kdbx_file.keepass_main_content.as_ref() {
+        //     debug!("After merging Ctx all entries count{} ", kc.root.all_entries().len());
+        // } 
+
+        Ok(merge_result)
+    })
 }
 
 #[cfg(any(target_os = "ios", target_os = "android"))]

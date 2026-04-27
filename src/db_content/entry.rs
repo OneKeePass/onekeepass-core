@@ -354,7 +354,7 @@ impl Entry {
             VersionedEntryType::decode_entry_type(data, &custom_entry_types)
         } else {
             // Return standard default
-            debug!("No entry type info or data is found and will be using the default type");
+            // debug!("No entry type info or data is found and will be using the default type");
             EntryType::default_type().clone()
         }
     }

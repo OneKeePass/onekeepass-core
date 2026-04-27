@@ -14,6 +14,9 @@ pub enum Error {
     #[error("DbFileContentChangeDetected")]
     DbFileContentChangeDetected,
 
+    #[error("MergeFailedCredentialsChanged")]
+    MergeFailedCredentialsChanged,
+
     #[error("{0}")]
     NotFound(String),
 
