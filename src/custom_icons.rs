@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::crypto;
 use crate::db_content::{Icon, KeepassFile};
 use crate::error::{Error, Result};
 use crate::util;
@@ -57,6 +58,21 @@ pub(crate) fn add_custom_icon(
     name: String,
     png_bytes: Vec<u8>,
 ) -> Result<String> {
+    // Content-addressable dedup: if an existing icon's bytes match what we're
+    // adding, return its uuid instead of inserting a byte-identical duplicate.
+    // The length pre-check skips hashing for the (overwhelmingly common) case
+    // where lengths differ — PNG-encoded sizes vary with content.
+    let new_len = png_bytes.len();
+    let new_hash = crypto::sha256_hash_from_slice(&png_bytes)?;
+    for existing in &k.meta.custom_icons.icons {
+        if existing.data.len() != new_len {
+            continue;
+        }
+        if crypto::sha256_hash_from_slice(&existing.data)? == new_hash {
+            return Ok(existing.uuid.to_string());
+        }
+    }
+
     let icon = Icon {
         uuid: Uuid::new_v4(),
         data: png_bytes,
