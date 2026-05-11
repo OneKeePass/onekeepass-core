@@ -6,6 +6,10 @@ mod import;
 
 mod constants;
 mod crypto;
+pub mod custom_icons;
+
+#[cfg(feature = "favicon")]
+pub mod favicon;
 mod db;
 mod db_merge;
 mod form_data;

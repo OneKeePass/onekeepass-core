@@ -134,6 +134,7 @@ fn find_matching_entries_in_db(db_key: &str, input_url: &str) -> Result<MatchedD
                     title,
                     secondary_title,
                     icon_id: e.icon_id,
+                    custom_icon_uuid: e.custom_icon_uuid.map(|u| u.to_string()),
                     history_index: None,
                     modified_time: Some(e.times.last_modification_time.and_utc().timestamp()),
                     created_time: Some(e.times.creation_time.and_utc().timestamp()),

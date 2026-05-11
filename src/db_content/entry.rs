@@ -380,6 +380,7 @@ impl Entry {
         self.history = History { entries: histories };
         self.parent_group_uuid = updated_entry.parent_group_uuid;
         self.icon_id = updated_entry.icon_id;
+        self.custom_icon_uuid = updated_entry.custom_icon_uuid;
         self.tags = updated_entry.tags;
 
         self.auto_type = updated_entry.auto_type;

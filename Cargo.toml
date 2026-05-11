@@ -1,6 +1,6 @@
 [package]
 name = "onekeepass-core"
-version = "0.21.0"
+version = "0.22.0"
 authors = ["jeyasankar"]
 edition = "2021"
 
@@ -77,6 +77,25 @@ rand_core      = { version = "0.6", features = ["getrandom"] }
 [dependencies.passwords]
 version = "*"
 features = ["common-password"]
+
+[features]
+favicon = ["dep:reqwest", "dep:image", "dep:ico"]
+
+[dependencies.reqwest]
+version = "0.12"
+default-features = false
+features = ["rustls-tls", "gzip"]
+optional = true
+
+[dependencies.image]
+version = "0.25"
+default-features = false
+features = ["png", "jpeg"]
+optional = true
+
+[dependencies.ico]
+version = "0.4"
+optional = true
 
 [dev-dependencies]
 env_logger = "0.11.8"

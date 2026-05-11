@@ -194,6 +194,7 @@ pub struct EntryFormData {
     group_uuid: Uuid,
 
     icon_id: i32,
+    custom_icon_uuid: Option<String>,
 
     last_modification_time: NaiveDateTime,
     creation_time: NaiveDateTime,
@@ -429,6 +430,7 @@ impl EntryFormData {
             uuid: entry.uuid,
             group_uuid: entry.parent_group_uuid,
             icon_id: entry.icon_id,
+            custom_icon_uuid: entry.custom_icon_uuid.map(|u| u.to_string()),
 
             last_modification_time: entry.times.last_modification_time,
             creation_time: entry.times.creation_time,
@@ -516,6 +518,10 @@ impl EntryFormData {
 
         entry.entry_field = entry_field;
         entry.icon_id = entry_form_data.icon_id;
+        entry.custom_icon_uuid = entry_form_data
+            .custom_icon_uuid
+            .as_deref()
+            .and_then(|s| Uuid::parse_str(s).ok());
         entry.tags = join_tags(&entry_form_data.tags);
         entry.times.expires = entry_form_data.expires;
         entry.times.expiry_time = entry_form_data.expiry_time;
@@ -633,6 +639,7 @@ pub struct EntrySummary {
     pub title: Option<String>,
     pub secondary_title: Option<String>, // usually the user name
     pub icon_id: i32,
+    pub custom_icon_uuid: Option<String>,
     pub history_index: Option<i32>,
     pub modified_time: Option<i64>,
     pub created_time: Option<i64>,
@@ -664,6 +671,7 @@ impl EntrySummary {
                 //     Some("%Y-%m-%d %I:%M:%S %p"),
                 // )),
                 icon_id: he.icon_id,
+                custom_icon_uuid: he.custom_icon_uuid.map(|u| u.to_string()),
                 history_index: Some(i as i32),
                 modified_time: None,
                 created_time: None,
@@ -749,6 +757,7 @@ impl EntrySummary {
                 title,
                 secondary_title,
                 icon_id: e.icon_id,
+                custom_icon_uuid: e.custom_icon_uuid.map(|u| u.to_string()),
                 history_index: None,
                 #[allow(deprecated)]
                 modified_time: Some(e.times.last_modification_time.timestamp()),

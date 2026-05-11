@@ -449,6 +449,19 @@ impl Root {
 
     /// Gets all groups. The flag exclude_spl_groups determines whether to include or exclude
     /// the special groups such as Recyscle Bin in the list or not
+    pub(crate) fn clear_custom_icon_uuid(&mut self, icon_uuid: &Uuid) {
+        for entry in self.all_entries.values_mut() {
+            if entry.custom_icon_uuid == Some(*icon_uuid) {
+                entry.custom_icon_uuid = None;
+            }
+        }
+        for group in self.all_groups.values_mut() {
+            if group.custom_icon_uuid == Some(*icon_uuid) {
+                group.custom_icon_uuid = None;
+            }
+        }
+    }
+
     pub fn get_all_groups<'a>(&'a self, exclude_spl_groups: bool) -> Vec<&'a Group> {
         self.all_groups
             .values()
@@ -520,6 +533,7 @@ impl Root {
             g.notes = group.notes;
             g.tags = group.tags;
             g.icon_id = group.icon_id;
+            g.custom_icon_uuid = group.custom_icon_uuid;
             //g.custom_data = group.custom_data;
             g.marked_category = group.marked_category;
 
