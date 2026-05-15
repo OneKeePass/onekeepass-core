@@ -1,4 +1,5 @@
 mod common;
+mod icon_merge;
 
 use crate::{constants::entry_keyvalue_key::TITLE, db_content::Group, util};
 use common::*;
