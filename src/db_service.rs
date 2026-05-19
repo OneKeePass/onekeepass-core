@@ -1032,12 +1032,11 @@ pub fn move_entry_to_other_db(
 
     let summary = {
         let mut store = main_store().lock().unwrap();
-        let [target_opt, source_opt] =
-            store.get_disjoint_mut([target_db_key, source_db_key]);
-        let target_ctx = target_opt
-            .ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
-        let source_ctx = source_opt
-            .ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
+        let [target_opt, source_opt] = store.get_disjoint_mut([target_db_key, source_db_key]);
+        let target_ctx =
+            target_opt.ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
+        let source_ctx =
+            source_opt.ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
 
         // Copy all source attachments into the target. The storage is content-addressed
         // by hash so unreferenced extras are filtered out at save time.
@@ -1101,12 +1100,11 @@ pub fn move_group_to_other_db(
 
     let summary = {
         let mut store = main_store().lock().unwrap();
-        let [target_opt, source_opt] =
-            store.get_disjoint_mut([target_db_key, source_db_key]);
-        let target_ctx = target_opt
-            .ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
-        let source_ctx = source_opt
-            .ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
+        let [target_opt, source_opt] = store.get_disjoint_mut([target_db_key, source_db_key]);
+        let target_ctx =
+            target_opt.ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
+        let source_ctx =
+            source_opt.ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
 
         let source_attachments = source_ctx.kdbx_file.attachmentset().clone();
         target_ctx
@@ -1168,12 +1166,11 @@ pub fn clone_entry_to_other_db(
 
     let summary = {
         let mut store = main_store().lock().unwrap();
-        let [target_opt, source_opt] =
-            store.get_disjoint_mut([target_db_key, source_db_key]);
-        let target_ctx = target_opt
-            .ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
-        let source_ctx = source_opt
-            .ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
+        let [target_opt, source_opt] = store.get_disjoint_mut([target_db_key, source_db_key]);
+        let target_ctx =
+            target_opt.ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
+        let source_ctx =
+            source_opt.ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
 
         // Copy all source attachments into target (content-addressed; unreferenced extras
         // are filtered at save time — same approach as move)
@@ -1361,12 +1358,12 @@ pub fn merge_kdbx_with_disk_version(db_key: &str) -> Result<MergeResult> {
     call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
         // Load the on-disk version which will decrypted using the stored composite key.
         let mut reader = db::open_db_file(db_key)?;
-        
+
         debug!("The db file {} is loaded to merge", &db_key);
-        
+
         // if let Some(kc) = ctx.kdbx_file.keepass_main_content.as_ref() {
         //     debug!("before merging Ctx all entries count{} ", kc.root.all_entries().len());
-        // } 
+        // }
 
         // debug!(ctx.kdbx_file.all_entries);
         // db::reload() clones ctx.kdbx_file (including encrypted composite key) and decrypts.
@@ -1377,12 +1374,12 @@ pub fn merge_kdbx_with_disk_version(db_key: &str) -> Result<MergeResult> {
             Error::HeaderHmacHashCheckFailed => Error::MergeFailedCredentialsChanged,
             other => other,
         })?;
-        
+
         debug!("Db is reloaded from file system");
 
         // if let Some(kc) = disk_kdbx.keepass_main_content.as_ref() {
         //     debug!("Disk all entries count {} ", kc.root.all_entries().len());
-        // } 
+        // }
 
         // Merge: disk version = source, in-memory version = target
         let merge_result =
@@ -1395,7 +1392,7 @@ pub fn merge_kdbx_with_disk_version(db_key: &str) -> Result<MergeResult> {
 
         // if let Some(kc) = ctx.kdbx_file.keepass_main_content.as_ref() {
         //     debug!("After merging Ctx all entries count{} ", kc.root.all_entries().len());
-        // } 
+        // }
 
         Ok(merge_result)
     })

@@ -8,7 +8,6 @@ use uuid::Uuid;
 
 use crate::{db::KdbxFile, db_content::Meta, util};
 
-
 pub use self::categories::*;
 pub use self::entry::*;
 

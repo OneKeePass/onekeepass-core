@@ -15,9 +15,7 @@ use crate::db_content::Icon;
 use crate::db_merge::merger::Merger;
 use crate::util;
 
-use super::common::{
-    create_group, create_test_dbs_4, create_test_dbs_5, dummy_key_store_service,
-};
+use super::common::{create_group, create_test_dbs_4, create_test_dbs_5, dummy_key_store_service};
 
 struct IconMergeCtx {}
 
@@ -33,11 +31,7 @@ impl TestContext for IconMergeCtx {
 // existing Meta::add_custom_icon test helper always allocates a fresh
 // random UUID, which is the wrong shape for these tests where we need
 // either matching or mismatched UUIDs across source/target.
-fn push_icon(
-    keepass: &mut crate::db_content::KeepassFile,
-    uuid: Uuid,
-    data: Vec<u8>,
-) {
+fn push_icon(keepass: &mut crate::db_content::KeepassFile, uuid: Uuid, data: Vec<u8>) {
     keepass.meta.custom_icons.icons.push(Icon {
         uuid,
         data,
@@ -399,4 +393,3 @@ fn remap_applies_on_different_databases_path(_ctx: &mut IconMergeCtx) {
         "source entry's custom_icon_uuid should be remapped to target's UUID on cross-DB merge"
     );
 }
-

@@ -15,12 +15,11 @@ pub(crate) use self::cross_db_move::{
 };
 
 pub(crate) use self::custom_data::{CustomData, Item};
-pub(crate) use self::otp::OtpData;
 pub(crate) use self::keepass::KeepassFile;
 pub(crate) use self::meta::Meta;
-pub(crate) use self::root::Root;
+pub(crate) use self::otp::OtpData;
 pub(crate) use self::root::DeletedObject;
-
+pub(crate) use self::root::Root;
 
 pub use self::entry::{
     Association, AutoType, BinaryKeyValue, Entry, EntryField, History, KeyValue,
@@ -31,7 +30,7 @@ pub use self::group::Group;
 
 pub use self::otp::{CurrentOtpTokenData, OtpAlgorithm, OtpSettings};
 
-pub use self::root::{AllTags, EntryCloneOption, GroupSortCriteria, };
+pub use self::root::{AllTags, EntryCloneOption, GroupSortCriteria};
 
 pub use self::standard_entry_types::{
     standard_type_uuid_by_name, standard_type_uuids_names_ordered_by_id,
@@ -161,7 +160,11 @@ mod tests {
 
     #[test]
     fn join_tags_multiple() {
-        let tags = vec!["Work".to_string(), "Personal".to_string(), "Finance".to_string()];
+        let tags = vec![
+            "Work".to_string(),
+            "Personal".to_string(),
+            "Finance".to_string(),
+        ];
         assert_eq!(join_tags(&tags), "Work;Personal;Finance");
     }
 

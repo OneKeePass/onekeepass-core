@@ -12,8 +12,7 @@ const MAX_BODY_BYTES: u64 = 2 * 1024 * 1024;
 // Many CDNs (Squarespace, Cloudflare, Wix, ...) return 403 / serve HTML error
 // pages to clients that don't look like a real browser. A common Chrome UA
 // avoids that without raising any other red flags.
-const USER_AGENT: &str =
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) \
+const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) \
      Chrome/124.0.0.0 Safari/537.36";
 
 pub async fn download_favicon(url: &str) -> Result<Vec<u8>> {
@@ -158,7 +157,9 @@ pub fn normalize_image_to_png(input: &[u8], target: u32) -> Result<Vec<u8>> {
             .map_err(|e| Error::UnexpectedError(e.to_string()))?;
         let img = image::DynamicImage::ImageRgba8(
             image::RgbaImage::from_raw(rgba.width(), rgba.height(), rgba.rgba_data().to_vec())
-                .ok_or_else(|| Error::UnexpectedError("Failed to build image from ICO data".into()))?,
+                .ok_or_else(|| {
+                    Error::UnexpectedError("Failed to build image from ICO data".into())
+                })?,
         );
         log::debug!("Encoded image png resized");
         return encode_png_resized(img, target);

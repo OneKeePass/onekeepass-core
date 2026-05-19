@@ -298,7 +298,6 @@ impl VersionedEntryType {
                     built_in_section
                         .field_defs
                         .extend(incoming_section.field_defs.clone().into_iter());
-
                 } else {
                     // section is a custom section and move that to the built_in_et (clone of predefined Entrytype)
                     built_in_et.sections.push(incoming_section.clone());

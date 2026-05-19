@@ -133,8 +133,8 @@ pub struct PasskeyCreationWithHashResult {
 
 // DER prefix for a P-256 SubjectPublicKeyInfo: SEQUENCE { SEQUENCE { OID ecPublicKey, OID prime256v1 }, BIT STRING }
 const P256_SPKI_PREFIX: &[u8] = &[
-    0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01,
-    0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
+    0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a,
+    0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
 ];
 
 // DER prefix for an Ed25519 SubjectPublicKeyInfo: SEQUENCE { SEQUENCE { OID id-EdDSA (1.3.101.112) }, BIT STRING }
@@ -183,17 +183,14 @@ fn encode_public_key_spki_rsa(private_key: &RsaPrivateKey) -> Result<String> {
 // credId        (N bytes)
 // credPublicKey (CBOR)     COSE EC2 P-256 key
 // ```
-fn build_auth_data_create(
-    rp_id: &str,
-    credential_id: &[u8],
-    cose_public_key: &[u8],
-) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(32 + 1 + 4 + 16 + 2 + credential_id.len() + cose_public_key.len());
+fn build_auth_data_create(rp_id: &str, credential_id: &[u8], cose_public_key: &[u8]) -> Vec<u8> {
+    let mut buf =
+        Vec::with_capacity(32 + 1 + 4 + 16 + 2 + credential_id.len() + cose_public_key.len());
 
-    buf.extend_from_slice(&Sha256::digest(rp_id.as_bytes()));   // rpIdHash
-    buf.push(0x5D);                                              // flags: UP|UV|BE|BS|AT
-    buf.extend_from_slice(&0u32.to_be_bytes());                  // signCount = 0
-    buf.extend_from_slice(&[0u8; 16]);                           // aaguid = zeros
+    buf.extend_from_slice(&Sha256::digest(rp_id.as_bytes())); // rpIdHash
+    buf.push(0x5D); // flags: UP|UV|BE|BS|AT
+    buf.extend_from_slice(&0u32.to_be_bytes()); // signCount = 0
+    buf.extend_from_slice(&[0u8; 16]); // aaguid = zeros
     buf.extend_from_slice(&(credential_id.len() as u16).to_be_bytes());
     buf.extend_from_slice(credential_id);
     buf.extend_from_slice(cose_public_key);
@@ -233,11 +230,11 @@ fn encode_cose_key(verifying_key: &p256::ecdsa::VerifyingKey) -> Result<Vec<u8>>
         .to_vec();
 
     let cose_key = Value::Map(vec![
-        (Value::Integer(1i64.into()), Value::Integer(2i64.into())),    // kty: EC2
+        (Value::Integer(1i64.into()), Value::Integer(2i64.into())), // kty: EC2
         (Value::Integer(3i64.into()), Value::Integer((-7i64).into())), // alg: ES256
         (Value::Integer((-1i64).into()), Value::Integer(1i64.into())), // crv: P-256
-        (Value::Integer((-2i64).into()), Value::Bytes(x)),              // x
-        (Value::Integer((-3i64).into()), Value::Bytes(y)),              // y
+        (Value::Integer((-2i64).into()), Value::Bytes(x)),          // x
+        (Value::Integer((-3i64).into()), Value::Bytes(y)),          // y
     ]);
 
     let mut buf = Vec::new();
@@ -251,14 +248,18 @@ fn encode_cose_key(verifying_key: &p256::ecdsa::VerifyingKey) -> Result<Vec<u8>>
 fn encode_cose_key_ed25519(verifying_key: &ed25519_dalek::VerifyingKey) -> Result<Vec<u8>> {
     use ciborium::value::Value;
     let cose_key = Value::Map(vec![
-        (Value::Integer(1i64.into()), Value::Integer(1i64.into())),     // kty: OKP
-        (Value::Integer(3i64.into()), Value::Integer((-8i64).into())),  // alg: EdDSA
-        (Value::Integer((-1i64).into()), Value::Integer(6i64.into())),  // crv: Ed25519
-        (Value::Integer((-2i64).into()), Value::Bytes(verifying_key.as_bytes().to_vec())), // x
+        (Value::Integer(1i64.into()), Value::Integer(1i64.into())), // kty: OKP
+        (Value::Integer(3i64.into()), Value::Integer((-8i64).into())), // alg: EdDSA
+        (Value::Integer((-1i64).into()), Value::Integer(6i64.into())), // crv: Ed25519
+        (
+            Value::Integer((-2i64).into()),
+            Value::Bytes(verifying_key.as_bytes().to_vec()),
+        ), // x
     ]);
     let mut buf = Vec::new();
-    ciborium::ser::into_writer(&cose_key, &mut buf)
-        .map_err(|e| Error::UnexpectedError(format!("Ed25519 COSE key CBOR encoding failed: {}", e)))?;
+    ciborium::ser::into_writer(&cose_key, &mut buf).map_err(|e| {
+        Error::UnexpectedError(format!("Ed25519 COSE key CBOR encoding failed: {}", e))
+    })?;
     Ok(buf)
 }
 
@@ -270,10 +271,13 @@ fn encode_cose_key_rsa(private_key: &RsaPrivateKey) -> Result<Vec<u8>> {
     let n_bytes = public_key.n().to_bytes_be();
     let e_bytes = public_key.e().to_bytes_be();
     let cose_key = Value::Map(vec![
-        (Value::Integer(1i64.into()), Value::Integer(3i64.into())),       // kty: RSA
-        (Value::Integer(3i64.into()), Value::Integer((-257i64).into())),  // alg: RS256
-        (Value::Integer((-1i64).into()), Value::Bytes(n_bytes)),           // n: modulus
-        (Value::Integer((-2i64).into()), Value::Bytes(e_bytes)),           // e: exponent
+        (Value::Integer(1i64.into()), Value::Integer(3i64.into())), // kty: RSA
+        (
+            Value::Integer(3i64.into()),
+            Value::Integer((-257i64).into()),
+        ), // alg: RS256
+        (Value::Integer((-1i64).into()), Value::Bytes(n_bytes)),    // n: modulus
+        (Value::Integer((-2i64).into()), Value::Bytes(e_bytes)),    // e: exponent
     ]);
     let mut buf = Vec::new();
     ciborium::ser::into_writer(&cose_key, &mut buf)
@@ -352,8 +356,9 @@ pub fn create_passkey(options_json: &str, origin: &str) -> Result<PasskeyCreatio
         "origin": origin,
         "crossOrigin": false,
     });
-    let client_data_json = serde_json::to_string(&client_data)
-        .map_err(|e| Error::UnexpectedError(format!("clientDataJSON serialization failed: {}", e)))?;
+    let client_data_json = serde_json::to_string(&client_data).map_err(|e| {
+        Error::UnexpectedError(format!("clientDataJSON serialization failed: {}", e))
+    })?;
 
     // Generate key pair, COSE key, SPKI, and PEM based on the chosen algorithm.
     let (cose_key_bytes, public_key_b64url, private_key_pem) = match algorithm {
@@ -366,10 +371,13 @@ pub fn create_passkey(options_json: &str, origin: &str) -> Result<PasskeyCreatio
             // Use KeypairBytes with public_key=None to produce PKCS#8 V1 (version=0, no embedded
             // public key). ed25519-dalek v2 normally embeds the public key (V2/OneAsymmetricKey)
             // which Botan 2.x (used by KeepassXC) cannot load.
-            let keypair_bytes = KeypairBytes { secret_key: sk.to_bytes(), public_key: None };
-            let pem = keypair_bytes
-                .to_pkcs8_pem(LineEnding::LF)
-                .map_err(|e| Error::UnexpectedError(format!("Ed25519 PEM encoding failed: {}", e)))?;
+            let keypair_bytes = KeypairBytes {
+                secret_key: sk.to_bytes(),
+                public_key: None,
+            };
+            let pem = keypair_bytes.to_pkcs8_pem(LineEnding::LF).map_err(|e| {
+                Error::UnexpectedError(format!("Ed25519 PEM encoding failed: {}", e))
+            })?;
             (cose, spki, pem.as_str().to_string())
         }
         -257 => {
@@ -457,10 +465,13 @@ pub fn create_passkey_with_hash(
             // Use KeypairBytes with public_key=None to produce PKCS#8 V1 (version=0, no embedded
             // public key). ed25519-dalek v2 normally embeds the public key (V2/OneAsymmetricKey)
             // which Botan 2.x (used by KeepassXC) cannot load.
-            let keypair_bytes = KeypairBytes { secret_key: sk.to_bytes(), public_key: None };
-            let pem = keypair_bytes
-                .to_pkcs8_pem(LineEnding::LF)
-                .map_err(|e| Error::UnexpectedError(format!("Ed25519 PEM encoding failed: {}", e)))?;
+            let keypair_bytes = KeypairBytes {
+                secret_key: sk.to_bytes(),
+                public_key: None,
+            };
+            let pem = keypair_bytes.to_pkcs8_pem(LineEnding::LF).map_err(|e| {
+                Error::UnexpectedError(format!("Ed25519 PEM encoding failed: {}", e))
+            })?;
             (cose, spki, pem.as_str().to_string())
         }
         -257 => {
@@ -535,8 +546,9 @@ pub fn sign_assertion(
         "origin": origin,
         "crossOrigin": false,
     });
-    let client_data_json = serde_json::to_string(&client_data)
-        .map_err(|e| Error::UnexpectedError(format!("clientDataJSON serialization failed: {}", e)))?;
+    let client_data_json = serde_json::to_string(&client_data).map_err(|e| {
+        Error::UnexpectedError(format!("clientDataJSON serialization failed: {}", e))
+    })?;
 
     let auth_data = build_auth_data_get(effective_rp_id, 0u32);
 
@@ -624,8 +636,9 @@ fn sign_with_pem(private_key_pem: &str, message: &[u8]) -> Result<String> {
         }
         _ => {
             // -7: ES256 / P-256
-            let signing_key = SigningKey::from_pkcs8_pem(private_key_pem)
-                .map_err(|e| Error::UnexpectedError(format!("Failed to decode private key PEM: {}", e)))?;
+            let signing_key = SigningKey::from_pkcs8_pem(private_key_pem).map_err(|e| {
+                Error::UnexpectedError(format!("Failed to decode private key PEM: {}", e))
+            })?;
             let signature: Signature = signing_key.sign(message);
             let sig_der = signature.to_der();
             Ok(BASE64URL_NOPAD.encode(sig_der.as_bytes()))
@@ -672,8 +685,8 @@ mod tests {
         let origin = "https://example.com";
 
         let creation_opts = sample_creation_options(rp_id);
-        let result = create_passkey(&creation_opts, origin)
-            .expect("passkey creation should succeed");
+        let result =
+            create_passkey(&creation_opts, origin).expect("passkey creation should succeed");
 
         assert!(!result.credential_json.is_empty());
         assert!(!result.private_key_pem.is_empty());

@@ -119,7 +119,7 @@ impl Root {
     }
 
     // Add the uuid to the "DeletedObjects" to mark permanent removal of a group or an Entry.
-    // Useful during merging dbs. See aslo comments about DELETED_OBJECTS in src/constants.rs 
+    // Useful during merging dbs. See aslo comments about DELETED_OBJECTS in src/constants.rs
     pub(crate) fn add_deleted_object_by_id(&mut self, uuid: Uuid) {
         self.deleted_objects.push(DeletedObject {
             uuid,
@@ -812,14 +812,12 @@ impl Root {
     pub(crate) fn insert_entry_cross_db(&mut self, mut entry: Entry) -> Result<()> {
         if self.all_entries.contains_key(&entry.uuid) {
             return Err(Error::DataError(
-                "ErrorEntryUuidExistsInTarget"
-                //"insert_entry_cross_db: an entry with the same uuid already exists",
+                "ErrorEntryUuidExistsInTarget", //"insert_entry_cross_db: an entry with the same uuid already exists",
             ));
         }
         if !self.all_groups.contains_key(&entry.parent_group_uuid) {
             return Err(Error::DataError(
-                "ErrorGroupUuidExistsInTarget"
-                //"insert_entry_cross_db: parent group is not present in target".into(),
+                "ErrorGroupUuidExistsInTarget", //"insert_entry_cross_db: parent group is not present in target".into(),
             ));
         }
         entry.complete_insert();
@@ -838,8 +836,7 @@ impl Root {
     ) -> Result<()> {
         if self.all_groups.contains_key(&group.uuid) {
             return Err(Error::DataError(
-                "ErrorEntryUuidExistsInTarget"
-                // "insert_group_cross_db: a group with the same uuid already exists",
+                "ErrorEntryUuidExistsInTarget", // "insert_group_cross_db: a group with the same uuid already exists",
             ));
         }
         if !self.all_groups.contains_key(&group.parent_group_uuid) {
@@ -860,10 +857,7 @@ impl Root {
     // Walks the subtree leaf-first: entries first, then descendant groups bottom-up,
     // then the top-level group itself. Each removed uuid is recorded in deleted_objects.
     // Rejects removal of the root group.
-    pub(crate) fn remove_group_subtree_cross_db_move(
-        &mut self,
-        group_uuid: &Uuid,
-    ) -> Result<()> {
+    pub(crate) fn remove_group_subtree_cross_db_move(&mut self, group_uuid: &Uuid) -> Result<()> {
         verify_uuid!(self, *group_uuid, all_groups);
 
         if *group_uuid == self.root_uuid {

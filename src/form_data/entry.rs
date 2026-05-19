@@ -233,7 +233,12 @@ impl EntryFormData {
 
     // Sets the value of a specific field within a named section.
     // No-op if the section or the field key does not exist.
-    pub(crate) fn set_field_value_in_section(&mut self, section_name: &str, key: &str, value: &str) {
+    pub(crate) fn set_field_value_in_section(
+        &mut self,
+        section_name: &str,
+        key: &str,
+        value: &str,
+    ) {
         if let Some(kvds) = self.section_fields.get_mut(section_name) {
             if let Some(kvd) = kvds.iter_mut().find(|k| k.key == key) {
                 kvd.value = Some(value.to_string());
@@ -243,7 +248,11 @@ impl EntryFormData {
 
     // Replaces (or inserts) the full list of KV fields for a named section.
     // Also ensures the section name appears in section_names.
-    pub(crate) fn set_or_replace_section_fields(&mut self, section_name: &str, kvds: Vec<KeyValueData>) {
+    pub(crate) fn set_or_replace_section_fields(
+        &mut self,
+        section_name: &str,
+        kvds: Vec<KeyValueData>,
+    ) {
         self.section_fields.insert(section_name.to_string(), kvds);
         if !self.section_names.contains(&section_name.to_string()) {
             self.section_names.push(section_name.to_string());
@@ -552,7 +561,8 @@ impl EntryFormData {
             .entry_by_id(entry_uuid)
             .ok_or(Error::NotFound("No entry Entry found for the id".into()))?;
 
-        let (_,kvs) = parsing::EntryPlaceHolderParser::place_holder_resolved_entry_fields(&kp.root, entry);
+        let (_, kvs) =
+            parsing::EntryPlaceHolderParser::place_holder_resolved_entry_fields(&kp.root, entry);
 
         // let mut kvs = entry.field_values();
         // let parsed_fields = parsing::EntryPlaceHolderParser::resolve_place_holders(&kp.root, entry);
@@ -585,9 +595,9 @@ impl EntryFormData {
 }
 
 impl Entry {
-    // When placeholder parsing is required,  all non empty entry fields are collected and 
-    // returned a map where keys are the UPPER CASE of entry field names. 
-    // Returns an empty map if there is no parsing is required 
+    // When placeholder parsing is required,  all non empty entry fields are collected and
+    // returned a map where keys are the UPPER CASE of entry field names.
+    // Returns an empty map if there is no parsing is required
     pub(crate) fn extract_place_holders(&self) -> HashMap<String, String> {
         let mut entry_fields_with_place_holders: HashMap<String, String> = HashMap::default();
 
@@ -682,7 +692,10 @@ impl EntrySummary {
 
     // Gets the secondary title to show in addition to main title while displaying
     // an entry item in a list - a UI specific thing
-    pub(crate) fn secondary_title(entry: &Entry, parsed_fields: &HashMap<String, String>) -> Option<String> {
+    pub(crate) fn secondary_title(
+        entry: &Entry,
+        parsed_fields: &HashMap<String, String>,
+    ) -> Option<String> {
         if entry.entry_field.entry_type.name == CREDIT_DEBIT_CARD {
             entry.entry_field.find_key_value(NUMBER).map(|f| {
                 let s = f.value.trim();
@@ -747,10 +760,10 @@ impl EntrySummary {
             let parsed_fields = parsing::EntryPlaceHolderParser::resolve_place_holders(&kp.root, e);
             let title = parsed_fields
                 .get(&title_upper)
-                .map_or_else(|| e.find_kv_field_value(TITLE), |s| Some(s.to_string())); 
+                .map_or_else(|| e.find_kv_field_value(TITLE), |s| Some(s.to_string()));
 
             let secondary_title = EntrySummary::secondary_title(e, &parsed_fields);
-            
+
             summary_list.push(Self {
                 uuid: e.uuid.to_string(),
                 parent_group_uuid: e.parent_group_uuid(),

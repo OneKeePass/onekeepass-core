@@ -984,7 +984,8 @@ mod tests {
 
     #[test]
     fn from_url_hotp_is_rejected() {
-        let result = OtpData::from_url("otpauth://hotp/Github?secret=KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ");
+        let result =
+            OtpData::from_url("otpauth://hotp/Github?secret=KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ");
         assert!(result.is_err());
     }
 
@@ -996,7 +997,8 @@ mod tests {
 
     #[test]
     fn from_url_non_otpauth_scheme_is_error() {
-        let result = OtpData::from_url("https://example.com/totp?secret=KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ");
+        let result =
+            OtpData::from_url("https://example.com/totp?secret=KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ");
         assert!(result.is_err());
     }
 

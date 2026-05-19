@@ -4,6 +4,8 @@
 // compiled on all platforms.  This module re-exports the types that existing
 // desktop callers referenced via `browser_extension::`.
 
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use serde::Serialize;
 
 use crate::constants::entry_keyvalue_key::ADDITIONAL_URLS;
@@ -12,7 +14,7 @@ use crate::constants::entry_keyvalue_key::TITLE;
 use crate::constants::entry_keyvalue_key::URL;
 use crate::constants::entry_keyvalue_key::USER_NAME;
 use crate::db_content::KeepassFile;
-use crate::db_service::{call_main_content_action, call_kdbx_context_mut_action, KdbxContext};
+use crate::db_service::{call_kdbx_context_mut_action, call_main_content_action, KdbxContext};
 use crate::error::Error;
 use crate::error::Result;
 use crate::form_data::parsing::EntryPlaceHolderParser;
@@ -29,9 +31,9 @@ use crate::main_content_action;
 // Re-export passkey types for backward compatibility with desktop callers that
 // previously imported them from this module.
 pub use super::passkey::{
-    EntryBasicInfo, GroupInfo, PasskeyEntry, PasskeySummary, PasskeyStorageInfo,
     create_and_store_passkey, find_matching_passkeys, get_db_groups, get_db_name,
-    get_group_entries, get_passkey_for_assertion, store_passkey_entry,
+    get_group_entries, get_passkey_for_assertion, store_passkey_entry, EntryBasicInfo, GroupInfo,
+    PasskeyEntry, PasskeyStorageInfo, PasskeySummary,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,6 +45,13 @@ pub struct MatchedDbEntries {
     db_name: String,
     db_key: String,
     entry_summaries: Vec<EntrySummary>,
+}
+
+#[derive(Default, Serialize, Debug)]
+pub struct BrowserExtensionCustomIcon {
+    custom_icon_uuid: String,
+    data_base64: String,
+    mime_type: String,
 }
 
 #[derive(Default, Serialize, Debug)]
@@ -81,6 +90,23 @@ pub fn basic_entry_credential_info(
             "No entry is found for the id {}",
             entry_uuid
         ))),
+    };
+
+    main_content_action!(db_key, action)
+}
+
+pub fn custom_icon_for_browser_extension(
+    db_key: &str,
+    custom_icon_uuid: &str,
+) -> Result<BrowserExtensionCustomIcon> {
+    let custom_icon_uuid = custom_icon_uuid.to_string();
+    let action = move |k: &KeepassFile| {
+        let icon = crate::custom_icons::get_custom_icon(k, &custom_icon_uuid)?;
+        Ok(BrowserExtensionCustomIcon {
+            custom_icon_uuid: custom_icon_uuid.clone(),
+            data_base64: STANDARD.encode(&icon.data),
+            mime_type: "image/png".to_string(),
+        })
     };
 
     main_content_action!(db_key, action)
@@ -141,6 +167,7 @@ fn find_matching_entries_in_db(db_key: &str, input_url: &str) -> Result<MatchedD
                 })
             })
             .collect::<Vec<EntrySummary>>();
+
         let matched_db_entries = MatchedDbEntries {
             db_name,
             db_key: db_key.to_string(),

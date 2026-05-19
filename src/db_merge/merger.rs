@@ -232,7 +232,6 @@ impl<'a> Merger<'a> {
         // If that assumption is not correct for other implementation, we need another method of establishing
         // whether the source and the destination dbs are copies of the same db
         if source_root_group.get_uuid() == target_root_uuid {
-
             log::debug!("Both target and source databases are same - may be copies");
 
             // Merge meta first so the custom-icon remap is built before we
@@ -295,7 +294,6 @@ impl<'a> Merger<'a> {
 
             self.merge_groups(source_root_group)?;
             self.merge_deleted_objects()?;
-
         }
 
         self.merge_result.finalize_merge_done();

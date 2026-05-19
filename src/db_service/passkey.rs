@@ -4,30 +4,26 @@
 // It replaces the passkey section that previously lived inside
 // `db_service::browser_extension` (which is desktop-only).
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::constants::entry_keyvalue_key::{TITLE, URL, USER_NAME};
 use crate::constants::entry_keyvalue_key::{
-    KPEX_PASSKEY_CREDENTIAL_ID, KPEX_PASSKEY_PRIVATE_KEY_PEM,
-    KPEX_PASSKEY_RELYING_PARTY, KPEX_PASSKEY_USERNAME, KPEX_PASSKEY_USER_HANDLE,
+    KPEX_PASSKEY_CREDENTIAL_ID, KPEX_PASSKEY_PRIVATE_KEY_PEM, KPEX_PASSKEY_RELYING_PARTY,
+    KPEX_PASSKEY_USERNAME, KPEX_PASSKEY_USER_HANDLE,
 };
-use crate::constants::standard_in_section_names::{LOGIN_DETAILS, PASSKEY_DETAILS};
+use crate::constants::entry_keyvalue_key::{TITLE, URL, USER_NAME};
 use crate::constants::entry_type_uuid;
-use crate::form_data::KeyValueData;
-use crate::db_content::{ Group, KeepassFile};
-use crate::db_service::{
-    call_main_content_action, call_kdbx_context_mut_action,
-    KdbxContext,
-};
+use crate::constants::standard_in_section_names::{LOGIN_DETAILS, PASSKEY_DETAILS};
+use crate::db_content::{Group, KeepassFile};
+use crate::db_service::{call_kdbx_context_mut_action, call_main_content_action, KdbxContext};
 use crate::error::Error;
 use crate::error::Result;
+use crate::form_data::KeyValueData;
 use crate::util;
 
 // NOTE: To use these macros in this module, we need to import all fns used
 // inside the macro expansion as well.
 use crate::main_content_action;
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -178,9 +174,7 @@ fn apply_passkey_storage(db_key: &str, info: &PasskeyStorageInfo) -> Result<()> 
             } else {
                 match info.group_uuid {
                     Some(uuid) => uuid,
-                    None => {
-                        main_content_action!(db_key, |k: &KeepassFile| Ok(k.root.root_uuid()))?
-                    }
+                    None => main_content_action!(db_key, |k: &KeepassFile| Ok(k.root.root_uuid()))?,
                 }
             };
 
@@ -240,9 +234,10 @@ pub fn get_db_groups(db_key: &str) -> Result<Vec<GroupInfo>> {
 // Returns all active entries that belong directly to `group_uuid`, sorted by title.
 pub fn get_group_entries(db_key: &str, group_uuid: &Uuid) -> Result<Vec<EntryBasicInfo>> {
     let action = |k: &KeepassFile| {
-        let group = k.root.group_by_id(group_uuid).ok_or_else(|| {
-            Error::NotFound(format!("Group {} not found", group_uuid))
-        })?;
+        let group = k
+            .root
+            .group_by_id(group_uuid)
+            .ok_or_else(|| Error::NotFound(format!("Group {} not found", group_uuid)))?;
         let mut entries: Vec<EntryBasicInfo> = group
             .entry_uuids
             .iter()
@@ -284,15 +279,12 @@ pub fn find_matching_passkeys(
                 .collect_all_active_entries()
                 .into_iter()
                 .filter_map(|entry| {
-                    let stored_rp_id =
-                        entry.find_kv_field_value(KPEX_PASSKEY_RELYING_PARTY)?;
+                    let stored_rp_id = entry.find_kv_field_value(KPEX_PASSKEY_RELYING_PARTY)?;
                     if stored_rp_id != rp_id {
                         return None;
                     }
-                    let cred_id =
-                        entry.find_kv_field_value(KPEX_PASSKEY_CREDENTIAL_ID)?;
-                    if !allow_credential_ids.is_empty()
-                        && !allow_credential_ids.contains(&cred_id)
+                    let cred_id = entry.find_kv_field_value(KPEX_PASSKEY_CREDENTIAL_ID)?;
+                    if !allow_credential_ids.is_empty() && !allow_credential_ids.contains(&cred_id)
                     {
                         return None;
                     }
@@ -375,15 +367,11 @@ pub fn get_passkey_for_assertion(db_key: &str, entry_uuid: &Uuid) -> Result<Pass
 
         let private_key_pem = entry
             .find_kv_field_value(KPEX_PASSKEY_PRIVATE_KEY_PEM)
-            .ok_or_else(|| {
-                Error::NotFound("KPEX_PASSKEY_PRIVATE_KEY_PEM not found".into())
-            })?;
+            .ok_or_else(|| Error::NotFound("KPEX_PASSKEY_PRIVATE_KEY_PEM not found".into()))?;
 
         let rp_id = entry
             .find_kv_field_value(KPEX_PASSKEY_RELYING_PARTY)
-            .ok_or_else(|| {
-                Error::NotFound("KPEX_PASSKEY_RELYING_PARTY not found".into())
-            })?;
+            .ok_or_else(|| Error::NotFound("KPEX_PASSKEY_RELYING_PARTY not found".into()))?;
 
         let username = entry
             .find_kv_field_value(KPEX_PASSKEY_USERNAME)
@@ -543,15 +531,21 @@ mod tests {
         write_passkey_fields(&mut entry, &info);
 
         assert_eq!(
-            entry.find_kv_field_value(KPEX_PASSKEY_CREDENTIAL_ID).as_deref(),
+            entry
+                .find_kv_field_value(KPEX_PASSKEY_CREDENTIAL_ID)
+                .as_deref(),
             Some("cred-id-xyz")
         );
         assert_eq!(
-            entry.find_kv_field_value(KPEX_PASSKEY_PRIVATE_KEY_PEM).as_deref(),
+            entry
+                .find_kv_field_value(KPEX_PASSKEY_PRIVATE_KEY_PEM)
+                .as_deref(),
             Some("pem-content")
         );
         assert_eq!(
-            entry.find_kv_field_value(KPEX_PASSKEY_RELYING_PARTY).as_deref(),
+            entry
+                .find_kv_field_value(KPEX_PASSKEY_RELYING_PARTY)
+                .as_deref(),
             Some("example.com")
         );
         assert_eq!(
@@ -559,7 +553,9 @@ mod tests {
             Some("alice@example.com")
         );
         assert_eq!(
-            entry.find_kv_field_value(KPEX_PASSKEY_USER_HANDLE).as_deref(),
+            entry
+                .find_kv_field_value(KPEX_PASSKEY_USER_HANDLE)
+                .as_deref(),
             Some("dXNlcg")
         );
     }
@@ -618,15 +614,14 @@ mod tests {
         let db_key = "pk_test_existing_entry";
         setup_test_db(db_key, "PasskeyTestDB");
 
-        let entry_uuid: Uuid =
-            kp_service::call_main_content_mut_action(db_key, |k| {
-                let mut entry = Entry::new_login_entry(Some(&k.root.root_uuid()));
-                entry.entry_field.update_value(TITLE, "Pre-existing Login");
-                let uuid = entry.get_uuid();
-                k.insert_entry(entry)?;
-                Ok(uuid)
-            })
-            .expect("insert pre-existing entry should succeed");
+        let entry_uuid: Uuid = kp_service::call_main_content_mut_action(db_key, |k| {
+            let mut entry = Entry::new_login_entry(Some(&k.root.root_uuid()));
+            entry.entry_field.update_value(TITLE, "Pre-existing Login");
+            let uuid = entry.get_uuid();
+            k.insert_entry(entry)?;
+            Ok(uuid)
+        })
+        .expect("insert pre-existing entry should succeed");
 
         let info = PasskeyStorageInfo {
             credential_id_b64url: "cred-existing-999".to_string(),
@@ -748,7 +743,10 @@ mod tests {
         setup_test_db(db_key, "PasskeyTestDB");
 
         let result = get_passkey_for_assertion(db_key, &Uuid::new_v4());
-        assert!(result.is_err(), "should fail when entry UUID does not exist");
+        assert!(
+            result.is_err(),
+            "should fail when entry UUID does not exist"
+        );
 
         teardown_test_db(db_key);
     }

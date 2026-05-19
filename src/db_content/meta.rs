@@ -94,9 +94,9 @@ pub struct Meta {
     pub(crate) maintenance_history_days: i32,
     pub(crate) recycle_bin_enabled: bool,
 
-    // When a db is loaded, this is set from xml content if available and copied to root. 
-    // But when a recycle bin is created first time in onekeepas, 
-    // the new recycle group is created in 'root' and its uuid  is later 
+    // When a db is loaded, this is set from xml content if available and copied to root.
+    // But when a recycle bin is created first time in onekeepas,
+    // the new recycle group is created in 'root' and its uuid  is later
     // copied to meta from root before writing to xml
     pub(crate) recycle_bin_uuid: Uuid,
 
@@ -150,7 +150,6 @@ impl Meta {
         }
     }
 
-    
     pub(crate) fn database_name(&self) -> &String {
         &self.database_name
     }
@@ -408,14 +407,14 @@ impl Meta {
     // merge_from_different_db() — the policy is identical for same-DB and
     // cross-DB merges because the dedup invariant is content-addressable and
     // target-wins on UUID collision is safe either way.
-    fn merge_custom_icons(
-        &mut self,
-        other: &Meta,
-    ) -> Result<(bool, HashMap<Uuid, Uuid>)> {
+    fn merge_custom_icons(&mut self, other: &Meta) -> Result<(bool, HashMap<Uuid, Uuid>)> {
         let mut modified = false;
         let mut icon_remap: HashMap<Uuid, Uuid> = HashMap::new();
 
-        log::debug!("Going to merge custom_icons in meta data ... and comparion custom icons {}",self.custom_icons != other.custom_icons);
+        log::debug!(
+            "Going to merge custom_icons in meta data ... and comparion custom icons {}",
+            self.custom_icons != other.custom_icons
+        );
         if self.custom_icons != other.custom_icons {
             // Index target icons by content hash for O(1) dedup lookup. The
             // dedup invariant mirrors add_custom_icon (custom_icons.rs): no two
@@ -429,7 +428,10 @@ impl Meta {
                 target_by_hash.insert(h, t.uuid);
             }
 
-            log::debug!("Formed target_by_hash map with size {}",target_by_hash.len());
+            log::debug!(
+                "Formed target_by_hash map with size {}",
+                target_by_hash.len()
+            );
 
             for other_icon in other.custom_icons.icons.iter() {
                 let other_hash = crypto::sha256_hash_from_slice(&other_icon.data)?;
