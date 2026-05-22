@@ -1489,6 +1489,31 @@ pub fn merge_databases(
     Ok(merge_result)
 }
 
+// Desktop-only: merges a kdbx loaded from an arbitrary reader into the
+// in-memory version. Same shape as merge_kdbx_with_disk_version but reads
+// bytes from the caller-supplied reader (used by the remote-storage path,
+// where the "other side" lives on SFTP/WebDAV rather than disk).
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub fn merge_kdbx_with_reader<R: std::io::Read + std::io::Seek>(
+    db_key: &str,
+    reader: &mut R,
+) -> Result<MergeResult> {
+    call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
+        let other_kdbx = db::reload(reader, &ctx.kdbx_file).map_err(|e| match e {
+            Error::HeaderHmacHashCheckFailed => Error::MergeFailedCredentialsChanged,
+            other => other,
+        })?;
+
+        let merge_result =
+            db_merge::Merger::from_kdbx_file(&other_kdbx, &mut ctx.kdbx_file).merge()?;
+
+        ctx.kdbx_file.checksum_hash = db::calculate_db_file_checksum(reader)?;
+        ctx.save_pending = true;
+
+        Ok(merge_result)
+    })
+}
+
 // Desktop-only: merges the on-disk version of the DB into the in-memory version.
 // Uses the stored composite key — no credential re-entry needed.
 // Sets save_pending = true on success so the UI knows unsaved changes exist.
