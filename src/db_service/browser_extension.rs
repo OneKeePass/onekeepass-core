@@ -159,6 +159,7 @@ fn find_matching_entries_in_db(db_key: &str, input_url: &str) -> Result<MatchedD
                     parent_group_uuid: e.parent_group_uuid(),
                     title,
                     secondary_title,
+                    entry_type_name: e.entry_field.entry_type.name.clone(),
                     icon_id: e.icon_id,
                     custom_icon_uuid: e.custom_icon_uuid.map(|u| u.to_string()),
                     history_index: None,

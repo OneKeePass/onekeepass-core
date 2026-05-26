@@ -626,6 +626,7 @@ pub fn search_term(db_key: &str, term: &str) -> Result<EntrySearchResult> {
                     parent_group_uuid: e.parent_group_uuid(),
                     title: t1,
                     secondary_title: t2,
+                    entry_type_name: e.entry_field.entry_type.name.clone(),
                     icon_id: e.icon_id,
                     custom_icon_uuid: e.custom_icon_uuid.map(|u| u.to_string()),
                     history_index: None,

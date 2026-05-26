@@ -648,6 +648,7 @@ pub struct EntrySummary {
     pub parent_group_uuid: Uuid,
     pub title: Option<String>,
     pub secondary_title: Option<String>, // usually the user name
+    pub entry_type_name: String,
     pub icon_id: i32,
     pub custom_icon_uuid: Option<String>,
     pub history_index: Option<i32>,
@@ -680,6 +681,7 @@ impl EntrySummary {
                 //     &he.times.last_modification_time,
                 //     Some("%Y-%m-%d %I:%M:%S %p"),
                 // )),
+                entry_type_name: he.entry_field.entry_type.name.clone(),
                 icon_id: he.icon_id,
                 custom_icon_uuid: he.custom_icon_uuid.map(|u| u.to_string()),
                 history_index: Some(i as i32),
@@ -769,6 +771,7 @@ impl EntrySummary {
                 parent_group_uuid: e.parent_group_uuid(),
                 title,
                 secondary_title,
+                entry_type_name: e.entry_field.entry_type.name.clone(),
                 icon_id: e.icon_id,
                 custom_icon_uuid: e.custom_icon_uuid.map(|u| u.to_string()),
                 history_index: None,
