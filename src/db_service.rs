@@ -1366,11 +1366,10 @@ pub fn merge_databases(
     Ok(merge_result)
 }
 
-// Desktop-only: merges a kdbx loaded from an arbitrary reader into the
-// in-memory version. Same shape as merge_kdbx_with_disk_version but reads
-// bytes from the caller-supplied reader (used by the remote-storage path,
-// where the "other side" lives on SFTP/WebDAV rather than disk).
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+// Merges a kdbx loaded from an arbitrary reader into the in-memory version.
+// Same shape as merge_kdbx_with_disk_version but reads bytes from the
+// caller-supplied reader (used by the remote-storage path on both desktop and
+// mobile, where the "other side" lives on SFTP/WebDAV rather than disk).
 pub fn merge_kdbx_with_reader<R: std::io::Read + std::io::Seek>(
     db_key: &str,
     reader: &mut R,

@@ -387,10 +387,10 @@ impl SftpConnection {
     }
 
     pub(crate) async fn connect(connection_info: &SftpConnectionConfig) -> Result<SftpConnection> {
-        debug!(
-            "Sftp::connect Received connection_info {:?}",
-            connection_info
-        );
+        // debug!(
+        //     "Sftp::connect Received connection_info {:?}",
+        //     connection_info
+        // );
 
         let SftpConnectionConfig {
             connection_id,
