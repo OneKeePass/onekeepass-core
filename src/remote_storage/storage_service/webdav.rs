@@ -2,7 +2,10 @@ use std::{collections::HashMap, sync::Arc};
 
 use log::{debug, info};
 use once_cell::sync::Lazy;
-use reqwest_dav::re_exports::reqwest;
+use reqwest_dav::re_exports::reqwest::{
+    self,
+    header::{HeaderMap, HeaderValue, REFERER, USER_AGENT},
+};
 use reqwest_dav::{list_cmd::ListEntity, Auth, Client, ClientBuilder, Depth};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
@@ -180,6 +183,7 @@ impl RemoteStorageOperation for Webdav {
 
 struct WebdavConnection {
     client: Client,
+    root_path: String,
 }
 
 type WebdavConnections = Arc<tokio::sync::Mutex<HashMap<String, WebdavConnection>>>;
@@ -199,6 +203,72 @@ pub fn connect_and_retrieve_root_dir(
 }
 
 const WEBDAV_ROOT_DIR: &str = "/";
+
+fn webdav_root_path(root_url: &str) -> Result<String> {
+    let url = reqwest::Url::parse(root_url)?;
+    let path = url.path().trim_end_matches('/');
+
+    Ok(if path.is_empty() {
+        WEBDAV_ROOT_DIR.to_string()
+    } else {
+        path.to_string()
+    })
+}
+
+fn join_webdav_path(parent_dir: &str, child: &str) -> String {
+    let parent_dir = parent_dir.trim_end_matches('/');
+    let child = child.trim_matches('/');
+
+    if parent_dir.is_empty() {
+        format!("/{child}")
+    } else {
+        format!("{parent_dir}/{child}")
+    }
+}
+
+fn strip_webdav_root_path(href: &str, root_path: &str) -> String {
+    let href_path = reqwest::Url::parse(href)
+        .map(|url| url.path().to_string())
+        .unwrap_or_else(|_| href.to_string());
+
+    if root_path == WEBDAV_ROOT_DIR {
+        return href_path;
+    }
+
+    let root_path = root_path.trim_end_matches('/');
+
+    if href_path == root_path {
+        WEBDAV_ROOT_DIR.to_string()
+    } else if href_path.starts_with(root_path)
+        && href_path
+            .as_bytes()
+            .get(root_path.len())
+            .is_some_and(|b| *b == b'/')
+    {
+        href_path[root_path.len()..].to_string()
+    } else {
+        href_path
+    }
+}
+
+fn webdav_default_headers(root_url: &str) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+
+    headers.insert(USER_AGENT, HeaderValue::from_static("OneKeePass"));
+
+    // Some WebDAV backends enforce referer policies inherited from object storage.
+    if let Ok(mut url) = reqwest::Url::parse(root_url) {
+        url.set_path("/");
+        url.set_query(None);
+        url.set_fragment(None);
+
+        if let Ok(referer) = HeaderValue::from_str(url.as_str()) {
+            headers.insert(REFERER, referer);
+        }
+    }
+
+    headers
+}
 
 impl WebdavConnection {
     pub(crate) async fn connect_and_retrieve_root_dir(
@@ -301,7 +371,10 @@ impl WebdavConnection {
     async fn connect(connection_info: &WebdavConnectionConfig) -> Result<WebdavConnection> {
         let agent = reqwest_dav::re_exports::reqwest::ClientBuilder::new()
             .danger_accept_invalid_certs(connection_info.allow_untrusted_cert)
+            .default_headers(webdav_default_headers(&connection_info.root_url))
             .build()?;
+
+        let root_path = webdav_root_path(&connection_info.root_url)?;
 
         info!("Agent is created...");
 
@@ -316,7 +389,7 @@ impl WebdavConnection {
             .build()?;
 
         info!("Client is created...{:?}", &client);
-        let webdav_connection = WebdavConnection { client };
+        let webdav_connection = WebdavConnection { client, root_path };
 
         debug!("Listing root dir content to verify the client config info");
 
@@ -339,6 +412,7 @@ impl WebdavConnection {
         let paren_dir_parts = parent_dir
             .split("/")
             .filter(|s| filter_entry(s))
+            .map(|s| s.to_string())
             .collect::<Vec<_>>();
 
         let dir_info = self.client.list(parent_dir, Depth::Number(1)).await?;
@@ -354,11 +428,7 @@ impl WebdavConnection {
                     // files.push(n.to_string());
 
                     // Need to remove empty "" and mac OS specific dot files
-                    let list_file_parts = &list_file
-                        .href
-                        .split("/")
-                        .filter(|s| filter_entry(s))
-                        .collect::<Vec<_>>();
+                    let list_file_parts = &self.href_parts(&list_file.href);
 
                     // There is folder entry corresponding to the passed  'parent_dir'
                     // when dot files are excluded and we need to exclude that
@@ -367,7 +437,7 @@ impl WebdavConnection {
 
                     if !(&paren_dir_parts == list_file_parts) {
                         if let Some(last_comp) = list_file_parts.last() {
-                            files.push(last_comp.to_string());
+                            files.push(last_comp.clone());
                         }
                     }
                 }
@@ -376,18 +446,14 @@ impl WebdavConnection {
                     // let n = f.href.split_once("/").map_or_else(|| ".", |v| v.1);
                     // sub_dirs.push(n.to_string());
 
-                    let list_file_parts = &list_file
-                        .href
-                        .split("/")
-                        .filter(|s| filter_entry(s))
-                        .collect::<Vec<_>>();
+                    let list_file_parts = &self.href_parts(&list_file.href);
 
                     // There is folder entry corresponding to the passed  'parent_dir'
                     // and we need to exclude that
                     // e.g "dav/db1" -> ["dav" "db1"]
                     if !(&paren_dir_parts == list_file_parts) {
                         if let Some(last_comp) = list_file_parts.last() {
-                            sub_dirs.push(last_comp.to_string());
+                            sub_dirs.push(last_comp.clone());
                         }
                     }
                 }
@@ -403,14 +469,13 @@ impl WebdavConnection {
 
     async fn list_sub_dir(&self, parent_dir: &str, sub_dir: &str) -> Result<ServerDirEntry> {
         // Assuming parent_dir is the relative dir without host info
-        // For now we use this simple join of parent_dir and sub dir using sep "/"
-        let full_dir = [parent_dir, sub_dir].join("/");
+        let full_dir = join_webdav_path(parent_dir, sub_dir);
         self.list_dir(&full_dir).await
     }
 
     async fn read(&self, parent_dir: &str, file_name: &str) -> Result<RemoteReadData> {
         // In webdav, this is a relative path. E.g /parent_dir/file_name
-        let file_path = [parent_dir, file_name].join("/");
+        let file_path = join_webdav_path(parent_dir, file_name);
 
         debug!(
             "Webdav call is  going to read using file path {} ",
@@ -535,6 +600,15 @@ impl WebdavConnection {
         };
 
         Ok(rmd)
+    }
+
+    fn href_parts(&self, href: &str) -> Vec<String> {
+        // Servers like OpenList may return hrefs under the configured /dav/... root.
+        strip_webdav_root_path(href, &self.root_path)
+            .split("/")
+            .filter(|s| filter_entry(s))
+            .map(|s| s.to_string())
+            .collect()
     }
 
     async fn send_connect_and_retrieve_root_dir(

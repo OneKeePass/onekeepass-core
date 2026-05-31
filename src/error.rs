@@ -194,6 +194,14 @@ pub enum Error {
     #[error("NoRemoteStorageConnection")]
     NoRemoteStorageConnection,
 
+    // The remote db's connection config could not be resolved. For entry-based
+    // (kdbx-source) connections this means the db holding the connection entry
+    // is not open; it may also mean the config was removed. The UI uses this to
+    // prompt the user to open the concerned db (or open read-only) instead of
+    // silently falling back to a read-only backup.
+    #[error("RemoteStorageConfigNotAvailable")]
+    RemoteStorageConfigNotAvailable,
+
     // TODO: We may plan to use a struct RemoteStorageCallErrorEx {message,source, } See https://docs.rs/thiserror/latest/thiserror/ example
     // instead of RemoteStorageCallError(String)
     #[error("RemoteStorageCallError: {0}")]
