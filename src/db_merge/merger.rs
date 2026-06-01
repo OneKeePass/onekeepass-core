@@ -74,6 +74,7 @@ impl MergeResult {
     fn finalize_merge_done(&mut self) {
         // If there is any change is done to the target database, then we set this flag
         if self.meta_data_changed
+            || !self.added_entries.is_empty()
             || !self.updated_entries.is_empty()
             || !self.parent_changed_entries.is_empty()
             || !self.added_groups.is_empty()
