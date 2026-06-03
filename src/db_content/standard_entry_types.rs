@@ -303,7 +303,6 @@ lazy_static! {
                         FieldDef::new(URL).required(),
                         FieldDef::new(USER_NAME).required(),
                         FieldDef::new(PASSWORD).set_require_protection(true),
-                        FieldDef::new(START_DIR),
                         FieldDef::new(ALLOW_UNTRUSTED_CERT).set_data_type(FieldDataType::Bool),
                     ],
                 }],

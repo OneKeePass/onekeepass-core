@@ -182,8 +182,6 @@ pub struct WebdavConnectionConfig {
     pub user_name: String,
     pub password: String,
     pub allow_untrusted_cert: bool,
-    // All files and sub dirs from this will be shown as root
-    pub start_dir: Option<String>,
 }
 
 impl ConnectionId for WebdavConnectionConfig {
@@ -224,11 +222,6 @@ impl WebdavConnectionConfig {
             .map(|s| matches!(s.trim().to_ascii_lowercase().as_str(), "true" | "1" | "yes"))
             .unwrap_or(false);
 
-        let start_dir = kvs
-            .get(kv_key::START_DIR)
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
-
         Ok(WebdavConnectionConfig {
             connection_id,
             name,
@@ -236,7 +229,6 @@ impl WebdavConnectionConfig {
             user_name,
             password,
             allow_untrusted_cert,
-            start_dir,
         })
     }
 }

@@ -312,7 +312,15 @@ impl SftpConnection {
     async fn connect_by_id_and_retrieve_root_dir(connection_id: &str) -> Result<ConnectStatus> {
         // Makes connection to the remote storage and stores the connection in the local static map
         // Note sftp_connections_store().lock() called in this call
-        let _r = Self::connect_by_id(connection_id).await?;
+        let rc = Self::connect_by_id(connection_id).await?;
+
+        // Use the configured start dir as the listing root, defaulting to "/"
+        let start_dir = match &rc {
+            RemoteStorageTypeConfig::Sftp(c) => {
+                c.start_dir.clone().unwrap_or_else(|| "/".to_string())
+            }
+            _ => "/".to_string(),
+        };
 
         // Previous lock call should have been unlocked by this time. Otherwise deadlock will happen
         let connections = sftp_connections_store().lock().await;
@@ -324,7 +332,7 @@ impl SftpConnection {
             )
         })?;
 
-        let dirs = sftp_connection.list_dir("/").await?;
+        let dirs = sftp_connection.list_dir(&start_dir).await?;
 
         let u_id = uuid::Uuid::parse_str(connection_id)?;
         let conn_status = ConnectStatus {
