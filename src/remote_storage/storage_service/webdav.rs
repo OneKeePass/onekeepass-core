@@ -184,6 +184,25 @@ impl RemoteStorageOperation for Webdav {
 struct WebdavConnection {
     client: Client,
     root_path: String,
+    // Connection-affecting config fields captured when this connection was
+    // built. Used by connect_by_id to detect a cached connection that has gone
+    // stale because the source entry was edited (e.g. URL or credentials
+    // changed), so it rebuilds instead of reusing the old reqwest client.
+    root_url: String,
+    user_name: String,
+    password: String,
+    allow_untrusted_cert: bool,
+}
+
+impl WebdavConnection {
+    // True when this cached connection was built from the same connection-
+    // affecting fields as the given config.
+    fn matches_config(&self, c: &WebdavConnectionConfig) -> bool {
+        self.root_url == c.root_url
+            && self.user_name == c.user_name
+            && self.password == c.password
+            && self.allow_untrusted_cert == c.allow_untrusted_cert
+    }
 }
 
 type WebdavConnections = Arc<tokio::sync::Mutex<HashMap<String, WebdavConnection>>>;
@@ -349,11 +368,28 @@ impl WebdavConnection {
         // saveable even after the kdbx that holds its connection entry is closed.
         ConnectionConfigs::cache_config_in_memory(rc.clone());
 
-        if let Some(_c) = connections.get(connection_id) {
+        // Reuse the cached connection only if it was built from the same
+        // connection-affecting config. An edited entry (URL/credentials) leaves
+        // a stale reqwest client behind, so in that case we fall through and
+        // rebuild below.
+        let reuse = {
+            let RemoteStorageTypeConfig::Webdav(ref connection_info) = rc else {
+                // Should not happen
+                return Err(Error::DataError(
+                    "Webdav Connection config is expected and not returned from configs",
+                ));
+            };
+            connections
+                .get(connection_id)
+                .map(|c| c.matches_config(connection_info))
+                .unwrap_or(false)
+        };
+
+        if reuse {
             return Ok(rc);
         }
 
-        debug!("Previous connection is not available and will make new connection");
+        debug!("No matching cached connection; making a new connection");
 
         let RemoteStorageTypeConfig::Webdav(ref connection_info) = rc else {
             // Should not happen
@@ -393,7 +429,14 @@ impl WebdavConnection {
             .build()?;
 
         info!("Client is created...{:?}", &client);
-        let webdav_connection = WebdavConnection { client, root_path };
+        let webdav_connection = WebdavConnection {
+            client,
+            root_path,
+            root_url: connection_info.root_url.clone(),
+            user_name: connection_info.user_name.clone(),
+            password: connection_info.password.clone(),
+            allow_untrusted_cert: connection_info.allow_untrusted_cert,
+        };
 
         debug!("Listing root dir content to verify the client config info");
 

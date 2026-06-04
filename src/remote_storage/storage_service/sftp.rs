@@ -247,6 +247,27 @@ impl client::Handler for Client {
 struct SftpConnection {
     connection_id: Uuid,
     client_handle: Handle<Client>,
+    // Connection-affecting config fields captured when this connection was
+    // built. Used by connect_by_id to detect a cached connection that has gone
+    // stale because the source entry was edited (e.g. host, credentials or key
+    // changed), so it rebuilds instead of reusing the old session.
+    host: String,
+    port: u16,
+    user_name: String,
+    password: Option<String>,
+    private_key_file_name: Option<String>,
+}
+
+impl SftpConnection {
+    // True when this cached connection was built from the same connection-
+    // affecting fields as the given config.
+    fn matches_config(&self, c: &SftpConnectionConfig) -> bool {
+        self.host == c.host
+            && self.port == c.port
+            && self.user_name == c.user_name
+            && self.password == c.password
+            && self.private_key_file_name == c.private_key_file_name
+    }
 }
 
 type SftpConnections = Arc<tokio::sync::Mutex<HashMap<String, SftpConnection>>>;
@@ -361,16 +382,29 @@ impl SftpConnection {
         // saveable even after the kdbx that holds its connection entry is closed.
         ConnectionConfigs::cache_config_in_memory(rc.clone());
 
-        if let Some(c) = connections.get(connection_id) {
-            if !c.client_handle.is_closed() {
-                debug!(
-                    "SFTP connection is already done and no new connection is created for this id"
-                );
-                return Ok(rc);
-            }
+        // Reuse the cached connection only if it is still live AND was built
+        // from the same connection-affecting config. An edited entry (host,
+        // credentials or key) makes the cached session stale, so in that case
+        // we fall through and rebuild below.
+        let reuse = {
+            let RemoteStorageTypeConfig::Sftp(ref connection_info) = rc else {
+                // Should not happen
+                return Err(Error::DataError(
+                    "SFTP Connection config is expected and not returned from configs",
+                ));
+            };
+            connections
+                .get(connection_id)
+                .map(|c| !c.client_handle.is_closed() && c.matches_config(connection_info))
+                .unwrap_or(false)
+        };
+
+        if reuse {
+            debug!("SFTP connection is already done and matches config; reusing it");
+            return Ok(rc);
         }
 
-        debug!("Previous connection is not available and will make new connection");
+        debug!("No matching cached connection; making a new connection");
 
         let RemoteStorageTypeConfig::Sftp(ref mut connection_info) = rc else {
             // Should not happen
@@ -479,6 +513,11 @@ impl SftpConnection {
             Ok(SftpConnection {
                 connection_id: *connection_id,
                 client_handle,
+                host: host.clone(),
+                port: *port,
+                user_name: user_name.clone(),
+                password: password.clone(),
+                private_key_file_name: connection_info.private_key_file_name.clone(),
             })
         } else {
             Err(Error::SftpServerAuthenticationFailed)
