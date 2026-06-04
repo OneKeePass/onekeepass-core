@@ -388,6 +388,51 @@ impl ConnectionConfigs {
         }
     }
 
+    // Caches a resolved config in the in-memory store WITHOUT persisting it.
+    //
+    // Used when a remote db is opened/saved from a kdbx-entry-backed connection
+    // (the desktop case, where REMOTE_CONNECTION_SFTP / _WEBDAV entries are the
+    // only source and no Crw is installed). The kdbx that holds the connection
+    // entry can be closed while the remote db it sourced stays open; caching the
+    // resolved config here lets find_remote_storage_config's in-memory fallback
+    // keep resolving the connection so the still-open remote db remains saveable.
+    //
+    // Deliberately does not call write_config: on mobile (where a Crw is
+    // installed) the in-memory store mirrors the persisted blob store, and this
+    // session-only cache must never be written back to that persisted store.
+    pub(crate) fn cache_config_in_memory(request: RemoteStorageTypeConfig) {
+        let mut conns = lock_config_store();
+        match request {
+            RemoteStorageTypeConfig::Sftp(config) => {
+                Self::internal_add_or_update_config(&mut conns.sftp_connections, config);
+            }
+            RemoteStorageTypeConfig::Webdav(config) => {
+                Self::internal_add_or_update_config(&mut conns.webdav_connections, config);
+            }
+        }
+    }
+
+    // Removes a config from the in-memory store WITHOUT persisting the removal.
+    //
+    // The counterpart to cache_config_in_memory: called when a remote db is
+    // closed so its cached connection credentials do not linger in memory longer
+    // than the db that needed them. As with the cache, write_config is not
+    // called so a mobile persisted blob-store entry is never deleted by this.
+    pub fn remove_config_in_memory(
+        remote_type: RemoteStorageType,
+        connection_id: &Uuid,
+    ) {
+        let mut configs = lock_config_store();
+        match remote_type {
+            RemoteStorageType::Sftp => {
+                Self::interal_delete_config(connection_id, &mut configs.sftp_connections);
+            }
+            RemoteStorageType::Webdav => {
+                Self::interal_delete_config(connection_id, &mut configs.webdav_connections);
+            }
+        }
+    }
+
     // A new remote config is added or an existing config is updated
     pub(crate) fn add_or_update_config(request: RemoteStorageTypeConfig) -> Result<()> {
         // Need to be in a block so that the config_store().lock() is released before next lock call

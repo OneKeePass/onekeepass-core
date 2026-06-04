@@ -357,6 +357,10 @@ impl SftpConnection {
                 )
             })?;
 
+        // Cache the resolved config in memory so the still-open remote db stays
+        // saveable even after the kdbx that holds its connection entry is closed.
+        ConnectionConfigs::cache_config_in_memory(rc.clone());
+
         if let Some(c) = connections.get(connection_id) {
             if !c.client_handle.is_closed() {
                 debug!(
