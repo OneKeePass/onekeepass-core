@@ -1,5 +1,6 @@
 use crate::constants::custom_data_key::OKP_ENTRY_TYPE_MAP_DATA;
 use crate::constants::GENERATOR_NAME;
+use crate::crypto;
 use crate::db_content::EntryType;
 use crate::db_content::{CustomData, CustomIcons, MemoryProtection};
 use crate::error::Result;
@@ -9,6 +10,18 @@ use log::debug;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
+
+// Carries both the modified flag (drives MergeResult.meta_data_changed and the
+// save-pending state) and the icon UUID remap. The remap records pairs where
+// the source DB had an icon byte-identical to one in the target DB but under a
+// different UUID — entries/groups cloned from source must rewrite their
+// custom_icon_uuid through this map so they end up pointing at the surviving
+// target-side icon.
+#[derive(Default)]
+pub struct MetaMergeReport {
+    pub modified: bool,
+    pub icon_remap: HashMap<Uuid, Uuid>,
+}
 
 use super::entry_type::VersionedEntryType;
 use super::Item;
@@ -81,9 +94,9 @@ pub struct Meta {
     pub(crate) maintenance_history_days: i32,
     pub(crate) recycle_bin_enabled: bool,
 
-    // When a db is loaded, this is set from xml content if available and copied to root. 
-    // But when a recycle bin is created first time in onekeepas, 
-    // the new recycle group is created in 'root' and its uuid  is later 
+    // When a db is loaded, this is set from xml content if available and copied to root.
+    // But when a recycle bin is created first time in onekeepas,
+    // the new recycle group is created in 'root' and its uuid  is later
     // copied to meta from root before writing to xml
     pub(crate) recycle_bin_uuid: Uuid,
 
@@ -137,7 +150,6 @@ impl Meta {
         }
     }
 
-    
     pub(crate) fn database_name(&self) -> &String {
         &self.database_name
     }
@@ -266,9 +278,19 @@ impl Meta {
 }
 
 impl Meta {
-    pub fn merge(&mut self, other: &Meta) -> Result<bool> {
+    // Same-DB merge: source and target share root_uuid (copies of the same DB).
+    // Runs the full meta merge: identity fields gated on settings_changed,
+    // custom icons (dedup + remap), and custom data (additive).
+    pub fn merge(&mut self, other: &Meta) -> Result<MetaMergeReport> {
         let current_time = util::now_utc();
         let mut modified = false;
+
+        // Identity fields (database name, description, default user name,
+        // memory protection, master_key_changed, etc.) are gated on
+        // settings_changed: only adopt source's values if source's settings
+        // were updated more recently than target's. These are target-identity
+        // fields, so this block is intentionally NOT run for cross-DB merges
+        // (see merge_from_different_db below).
         // debug!("-- META: self.settings_changed {} other.settings_changed {}", &self.settings_changed, &other.settings_changed);
         if self.settings_changed < other.settings_changed {
             // debug!("-- META: self.settings_changed < other.settings_changed {}",self.settings_changed < other.settings_changed);
@@ -317,30 +339,149 @@ impl Meta {
             }
         }
 
-        if self.custom_icons != other.custom_icons {
-            for other_icon in other.custom_icons.icons.iter() {
-                if let Some(this_icon) = self
-                    .custom_icons
-                    .icons
-                    .iter_mut()
-                    .find(|i| i.uuid == other_icon.uuid)
-                {
-                    // A matching custom icon is found
-                    // TODO: Use this_icon.last_modification_time ?
-                    if this_icon.data != other_icon.data {
-                        this_icon.name = other_icon.name.clone();
-                        this_icon.data = other_icon.data.clone();
-                    }
-                } else {
-                    // No matching custom icon is found and added
-                    self.custom_icons.icons.push(other_icon.clone());
-                }
-            }
-            // debug!("-- META: custom_icons is changed");
+        let (icons_modified, icon_remap) = self.merge_custom_icons(other)?;
+        if icons_modified {
             modified = true;
-            // Need to drop any custom icons that are not found in source should be removed from target
         }
 
+        if self.merge_custom_data(other, current_time) {
+            modified = true;
+        }
+
+        if modified {
+            // debug!("-- META: Before self.settings_changed {} ", &self.settings_changed);
+            self.settings_changed = current_time;
+            // debug!("-- META: After self.settings_changed {} ", &self.settings_changed);
+        }
+
+        Ok(MetaMergeReport {
+            modified,
+            icon_remap,
+        })
+    }
+
+    // Cross-DB merge: source and target are unrelated databases (different
+    // root_uuids). Used when the user imports one DB into another.
+    //
+    // Intentionally skips the settings_changed-gated identity block: target
+    // keeps its own database_name, description, default_user_name,
+    // memory_protection, master_key_changed, etc. — those are target's
+    // identity, not properties of the data being imported.
+    //
+    // Custom icons and custom data are still merged because both are
+    // inherently additive / dedup-aware:
+    //   - custom icons: content-hash dedup, target-wins on UUID collision,
+    //     append-only for genuinely new icons (same helper as merge()).
+    //   - custom data: additive merge; existing keys keep their value unless
+    //     source has the same key with a different value (then source wins
+    //     for that single key). Source's custom-entry-type definitions and
+    //     other meta-level keys get imported.
+    //
+    // The icon_remap returned here is used by Merger at every clone site
+    // for source entries/groups, exactly the same as the same-DB path.
+    pub fn merge_from_different_db(&mut self, other: &Meta) -> Result<MetaMergeReport> {
+        let current_time = util::now_utc();
+        let mut modified = false;
+
+        let (icons_modified, icon_remap) = self.merge_custom_icons(other)?;
+        if icons_modified {
+            modified = true;
+        }
+
+        if self.merge_custom_data(other, current_time) {
+            modified = true;
+        }
+
+        if modified {
+            self.settings_changed = current_time;
+        }
+
+        Ok(MetaMergeReport {
+            modified,
+            icon_remap,
+        })
+    }
+
+    // Merges source's custom_icons into self with content-hash dedup.
+    // Returns (modified, icon_remap). Shared by both merge() and
+    // merge_from_different_db() — the policy is identical for same-DB and
+    // cross-DB merges because the dedup invariant is content-addressable and
+    // target-wins on UUID collision is safe either way.
+    fn merge_custom_icons(&mut self, other: &Meta) -> Result<(bool, HashMap<Uuid, Uuid>)> {
+        let mut modified = false;
+        let mut icon_remap: HashMap<Uuid, Uuid> = HashMap::new();
+
+        log::debug!(
+            "Going to merge custom_icons in meta data ... and comparion custom icons {}",
+            self.custom_icons != other.custom_icons
+        );
+        if self.custom_icons != other.custom_icons {
+            // Index target icons by content hash for O(1) dedup lookup. The
+            // dedup invariant mirrors add_custom_icon (custom_icons.rs): no two
+            // icons in a DB should share bytes. Length pre-check would skip
+            // hashing here, but pre-hashing target once is cheaper than
+            // hashing per source icon with a length scan against every target.
+            let mut target_by_hash: HashMap<Vec<u8>, Uuid> =
+                HashMap::with_capacity(self.custom_icons.icons.len());
+            for t in &self.custom_icons.icons {
+                let h = crypto::sha256_hash_from_slice(&t.data)?;
+                target_by_hash.insert(h, t.uuid);
+            }
+
+            log::debug!(
+                "Formed target_by_hash map with size {}",
+                target_by_hash.len()
+            );
+
+            for other_icon in other.custom_icons.icons.iter() {
+                let other_hash = crypto::sha256_hash_from_slice(&other_icon.data)?;
+
+                // (A) Same bytes already in target under some UUID. If the
+                //     target UUID differs from the source UUID, record a remap
+                //     so source-borne entries/groups will retarget to the
+                //     existing target icon when they're cloned into target.
+                if let Some(&target_uuid) = target_by_hash.get(&other_hash) {
+                    if target_uuid != other_icon.uuid {
+                        icon_remap.insert(other_icon.uuid, target_uuid);
+                    }
+                    continue;
+                }
+
+                // (B) Source UUID already in target but with different bytes
+                //     (content hash didn't match in (A)). Follow KeePassXC's
+                //     rule: target wins — leave target's icon alone.
+                //     OneKeePass has no edit-icon operation, so a
+                //     last_modification_time tie-breaker would not be
+                //     meaningful here.
+                if self
+                    .custom_icons
+                    .icons
+                    .iter()
+                    .any(|i| i.uuid == other_icon.uuid)
+                {
+                    continue;
+                }
+
+                // (C) Genuinely new icon: append, and re-index in case a
+                //     subsequent source icon shares these bytes.
+                target_by_hash.insert(other_hash, other_icon.uuid);
+                self.custom_icons.icons.push(other_icon.clone());
+                modified = true;
+            }
+        }
+
+        Ok((modified, icon_remap))
+    }
+
+    // Additively merges source's custom_data into self. For overlapping keys
+    // with differing values, source's value wins and last_modification_time
+    // is stamped with current_time. Returns whether anything changed.
+    //
+    // Used by both merge() and merge_from_different_db(). On the cross-DB
+    // path this is how source's custom-entry-type definitions (stored in
+    // meta custom_data under OKP_ENTRY_TYPE_MAP_DATA) come over.
+    fn merge_custom_data(&mut self, other: &Meta, current_time: NaiveDateTime) -> bool {
+        let mut modified = false;
         if self.custom_data != other.custom_data {
             for other_item in other.custom_data.get_items() {
                 if let Some(this_item) = self.custom_data.get_item_mut(&other_item.key) {
@@ -367,14 +508,7 @@ impl Meta {
 
             // Need to drop any custom data item that are not found in source should be removed from target
         }
-
-        if modified {
-            // debug!("-- META: Before self.settings_changed {} ", &self.settings_changed);
-            self.settings_changed = current_time;
-            // debug!("-- META: After self.settings_changed {} ", &self.settings_changed);
-        }
-
-        Ok(modified)
+        modified
     }
 
     #[allow(unused)]

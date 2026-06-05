@@ -94,6 +94,12 @@ pub mod entry_type_name {
 
     pub const AUTO_DB_OPEN: &str = "Auto Database Open";
 
+    // Remote-storage connection entry types. A user keeps SFTP / WebDAV server
+    // credentials as regular kdbx entries; the remote_storage resolver looks
+    // them up by entry uuid (= connection id). See Plans-Created/Remote-Storage.
+    pub const REMOTE_CONNECTION_SFTP: &str = "SFTP Connection";
+    pub const REMOTE_CONNECTION_WEBDAV: &str = "WebDAV Connection";
+
     pub const PASSPORT: &str = "Passport";
     pub const IDENTITY: &str = "Identity";
     pub const DRIVER_LICENSE: &str = "Driver License";
@@ -156,6 +162,18 @@ pub mod entry_type_uuid {
         0x38, 0x93, 0x68, 0xA9, 0x73, 0xA9, 0x42, 0x56, 0x82, 0x47, 0x32, 0x1A, 0x2E, 0x60, 0xB2,
         0xC7,
     ];
+
+    // c5a57a41-4cca-4a46-bac1-78a8803f4da0
+    pub const REMOTE_CONNECTION_SFTP: &[u8] = &[
+        0xC5, 0xA5, 0x7A, 0x41, 0x4C, 0xCA, 0x4A, 0x46, 0xBA, 0xC1, 0x78, 0xA8, 0x80, 0x3F, 0x4D,
+        0xA0,
+    ];
+
+    // 0a14d76d-8c38-4c62-9ad7-390dc020a2af
+    pub const REMOTE_CONNECTION_WEBDAV: &[u8] = &[
+        0x0A, 0x14, 0xD7, 0x6D, 0x8C, 0x38, 0x4C, 0x62, 0x9A, 0xD7, 0x39, 0x0D, 0xC0, 0x20, 0xA2,
+        0xAF,
+    ];
 }
 
 #[allow(dead_code)]
@@ -173,6 +191,14 @@ pub mod entry_keyvalue_key {
     pub const NUMBER: &str = "Number";
 
     pub const IF_DEVICE: &str = "IfDevice";
+
+    // Fields used by the REMOTE_CONNECTION_SFTP / REMOTE_CONNECTION_WEBDAV
+    // entry types. The remote-storage resolver maps these kvs onto
+    // SftpConnectionConfig / WebdavConnectionConfig via from_kvs.
+    pub const HOST: &str = "Host";
+    pub const PORT: &str = "Port";
+    pub const START_DIR: &str = "Start Dir";
+    pub const ALLOW_UNTRUSTED_CERT: &str = "Allow Untrusted Cert";
 
     // pub const ENABLED: &str = "Enabled";
     // pub const PRIORITY: &str = "Priority";

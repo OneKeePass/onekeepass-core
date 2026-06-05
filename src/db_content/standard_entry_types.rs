@@ -31,6 +31,8 @@ pub const STANDARD_TYPE_NAMES: &[&'static str] = &[
     BANK_ACCOUNT,
     WIRELESS_ROUTER,
     AUTO_DB_OPEN,
+    REMOTE_CONNECTION_SFTP,
+    REMOTE_CONNECTION_WEBDAV,
 ];
 
 //pub const STANDARD_TYPE_UUIDS:&[&'static Uuid] = &[&build_uuid!(entry_type_uuid::LOGIN) ];
@@ -55,25 +57,27 @@ lazy_static! {
         m.insert(BANK_ACCOUNT,build_uuid!(entry_type_uuid::BANK_ACCOUNT));
         m.insert(WIRELESS_ROUTER,build_uuid!(entry_type_uuid::WIRELESS_ROUTER));
         m.insert(AUTO_DB_OPEN,build_uuid!(entry_type_uuid::AUTO_DB_OPEN));
+        m.insert(REMOTE_CONNECTION_SFTP,build_uuid!(entry_type_uuid::REMOTE_CONNECTION_SFTP));
+        m.insert(REMOTE_CONNECTION_WEBDAV,build_uuid!(entry_type_uuid::REMOTE_CONNECTION_WEBDAV));
         m
     };
 
     pub static ref DEFAULT_ENTRY_TYPE: EntryType = EntryType {
-        
+
 
         // onekeepass_core::db_content::entry_type::EntryTypeV  pub(crate) fn changed(&self, other: &EntryType) -> bool
-        
+
         // It appears we can add more sections or field defs to the standard entry types as long as FieldDef or Section are not changed
-        // We should be able to read the previously stored entry types data and use the latest defined standard entry type 
+        // We should be able to read the previously stored entry types data and use the latest defined standard entry type
         // This was tested briefly while introducing OTP to all , ADDITIONAL_URLS to BANK_ACCOUNT and CREDIT_DEBIT_CARD
-        
+
         // Removed FieldDef.required() calls
 
         // Similarly we can drop a section or field def from standard entry type definition (Not yet tested)
 
-        // Also see - pub(crate) fn changed(&self, other: &EntryType) -> bool of onekeepass_core::db_content::entry_type::EntryTypeV  
+        // Also see - pub(crate) fn changed(&self, other: &EntryType) -> bool of onekeepass_core::db_content::entry_type::EntryTypeV
         // Here we compare the entry type's section by section to identify any changes between incoming and standard type
-        // Not sure how this impacts if we add new section or field def, though did not see any issue so far.   
+        // Not sure how this impacts if we add new section or field def, though did not see any issue so far.
 
         uuid: build_uuid!(entry_type_uuid::LOGIN),
         name: LOGIN.into(),
@@ -257,6 +261,49 @@ lazy_static! {
                         // FieldDef::new(PRIORITY),
                         // FieldDef::new(SKIP_IF_NOT_EXISTS).set_data_type(FieldDataType::Bool),
                         // FieldDef::new(SKIP_IF_KEY_FILE_NOT_EXISTS).set_data_type(FieldDataType::Bool),
+                    ],
+                }],
+            },
+        );
+
+        // SFTP remote-connection entry. Connection id = entry uuid; the SFTP
+        // private key (when used) is stored as an entry attachment, not a
+        // field.
+        m.insert(
+            build_uuid!(entry_type_uuid::REMOTE_CONNECTION_SFTP),
+            EntryType {
+                uuid: build_uuid!(entry_type_uuid::REMOTE_CONNECTION_SFTP),
+                name: REMOTE_CONNECTION_SFTP.into(),
+                secondary_title: Some(HOST.into()),
+                icon_name: None,
+                sections: vec![Section {
+                    name: LOGIN_DETAILS.into(),
+                    field_defs: vec![
+                        FieldDef::new(HOST).required(),
+                        FieldDef::new(PORT).set_data_type(FieldDataType::Number),
+                        FieldDef::new(USER_NAME).required(),
+                        FieldDef::new(PASSWORD).set_require_protection(true),
+                        FieldDef::new(START_DIR),
+                    ],
+                }],
+            },
+        );
+
+        // WebDAV remote-connection entry. Connection id = entry uuid.
+        m.insert(
+            build_uuid!(entry_type_uuid::REMOTE_CONNECTION_WEBDAV),
+            EntryType {
+                uuid: build_uuid!(entry_type_uuid::REMOTE_CONNECTION_WEBDAV),
+                name: REMOTE_CONNECTION_WEBDAV.into(),
+                secondary_title: Some(URL.into()),
+                icon_name: None,
+                sections: vec![Section {
+                    name: LOGIN_DETAILS.into(),
+                    field_defs: vec![
+                        FieldDef::new(URL).required(),
+                        FieldDef::new(USER_NAME).required(),
+                        FieldDef::new(PASSWORD).set_require_protection(true),
+                        FieldDef::new(ALLOW_UNTRUSTED_CERT).set_data_type(FieldDataType::Bool),
                     ],
                 }],
             },

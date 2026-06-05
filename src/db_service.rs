@@ -2,6 +2,7 @@
 // db_service.rs is used instead of mod.rs in dir db_service
 
 mod attachment;
+mod custom_icon;
 mod io;
 
 // Passkey DB types and functions — compiled on all platforms (no cfg gate).
@@ -85,8 +86,24 @@ pub use crate::form_data::{
 };
 
 pub use crate::constants::entry_keyvalue_key;
+pub use crate::constants::entry_type_uuid;
 
 pub use crate::db_merge::MergeResult;
+
+pub use crate::custom_icons::{CustomIconData, CustomIconSummary};
+
+pub use custom_icon::{
+    add_custom_icon, get_custom_icon, list_custom_icons, remove_custom_icon,
+    set_entry_custom_icon, set_group_custom_icon,
+};
+
+#[cfg(feature = "favicon")]
+pub use custom_icon::{download_and_add_custom_icon, normalize_image_to_png};
+
+pub use crate::remote_storage::connection_entry::{
+    entry_first_attachment, find_remote_connection_entry, list_remote_connection_entries,
+    RemoteConnectionEntry, RemoteConnectionEntrySummary,
+};
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub use crate::import::csv_reader::{CsvImport, CsvImportMapping, CsvImportOptions, CvsHeaderInfo};
@@ -269,7 +286,7 @@ macro_rules! kdbx_context_mut_action {
 }
 
 // Calls the action closure with the complete context for a specific db
-fn call_kdbx_context_action<T, F>(db_key: &str, action: F) -> Result<T>
+pub(crate) fn call_kdbx_context_action<T, F>(db_key: &str, action: F) -> Result<T>
 where
     F: Fn(&KdbxContext) -> Result<T>,
 {
@@ -295,7 +312,7 @@ where
 }
 
 // Calls the action closure with the db content for a specific db
-fn call_main_content_action<T, F>(db_key: &str, action: F) -> Result<T>
+pub(crate) fn call_main_content_action<T, F>(db_key: &str, action: F) -> Result<T>
 where
     F: Fn(&KeepassFile) -> Result<T>,
 {
@@ -609,7 +626,9 @@ pub fn search_term(db_key: &str, term: &str) -> Result<EntrySearchResult> {
                     parent_group_uuid: e.parent_group_uuid(),
                     title: t1,
                     secondary_title: t2,
+                    entry_type_name: e.entry_field.entry_type.name.clone(),
                     icon_id: e.icon_id,
+                    custom_icon_uuid: e.custom_icon_uuid.map(|u| u.to_string()),
                     history_index: None,
                     #[allow(deprecated)]
                     modified_time: Some(e.times.last_modification_time.timestamp()),
@@ -693,6 +712,7 @@ fn create_groups_summary_data(k: &KeepassFile) -> Result<GroupTree> {
                 parent_group_uuid: group.parent_group_uuid(),
                 name: group.name.clone(),
                 icon_id: group.icon_id,
+                custom_icon_uuid: group.custom_icon_uuid.map(|u| u.to_string()),
                 group_uuids: adjust_special_groups_order(k, &group),
                 entry_uuids: group.entry_uuids.iter().map(|x| x.to_string()).collect(),
             },
@@ -1028,12 +1048,11 @@ pub fn move_entry_to_other_db(
 
     let summary = {
         let mut store = main_store().lock().unwrap();
-        let [target_opt, source_opt] =
-            store.get_disjoint_mut([target_db_key, source_db_key]);
-        let target_ctx = target_opt
-            .ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
-        let source_ctx = source_opt
-            .ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
+        let [target_opt, source_opt] = store.get_disjoint_mut([target_db_key, source_db_key]);
+        let target_ctx =
+            target_opt.ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
+        let source_ctx =
+            source_opt.ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
 
         // Copy all source attachments into the target. The storage is content-addressed
         // by hash so unreferenced extras are filtered out at save time.
@@ -1097,12 +1116,11 @@ pub fn move_group_to_other_db(
 
     let summary = {
         let mut store = main_store().lock().unwrap();
-        let [target_opt, source_opt] =
-            store.get_disjoint_mut([target_db_key, source_db_key]);
-        let target_ctx = target_opt
-            .ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
-        let source_ctx = source_opt
-            .ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
+        let [target_opt, source_opt] = store.get_disjoint_mut([target_db_key, source_db_key]);
+        let target_ctx =
+            target_opt.ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
+        let source_ctx =
+            source_opt.ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
 
         let source_attachments = source_ctx.kdbx_file.attachmentset().clone();
         target_ctx
@@ -1164,12 +1182,11 @@ pub fn clone_entry_to_other_db(
 
     let summary = {
         let mut store = main_store().lock().unwrap();
-        let [target_opt, source_opt] =
-            store.get_disjoint_mut([target_db_key, source_db_key]);
-        let target_ctx = target_opt
-            .ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
-        let source_ctx = source_opt
-            .ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
+        let [target_opt, source_opt] = store.get_disjoint_mut([target_db_key, source_db_key]);
+        let target_ctx =
+            target_opt.ok_or_else(|| Error::NotFound("Target database key is not found".into()))?;
+        let source_ctx =
+            source_opt.ok_or_else(|| Error::NotFound("Source database key is not found".into()))?;
 
         // Copy all source attachments into target (content-addressed; unreferenced extras
         // are filtered at save time — same approach as move)
@@ -1349,6 +1366,30 @@ pub fn merge_databases(
     Ok(merge_result)
 }
 
+// Merges a kdbx loaded from an arbitrary reader into the in-memory version.
+// Same shape as merge_kdbx_with_disk_version but reads bytes from the
+// caller-supplied reader (used by the remote-storage path on both desktop and
+// mobile, where the "other side" lives on SFTP/WebDAV rather than disk).
+pub fn merge_kdbx_with_reader<R: std::io::Read + std::io::Seek>(
+    db_key: &str,
+    reader: &mut R,
+) -> Result<MergeResult> {
+    call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
+        let other_kdbx = db::reload(reader, &ctx.kdbx_file).map_err(|e| match e {
+            Error::HeaderHmacHashCheckFailed => Error::MergeFailedCredentialsChanged,
+            other => other,
+        })?;
+
+        let merge_result =
+            db_merge::Merger::from_kdbx_file(&other_kdbx, &mut ctx.kdbx_file).merge()?;
+
+        ctx.kdbx_file.checksum_hash = db::calculate_db_file_checksum(reader)?;
+        ctx.save_pending = true;
+
+        Ok(merge_result)
+    })
+}
+
 // Desktop-only: merges the on-disk version of the DB into the in-memory version.
 // Uses the stored composite key — no credential re-entry needed.
 // Sets save_pending = true on success so the UI knows unsaved changes exist.
@@ -1357,12 +1398,12 @@ pub fn merge_kdbx_with_disk_version(db_key: &str) -> Result<MergeResult> {
     call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
         // Load the on-disk version which will decrypted using the stored composite key.
         let mut reader = db::open_db_file(db_key)?;
-        
+
         debug!("The db file {} is loaded to merge", &db_key);
-        
+
         // if let Some(kc) = ctx.kdbx_file.keepass_main_content.as_ref() {
         //     debug!("before merging Ctx all entries count{} ", kc.root.all_entries().len());
-        // } 
+        // }
 
         // debug!(ctx.kdbx_file.all_entries);
         // db::reload() clones ctx.kdbx_file (including encrypted composite key) and decrypts.
@@ -1373,12 +1414,12 @@ pub fn merge_kdbx_with_disk_version(db_key: &str) -> Result<MergeResult> {
             Error::HeaderHmacHashCheckFailed => Error::MergeFailedCredentialsChanged,
             other => other,
         })?;
-        
+
         debug!("Db is reloaded from file system");
 
         // if let Some(kc) = disk_kdbx.keepass_main_content.as_ref() {
         //     debug!("Disk all entries count {} ", kc.root.all_entries().len());
-        // } 
+        // }
 
         // Merge: disk version = source, in-memory version = target
         let merge_result =
@@ -1391,7 +1432,7 @@ pub fn merge_kdbx_with_disk_version(db_key: &str) -> Result<MergeResult> {
 
         // if let Some(kc) = ctx.kdbx_file.keepass_main_content.as_ref() {
         //     debug!("After merging Ctx all entries count{} ", kc.root.all_entries().len());
-        // } 
+        // }
 
         Ok(merge_result)
     })

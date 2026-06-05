@@ -74,6 +74,7 @@ impl MergeResult {
     fn finalize_merge_done(&mut self) {
         // If there is any change is done to the target database, then we set this flag
         if self.meta_data_changed
+            || !self.added_entries.is_empty()
             || !self.updated_entries.is_empty()
             || !self.parent_changed_entries.is_empty()
             || !self.added_groups.is_empty()
@@ -92,6 +93,10 @@ pub struct Merger<'a> {
     target_db: &'a mut KeepassFile,
     merge_result: MergeResult,
     different_databases: bool,
+    // Source-icon-UUID → target-icon-UUID for icons that were content-deduped
+    // by Meta::merge. Empty if no dedup happened (common case). Applied to
+    // every entry/group cloned from source before it lands in target.
+    icon_remap: HashMap<Uuid, Uuid>,
 }
 
 impl<'a> Merger<'a> {
@@ -101,6 +106,7 @@ impl<'a> Merger<'a> {
             target_db,
             merge_result: MergeResult::default(),
             different_databases: false,
+            icon_remap: HashMap::new(),
         }
     }
 
@@ -163,35 +169,88 @@ impl<'a> Merger<'a> {
             .push(EntryInfo::from(name, uuid));
     }
 
+    // Rewrites the cloned entry's (and each of its history entries')
+    // custom_icon_uuid through the icon_remap built by Meta::merge.
+    // Mutates only the passed clone — source_db is never touched.
+    fn remap_entry_icons(&self, entry: &mut Entry) {
+        if self.icon_remap.is_empty() {
+            return;
+        }
+        if let Some(uuid) = entry.custom_icon_uuid {
+            if let Some(&new) = self.icon_remap.get(&uuid) {
+                entry.custom_icon_uuid = Some(new);
+            }
+        }
+        for h in entry.history.entries.iter_mut() {
+            if let Some(uuid) = h.custom_icon_uuid {
+                if let Some(&new) = self.icon_remap.get(&uuid) {
+                    h.custom_icon_uuid = Some(new);
+                }
+            }
+        }
+    }
+
+    // Rewrites the cloned group's custom_icon_uuid through icon_remap.
+    fn remap_group_icon(&self, group: &mut Group) {
+        if self.icon_remap.is_empty() {
+            return;
+        }
+        if let Some(uuid) = group.custom_icon_uuid {
+            if let Some(&new) = self.icon_remap.get(&uuid) {
+                group.custom_icon_uuid = Some(new);
+            }
+        }
+    }
+
     pub(crate) fn merge(&mut self) -> Result<MergeResult> {
+        log::debug!("Starting merge.....");
+
         let source_root_group = self
             .source_db
             .root
             .group_by_id(&self.source_db.root.root_uuid())
             .ok_or_else(|| "Root source group is not found")?;
 
-        let target_root_group = self
-            .target_db
-            .root
-            .group_by_id_mut(&self.target_db.root.root_uuid())
-            .ok_or_else(|| "Root target group is not found")?;
+        // Read what we need from the target root group up front and drop the
+        // mutable borrow before calling self.merge_meta() — Meta::merge needs
+        // &mut self.target_db, which conflicts with any outstanding borrow
+        // into self.target_db.root.
+        let (target_root_uuid, target_root_lmt) = {
+            let target_root_group = self
+                .target_db
+                .root
+                .group_by_id(&self.target_db.root.root_uuid())
+                .ok_or_else(|| "Root target group is not found")?;
+            (
+                target_root_group.get_uuid(),
+                target_root_group.last_modification_time(),
+            )
+        };
 
         // We determine whether source and target dbs are same or not
-        // based on the db's root group uuid. Here we are assuming that 
+        // based on the db's root group uuid. Here we are assuming that
         // this is true across different implementations of Keepass. This is true in OneKeePass
-        // If that assumption is not correct for other implementation, we need another method of establishing 
-        // whether the source and the destination dbs are copies of the same db 
-        if source_root_group.get_uuid() == target_root_group.get_uuid() {
+        // If that assumption is not correct for other implementation, we need another method of establishing
+        // whether the source and the destination dbs are copies of the same db
+        if source_root_group.get_uuid() == target_root_uuid {
+            log::debug!("Both target and source databases are same - may be copies");
+
+            // Merge meta first so the custom-icon remap is built before we
+            // start cloning source-side groups/entries into target. Otherwise
+            // the root-group update below (and any later clone sites) would
+            // see an empty remap. Meta::merge only touches target.meta and
+            // reads source.meta — it has no dependency on root group state,
+            // so this reorder is safe.
+            self.merge_meta()?;
+
             // Source root group is newer than target root group
-            if source_root_group.last_modification_time()
-                > target_root_group.last_modification_time()
-            {
+            if source_root_group.last_modification_time() > target_root_lmt {
                 // Target root group's content is changed with source db's root group's content
                 // This 'update_group' call updates the target group's modification time with source's time as
                 // we pass 'true' in arg
-                self.target_db
-                    .root
-                    .update_group(source_root_group.clone(), true);
+                let mut g = source_root_group.clone();
+                self.remap_group_icon(&mut g);
+                self.target_db.root.update_group(g, true);
 
                 self.record_group_updated(
                     &source_root_group.name(),
@@ -206,50 +265,36 @@ impl<'a> Merger<'a> {
                 .root
                 .set_recycle_bin_group_on_merge(source_recycle_bin_uuid);
 
-            self.merge_meta()?;
             self.merge_groups(source_root_group)?;
             self.merge_deleted_objects()?;
         } else {
-            // Source and target dbs are different
-
+            // Source and target dbs are different (different root_uuid).
+            // The user is importing one DB into another, not reconciling
+            // copies of the same DB.
+            //
+            // Cross-DB meta merge handles two things and intentionally skips
+            // the identity-fields block (database name, description, default
+            // user name, etc.): those are target's identity and should not be
+            // overwritten by an unrelated import. See
+            // Meta::merge_from_different_db for the policy details.
+            //
+            // - Custom icons: source's icons are appended into target with
+            //   content-hash dedup. The produced icon_remap is applied at
+            //   every clone site below (same wiring as the same-DB path).
+            // - Custom data (incl. custom-entry-type definitions stored
+            //   under OKP_ENTRY_TYPE_MAP_DATA): additive merge so source's
+            //   entry types and other meta keys are usable in target.
+            //
+            // This must run before merge_groups so the icon_remap is in
+            // place when source entries/groups get cloned into target.
+            log::debug!("Both target and source databases are different");
             self.different_databases = true;
             self.merge_result.different_databases = true;
 
-            // let root_uuid = target_root_group.get_uuid().clone();
-
-            // for entry_uuid in source_root_group.entry_uuids() {
-            //     if self.target_db.root.entry_by_id(entry_uuid).is_none() {
-            //         let mut source_root_entry = self
-            //             .source_db
-            //             .root
-            //             .entry_by_id(entry_uuid)
-            //             .ok_or_else(|| "Source entry is not found")?
-            //             .clone();
-            //         source_root_entry.set_parent_group_uuid(&root_uuid);
-            //         self.target_db.root.insert_entry(source_root_entry)?;
-            //     }
-            // }
-
-            // for group_uuid in source_root_group.sub_group_uuids() {
-            //     if self.target_db.root.group_by_id(group_uuid).is_none() {
-            //         let mut source_root_group = self
-            //             .source_db
-            //             .root
-            //             .group_by_id(group_uuid)
-            //             .ok_or_else(|| "Source entry is not found")?
-            //             .clone();
-            //         source_root_group.set_parent_group_uuid(&root_uuid);
-            //         self.target_db.root.insert_group(source_root_group)?;
-            //     }
-            // }
+            self.merge_meta_different_db()?;
 
             self.merge_groups(source_root_group)?;
             self.merge_deleted_objects()?;
-
-            // TODO:
-            // Copy any custom entry type definitions stored in custom data of source meta to meta's custom data of target
-
-            // Copy all deleted objects from source db to target
         }
 
         self.merge_result.finalize_merge_done();
@@ -365,6 +410,10 @@ impl<'a> Merger<'a> {
                         .set_parent_group_uuid(&source_parent_group_uuid)
                         .clear_children();
 
+                    // Rewrite custom_icon_uuid through the dedup remap so the
+                    // cloned group points at the surviving target-side icon.
+                    self.remap_group_icon(&mut group);
+
                     // Should last modification time be updated instead of using the source's time?
                     self.target_db.root.insert_group(group)?;
 
@@ -395,7 +444,9 @@ impl<'a> Merger<'a> {
         }
 
         // We change the target group data as source group data as is new
-        self.target_db.root.update_group(source_group.clone(), true);
+        let mut g = source_group.clone();
+        self.remap_group_icon(&mut g);
+        self.target_db.root.update_group(g, true);
 
         self.record_group_updated(&source_group.name(), source_group.get_uuid());
 
@@ -446,6 +497,10 @@ impl<'a> Merger<'a> {
                     let mut entry = source_entry.clone();
                     entry.set_parent_group_uuid(&source_parent_group_uuid);
 
+                    // Rewrite custom_icon_uuid on the cloned entry and each
+                    // of its history entries through the dedup remap.
+                    self.remap_entry_icons(&mut entry);
+
                     self.record_entry_added(&entry.title(), entry.get_uuid());
                     // This entry will have its history as it is cloned from source (needs checking on ui)
                     self.target_db.root.insert_entry(entry)?;
@@ -478,6 +533,11 @@ impl<'a> Merger<'a> {
             // Source entry is newer
             let mut to_entry_cloned = source_entry.clone();
 
+            // Source replaces target wholesale here, so the entry that lands
+            // in target carries source's custom_icon_uuid (and history). Rewrite
+            // through the dedup remap before merging histories.
+            self.remap_entry_icons(&mut to_entry_cloned);
+
             let from_entry_cloned = &target_entry;
 
             // target entry's histories are merged to the source entry's history
@@ -492,7 +552,13 @@ impl<'a> Merger<'a> {
 
             if !target_entry.found_in_history(source_entry) {
                 let to_entry_cloned = &mut target_entry;
-                let from_entry_cloned = source_entry.clone();
+                let mut from_entry_cloned = source_entry.clone();
+
+                // Source becomes a history entry inside target; remap its
+                // custom_icon_uuid (and its own history's) so the references
+                // stored in target don't dangle after dedup.
+                self.remap_entry_icons(&mut from_entry_cloned);
+
                 // source entry's histories are merged to the target entry's history
                 // and the target entry is stored in the target db
                 self.merge_histories(&from_entry_cloned, to_entry_cloned)?;
@@ -535,7 +601,27 @@ impl<'a> Merger<'a> {
     }
 
     fn merge_meta(&mut self) -> Result<()> {
-        self.merge_result.meta_data_changed = self.target_db.meta.merge(&self.source_db.meta)?;
+        log::debug!("Going to merge meta data .....");
+        let report = self.target_db.meta.merge(&self.source_db.meta)?;
+        self.merge_result.meta_data_changed = report.modified;
+        self.icon_remap = report.icon_remap;
+        Ok(())
+    }
+
+    // Cross-DB variant: runs only the additive portions of the meta merge
+    // (custom icons + custom data). Skips the settings_changed-gated identity
+    // block — target keeps its own name, description, default user name,
+    // memory protection, etc. The icon_remap returned still flows through the
+    // same Merger.icon_remap and gets applied at every clone site, so source
+    // entries/groups end up pointing at the dedup-surviving target icons.
+    fn merge_meta_different_db(&mut self) -> Result<()> {
+        log::debug!("Going to merge meta data (different databases) .....");
+        let report = self
+            .target_db
+            .meta
+            .merge_from_different_db(&self.source_db.meta)?;
+        self.merge_result.meta_data_changed = report.modified;
+        self.icon_remap = report.icon_remap;
         Ok(())
     }
 

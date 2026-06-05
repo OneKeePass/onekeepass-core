@@ -8,7 +8,6 @@ use uuid::Uuid;
 
 use crate::{db::KdbxFile, db_content::Meta, util};
 
-
 pub use self::categories::*;
 pub use self::entry::*;
 
@@ -112,6 +111,7 @@ pub struct GroupSummary {
     pub parent_group_uuid: Uuid,
     pub name: String,
     pub icon_id: i32,
+    pub custom_icon_uuid: Option<String>,
     pub group_uuids: Vec<String>,
     pub entry_uuids: Vec<String>,
 }

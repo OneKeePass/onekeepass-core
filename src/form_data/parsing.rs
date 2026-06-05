@@ -320,7 +320,7 @@ impl<'a> EntryPlaceHolderParser<'a> {
                 }
             }
         }
-        return (parsed_fields,kvs);
+        return (parsed_fields, kvs);
     }
 
     pub(crate) fn modified_fields(&self) -> Vec<String> {
@@ -628,7 +628,9 @@ mod tests {
 
     #[test]
     fn place_holder_marker_found_ref_placeholder() {
-        assert!(place_holder_marker_found("{REF:P@I:46C9B1FFBD4ABC4BBB260C6190BAD20C}"));
+        assert!(place_holder_marker_found(
+            "{REF:P@I:46C9B1FFBD4ABC4BBB260C6190BAD20C}"
+        ));
     }
 
     #[test]
