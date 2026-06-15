@@ -83,6 +83,13 @@ pub mod standard_in_section_names {
     pub const ADDITIONAL_ONE_TIME_PASSWORDS: &str = "Additional One-Time Passwords";
     pub const CARD_DETAILS: &str = "Card Details";
     pub const PASSKEY_DETAILS: &str = "Passkey Details";
+
+    // Section names shared by two or more of the standard entry types added for
+    // the extended entry templates. Section names used by a single type are kept
+    // as string literals at the type definition site.
+    pub const CONNECTION: &str = "Connection";
+    pub const DATES: &str = "Dates";
+    pub const CONTACT: &str = "Contact";
 }
 
 #[allow(dead_code)]
@@ -104,7 +111,16 @@ pub mod entry_type_name {
     pub const IDENTITY: &str = "Identity";
     pub const DRIVER_LICENSE: &str = "Driver License";
 
-    //Medical Record, Membership,
+    pub const SSH_LOGIN: &str = "SSH Login";
+    pub const API_CREDENTIAL: &str = "API Credential";
+    pub const DATABASE_CREDENTIAL: &str = "Database Credential";
+    pub const SOFTWARE_LICENSE: &str = "Software License";
+    pub const MEMBERSHIP: &str = "Membership";
+    pub const CRYPTO_WALLET: &str = "Crypto Wallet";
+    pub const EMAIL_ACCOUNT: &str = "Email Account";
+    pub const INSURANCE_POLICY: &str = "Insurance Policy";
+
+    //Medical Record,
 }
 
 // We can generate hex bytes like this using
@@ -174,6 +190,54 @@ pub mod entry_type_uuid {
         0x0A, 0x14, 0xD7, 0x6D, 0x8C, 0x38, 0x4C, 0x62, 0x9A, 0xD7, 0x39, 0x0D, 0xC0, 0x20, 0xA2,
         0xAF,
     ];
+
+    // 7319773d-c78a-463b-ab49-7585bb5909cc
+    pub const SSH_LOGIN: &[u8] = &[
+        0x73, 0x19, 0x77, 0x3D, 0xC7, 0x8A, 0x46, 0x3B, 0xAB, 0x49, 0x75, 0x85, 0xBB, 0x59, 0x09,
+        0xCC,
+    ];
+
+    // 6c918f85-b693-44cc-a680-98e92fdd99ab
+    pub const API_CREDENTIAL: &[u8] = &[
+        0x6C, 0x91, 0x8F, 0x85, 0xB6, 0x93, 0x44, 0xCC, 0xA6, 0x80, 0x98, 0xE9, 0x2F, 0xDD, 0x99,
+        0xAB,
+    ];
+
+    // 8f028cee-840f-42fe-8e59-ec2005be6472
+    pub const DATABASE_CREDENTIAL: &[u8] = &[
+        0x8F, 0x02, 0x8C, 0xEE, 0x84, 0x0F, 0x42, 0xFE, 0x8E, 0x59, 0xEC, 0x20, 0x05, 0xBE, 0x64,
+        0x72,
+    ];
+
+    // a247a041-c670-4d8a-9330-281a4af269f9
+    pub const SOFTWARE_LICENSE: &[u8] = &[
+        0xA2, 0x47, 0xA0, 0x41, 0xC6, 0x70, 0x4D, 0x8A, 0x93, 0x30, 0x28, 0x1A, 0x4A, 0xF2, 0x69,
+        0xF9,
+    ];
+
+    // 1ddd2485-29d6-4fc9-bae5-f2ffda3161e1
+    pub const MEMBERSHIP: &[u8] = &[
+        0x1D, 0xDD, 0x24, 0x85, 0x29, 0xD6, 0x4F, 0xC9, 0xBA, 0xE5, 0xF2, 0xFF, 0xDA, 0x31, 0x61,
+        0xE1,
+    ];
+
+    // 96790d2d-3dcf-42a8-ad75-5c550cc88120
+    pub const CRYPTO_WALLET: &[u8] = &[
+        0x96, 0x79, 0x0D, 0x2D, 0x3D, 0xCF, 0x42, 0xA8, 0xAD, 0x75, 0x5C, 0x55, 0x0C, 0xC8, 0x81,
+        0x20,
+    ];
+
+    // f8785455-d227-4ef6-a43f-f0459565724f
+    pub const EMAIL_ACCOUNT: &[u8] = &[
+        0xF8, 0x78, 0x54, 0x55, 0xD2, 0x27, 0x4E, 0xF6, 0xA4, 0x3F, 0xF0, 0x45, 0x95, 0x65, 0x72,
+        0x4F,
+    ];
+
+    // 04952f8e-a9cf-4003-8f1c-6ea86af1515b
+    pub const INSURANCE_POLICY: &[u8] = &[
+        0x04, 0x95, 0x2F, 0x8E, 0xA9, 0xCF, 0x40, 0x03, 0x8F, 0x1C, 0x6E, 0xA8, 0x6A, 0xF1, 0x51,
+        0x5B,
+    ];
 }
 
 #[allow(dead_code)]
@@ -204,6 +268,23 @@ pub mod entry_keyvalue_key {
     // pub const PRIORITY: &str = "Priority";
     // pub const SKIP_IF_NOT_EXISTS: &str = "SkipIfNotExists";
     // pub const SKIP_IF_KEY_FILE_NOT_EXISTS: &str = "SkipIfKeyFileNotExists";
+
+    // Field names shared by two or more of the extended standard entry types
+    // (Identity, Passport, Driver License, SSH Login, etc.). Fields used by a
+    // single type are kept as string literals at the type definition site,
+    // matching the existing Credit/Debit Card and Bank Account definitions.
+    pub const FULL_NAME: &str = "Full Name";
+    pub const DATE_OF_BIRTH: &str = "Date of Birth";
+    pub const NATIONALITY: &str = "Nationality";
+    pub const EXPIRATION_DATE: &str = "Expiration Date";
+    pub const ISSUE_DATE: &str = "Issue Date";
+    pub const EMAIL: &str = "Email";
+    pub const POSTAL_CODE: &str = "Postal Code";
+    pub const STATE_PROVINCE_REGION: &str = "State / Province / Region";
+    pub const ADMIN_URL: &str = "Admin URL";
+    pub const ENVIRONMENT: &str = "Environment";
+    pub const PRIVATE_KEY: &str = "Private Key";
+    pub const PROVIDER: &str = "Provider";
 
     // Passkey fields (KeePassXC-compatible)
     pub const KPEX_PASSKEY_USERNAME: &str = "KPEX_PASSKEY_USERNAME";
