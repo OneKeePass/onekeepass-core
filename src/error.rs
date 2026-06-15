@@ -177,7 +177,7 @@ pub enum Error {
     RusshError(#[from] russh::Error),
 
     #[error("RusshKeysError: {0}")]
-    RusshKeysError(#[from] russh_keys::Error),
+    RusshKeysError(#[from] russh::keys::Error),
 
     #[error("RusshSftpClientError: {0}")]
     RusshSftpClientError(#[from] russh_sftp::client::error::Error),

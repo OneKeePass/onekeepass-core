@@ -27,6 +27,9 @@ pub async fn download_favicon(url: &str) -> Result<Vec<u8>> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(TIMEOUT_SECS))
         .user_agent(USER_AGENT)
+        // Use bundled webpki-roots rather than reqwest 0.13's default
+        // rustls-platform-verifier (which needs JVM init on Android). See net_tls.
+        .tls_backend_preconfigured(crate::net_tls::webpki_roots_rustls_config())
         .build()
         .map_err(|e| Error::UnexpectedError(e.to_string()))?;
 

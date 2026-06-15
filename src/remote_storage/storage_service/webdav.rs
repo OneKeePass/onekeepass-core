@@ -409,10 +409,20 @@ impl WebdavConnection {
     }
 
     async fn connect(connection_info: &WebdavConnectionConfig) -> Result<WebdavConnection> {
-        let agent = reqwest_dav::re_exports::reqwest::ClientBuilder::new()
-            .danger_accept_invalid_certs(connection_info.allow_untrusted_cert)
-            .default_headers(webdav_default_headers(&connection_info.root_url))
-            .build()?;
+        let builder = reqwest_dav::re_exports::reqwest::ClientBuilder::new()
+            .default_headers(webdav_default_headers(&connection_info.root_url));
+
+        // When the user opts into untrusted certs we let reqwest skip verification
+        // (no platform verifier involved). Otherwise we supply our own rustls config
+        // trusting the bundled webpki-roots, which avoids reqwest 0.13's default
+        // rustls-platform-verifier path (see crate::net_tls).
+        let builder = if connection_info.allow_untrusted_cert {
+            builder.danger_accept_invalid_certs(true)
+        } else {
+            builder.tls_backend_preconfigured(crate::net_tls::webpki_roots_rustls_config())
+        };
+
+        let agent = builder.build()?;
 
         let root_path = webdav_root_path(&connection_info.root_url)?;
 

@@ -1,0 +1,16 @@
+# cargo-audit configuration.
+# Run from this directory with:  cargo audit
+#
+# See SECURITY-NOTES.md for the full rationale behind each ignored advisory.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071 — "Marvin Attack" timing side-channel in the `rsa` crate.
+    # No patched version exists (the upstream constant-time rewrite is still in
+    # progress) and the crate is unavoidable in our tree: it is pulled in both
+    # directly (passkey RS256 signing) and transitively via russh (SSH RSA keys).
+    # RSA private-key operations here run locally on-device only and are never
+    # exposed as a queryable network timing oracle, so practical risk is low.
+    # Revisit when RustCrypto ships a constant-time release.
+    "RUSTSEC-2023-0071",
+]

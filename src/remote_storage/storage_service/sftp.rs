@@ -5,8 +5,6 @@ use russh::{
     ChannelId,
 };
 
-use russh_keys;
-
 use russh;
 use russh_sftp::client::SftpSession;
 use serde::{Deserialize, Serialize};
