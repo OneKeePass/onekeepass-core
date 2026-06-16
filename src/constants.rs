@@ -273,7 +273,9 @@ pub mod entry_keyvalue_key {
     // (Identity, Passport, Driver License, SSH Login, etc.). Fields used by a
     // single type are kept as string literals at the type definition site,
     // matching the existing Credit/Debit Card and Bank Account definitions.
-    pub const FULL_NAME: &str = "Full Name";
+    pub const FIRST_NAME: &str = "First Name";
+    pub const MIDDLE_NAME: &str = "Middle Name";
+    pub const LAST_NAME: &str = "Last Name";
     pub const DATE_OF_BIRTH: &str = "Date of Birth";
     pub const NATIONALITY: &str = "Nationality";
     pub const EXPIRATION_DATE: &str = "Expiration Date";

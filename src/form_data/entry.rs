@@ -712,13 +712,35 @@ impl EntrySummary {
                 }
             })
         } else if let Some(ref t) = entry.entry_field.entry_type.secondary_title {
-            let val = entry.find_kv_field_value(t);
-            if parsed_fields.is_empty() {
-                val
+            // Resolves a field's value, preferring the parsed (decrypted) value
+            // when parsed_fields is available.
+            let resolve = |name: &str| -> Option<String> {
+                let val = entry.find_kv_field_value(name);
+                if parsed_fields.is_empty() {
+                    val
+                } else {
+                    parsed_fields
+                        .get(&name.to_uppercase())
+                        .map_or(val, |s| Some(s.to_string()))
+                }
+            };
+            let non_empty = |o: &Option<String>| o.as_ref().map_or(false, |s| !s.trim().is_empty());
+
+            let primary = resolve(t);
+            if non_empty(&primary) {
+                primary
             } else {
-                parsed_fields
-                    .get(&t.to_uppercase())
-                    .map_or(val, |s| Some(s.to_string()))
+                // Fall back to First Name when the configured secondary-title
+                // field is blank. This is used by the identity-document templates
+                // (Identity, Passport, Driver License) whose secondary title is
+                // Last Name. It is a no-op for other types, which have no
+                // First Name field.
+                let fallback = resolve(FIRST_NAME);
+                if non_empty(&fallback) {
+                    fallback
+                } else {
+                    primary
+                }
             }
         } else {
             let secondary_title: Option<String> = entry

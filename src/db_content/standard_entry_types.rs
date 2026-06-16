@@ -354,16 +354,15 @@ lazy_static! {
             EntryType {
                 uuid: build_uuid!(entry_type_uuid::IDENTITY),
                 name: IDENTITY.into(),
-                secondary_title: Some(FULL_NAME.into()),
+                secondary_title: Some(LAST_NAME.into()),
                 icon_name: None,
                 sections: vec![
                     Section {
                         name: "Identity".into(),
                         field_defs: vec![
-                            FieldDef::new(FULL_NAME),
-                            FieldDef::new("First Name"),
-                            FieldDef::new("Middle Name"),
-                            FieldDef::new("Last Name"),
+                            FieldDef::new(FIRST_NAME),
+                            FieldDef::new(MIDDLE_NAME),
+                            FieldDef::new(LAST_NAME),
                             FieldDef::new(DATE_OF_BIRTH).set_data_type(FieldDataType::Date),
                             FieldDef::new("Gender"),
                             FieldDef::new(NATIONALITY),
@@ -404,13 +403,15 @@ lazy_static! {
             EntryType {
                 uuid: build_uuid!(entry_type_uuid::PASSPORT),
                 name: PASSPORT.into(),
-                secondary_title: Some(FULL_NAME.into()),
+                secondary_title: Some(LAST_NAME.into()),
                 icon_name: None,
                 sections: vec![
                     Section {
                         name: "Passport Details".into(),
                         field_defs: vec![
-                            FieldDef::new(FULL_NAME),
+                            FieldDef::new(FIRST_NAME),
+                            FieldDef::new(MIDDLE_NAME),
+                            FieldDef::new(LAST_NAME),
                             FieldDef::new("Passport Number").set_require_protection(true),
                             FieldDef::new(NATIONALITY),
                             FieldDef::new(DATE_OF_BIRTH).set_data_type(FieldDataType::Date),
@@ -451,13 +452,15 @@ lazy_static! {
             EntryType {
                 uuid: build_uuid!(entry_type_uuid::DRIVER_LICENSE),
                 name: DRIVER_LICENSE.into(),
-                secondary_title: Some(FULL_NAME.into()),
+                secondary_title: Some(LAST_NAME.into()),
                 icon_name: None,
                 sections: vec![
                     Section {
                         name: "License Details".into(),
                         field_defs: vec![
-                            FieldDef::new(FULL_NAME),
+                            FieldDef::new(FIRST_NAME),
+                            FieldDef::new(MIDDLE_NAME),
+                            FieldDef::new(LAST_NAME),
                             FieldDef::new("License Number").set_require_protection(true),
                             FieldDef::new("Class"),
                             FieldDef::new(STATE_PROVINCE_REGION),
