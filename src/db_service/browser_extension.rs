@@ -33,7 +33,7 @@ use crate::main_content_action;
 pub use super::passkey::{
     create_and_store_passkey, find_matching_passkeys, get_db_groups, get_db_name,
     get_group_entries, get_passkey_for_assertion, store_passkey_entry, EntryBasicInfo, GroupInfo,
-    PasskeyEntry, PasskeyStorageInfo, PasskeySummary,
+    PasskeyEntry, PasskeyStorageInfo, PasskeyStoreOutcome, PasskeySummary,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

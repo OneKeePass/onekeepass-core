@@ -231,6 +231,36 @@ impl EntryFormData {
         self.title = title;
     }
 
+    // Adds a tag if it is not already present. Used when building form data
+    // programmatically within the core (e.g. tagging a passkey entry).
+    pub(crate) fn add_tag(&mut self, tag: &str) {
+        if !self.tags.iter().any(|t| t == tag) {
+            self.tags.push(tag.to_string());
+        }
+    }
+
+    // Read-only accessors used by callers (e.g. passkey storage) that need to
+    // report which entry was created/updated.
+    pub(crate) fn uuid(&self) -> Uuid {
+        self.uuid
+    }
+
+    pub(crate) fn group_uuid(&self) -> Uuid {
+        self.group_uuid
+    }
+
+    pub(crate) fn entry_type_uuid(&self) -> Uuid {
+        self.entry_type_uuid
+    }
+
+    pub(crate) fn entry_type_name(&self) -> &str {
+        &self.entry_type_name
+    }
+
+    pub(crate) fn tags(&self) -> &[String] {
+        &self.tags
+    }
+
     // Sets the value of a specific field within a named section.
     // No-op if the section or the field key does not exist.
     pub(crate) fn set_field_value_in_section(
