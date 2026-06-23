@@ -8,6 +8,10 @@ mod io;
 // Passkey DB types and functions — compiled on all platforms (no cfg gate).
 pub mod passkey;
 
+// URL-based autofill entry matching — shared by the desktop browser extension
+// and the mobile autofill flows (no cfg gate).
+pub mod autofill;
+
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub mod browser_extension;
 
@@ -91,6 +95,10 @@ pub use crate::constants::entry_type_uuid;
 pub use crate::db_merge::MergeResult;
 
 pub use crate::custom_icons::{CustomIconData, CustomIconSummary};
+
+// Re-export so the mobile FFI command dispatcher (which calls db_service::<fn>)
+// can reach the URL-only autofill manual search.
+pub use autofill::autofill_search_term;
 
 pub use custom_icon::{
     add_custom_icon, get_custom_icon, list_custom_icons, remove_custom_icon,
@@ -607,6 +615,17 @@ pub fn set_db_settings(db_key: &str, db_settings: DbSettings) -> Result<()> {
 pub struct EntrySearchResult {
     pub term: String,
     pub entry_items: Vec<EntrySummary>,
+}
+
+// Returns true if entries of this type are offered for autofill candidate lists
+// (password or passkey). Only Login for now - other types may carry a URL but
+// are not username/password candidates. This is the single source of truth for
+// autofill type eligibility, shared by the desktop browser extension and the
+// mobile autofill flows. To allow more types, add their type UUIDs to the
+// eligible list.
+pub(crate) fn is_autofill_eligible_type(type_uuid: &Uuid) -> bool {
+    let eligible = [crate::build_uuid!(crate::constants::entry_type_uuid::LOGIN)];
+    eligible.contains(type_uuid)
 }
 
 /// A simple term search. The term is searched in all fields of each entry and returned all matching entry ids
