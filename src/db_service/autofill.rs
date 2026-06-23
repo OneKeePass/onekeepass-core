@@ -8,6 +8,7 @@
 //     Additional URLs.
 
 use url::Url;
+use uuid::Uuid;
 
 use crate::constants::entry_keyvalue_key::{ADDITIONAL_URLS, TITLE, URL};
 use crate::db_content::KeepassFile;
@@ -46,7 +47,21 @@ fn url_matched(input: &str, entry_field_val: &str) -> bool {
         return false;
     };
 
-    input_url.scheme() == entry_url.scheme() && input_url.host_str() == entry_url.host_str()
+    scheme_key(input_url.scheme()) == scheme_key(entry_url.scheme())
+        && input_url.host_str() == entry_url.host_str()
+}
+
+// Canonicalises a scheme for comparison. Android native-app association tokens use
+// the scheme `android://<packageName>`; KeePassDX / Keepass2Android store the same
+// identity as `androidapp://<packageName>`. We treat them as the same app identity
+// so databases shared with those apps interoperate. All other schemes (http, https,
+// ...) are returned unchanged, so the https/http boundary is preserved.
+fn scheme_key(scheme: &str) -> &str {
+    if scheme == "androidapp" {
+        "android"
+    } else {
+        scheme
+    }
 }
 
 // Returns true if any whitespace-separated token in `additional_urls` matches
@@ -166,6 +181,32 @@ pub fn autofill_search_term(db_key: &str, term: &str) -> Result<EntrySearchResul
     })
 }
 
+// Associates a native-app identity (e.g. "android://com.vanguard.app") with an
+// existing entry by appending it to the entry's Additional URLs field, so the app
+// is offered for autofill next time. This is the capture-on-fill counterpart to
+// url matching: native apps that expose no web domain arrive as android://<pkg>,
+// which never matches stored https URLs until the app is associated.
+//
+// No-op (returns Ok(false)) when an equivalent token is already present - android://
+// and androidapp:// are treated as the same identity (see scheme_key) so we neither
+// duplicate our own token nor re-add one a KeePassDX-shared db already has. Returns
+// Ok(true) when the entry was modified and saved (a history entry is created by
+// update_entry_from_form_data, like any other entry edit).
+pub fn associate_app_to_entry(db_key: &str, entry_uuid: &Uuid, app_uri: &str) -> Result<bool> {
+    let mut form_data = super::get_entry_form_data_by_id(db_key, entry_uuid)?;
+
+    let already_present = form_data.additional_urls().map_or(false, |urls| {
+        urls.split_whitespace().any(|t| url_matched(app_uri, t))
+    });
+
+    if already_present || !form_data.append_additional_url(app_uri) {
+        return Ok(false);
+    }
+
+    super::update_entry_from_form_data(db_key, form_data)?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,6 +268,28 @@ mod tests {
     fn unparseable_urls_do_not_match() {
         assert!(!url_matched("not a url", "https://example.com/"));
         assert!(!url_matched("https://example.com/", "also not a url"));
+    }
+
+    #[test]
+    fn android_app_token_matches() {
+        // A native-app request (android://<pkg>) matches a stored token of either
+        // scheme, but only for the same package (host).
+        assert!(url_matched(
+            "android://com.vanguard.app",
+            "android://com.vanguard.app",
+        ));
+        // KeePassDX-style androidapp:// stored token is treated as the same identity.
+        assert!(url_matched(
+            "android://com.vanguard.app",
+            "androidapp://com.vanguard.app",
+        ));
+        // Different package must not match.
+        assert!(!url_matched(
+            "android://com.vanguard.app",
+            "android://com.evil.app",
+        ));
+        // The android scheme normalisation must not bleed into web schemes.
+        assert!(!url_matched("android://example.com", "https://example.com"));
     }
 
     #[test]

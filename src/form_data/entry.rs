@@ -239,6 +239,36 @@ impl EntryFormData {
         }
     }
 
+    // Returns the value of the Additional URLs field (a whitespace-separated list
+    // of url tokens) wherever it appears among the entry's sections, if set.
+    pub(crate) fn additional_urls(&self) -> Option<&str> {
+        use crate::constants::entry_keyvalue_key::ADDITIONAL_URLS;
+        self.section_fields
+            .values()
+            .flatten()
+            .find(|k| k.key == ADDITIONAL_URLS)
+            .and_then(|k| k.value.as_deref())
+    }
+
+    // Appends a url token to the Additional URLs field (space-separated), preserving
+    // any existing tokens. Returns false (no change) when the entry has no Additional
+    // URLs field. Caller is responsible for any duplicate check.
+    pub(crate) fn append_additional_url(&mut self, url: &str) -> bool {
+        use crate::constants::entry_keyvalue_key::ADDITIONAL_URLS;
+        for kvds in self.section_fields.values_mut() {
+            if let Some(kvd) = kvds.iter_mut().find(|k| k.key == ADDITIONAL_URLS) {
+                let new_value = match kvd.value.as_deref() {
+                    Some(v) if !v.trim().is_empty() => format!("{} {}", v.trim(), url),
+                    _ => url.to_string(),
+                };
+                log::debug!("Added the app url {} to additional urls field", &new_value);
+                kvd.value = Some(new_value);
+                return true;
+            }
+        }
+        false
+    }
+
     // Read-only accessors used by callers (e.g. passkey storage) that need to
     // report which entry was created/updated.
     pub(crate) fn uuid(&self) -> Uuid {

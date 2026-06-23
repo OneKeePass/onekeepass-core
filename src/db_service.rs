@@ -100,6 +100,10 @@ pub use crate::custom_icons::{CustomIconData, CustomIconSummary};
 // can reach the URL-only autofill manual search.
 pub use autofill::autofill_search_term;
 
+// Re-export so the Android autofill FFI can associate a native-app token with an
+// entry (capture-on-fill). See db_service::autofill::associate_app_to_entry.
+pub use autofill::associate_app_to_entry;
+
 pub use custom_icon::{
     add_custom_icon, get_custom_icon, list_custom_icons, remove_custom_icon,
     set_entry_custom_icon, set_group_custom_icon,
