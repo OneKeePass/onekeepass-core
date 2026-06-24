@@ -112,6 +112,7 @@ pub mod entry_type_name {
     pub const DRIVER_LICENSE: &str = "Driver License";
 
     pub const SSH_LOGIN: &str = "SSH Login";
+    pub const SSH_KEY: &str = "SSH Key";
     pub const API_CREDENTIAL: &str = "API Credential";
     pub const DATABASE_CREDENTIAL: &str = "Database Credential";
     pub const SOFTWARE_LICENSE: &str = "Software License";
@@ -195,6 +196,12 @@ pub mod entry_type_uuid {
     pub const SSH_LOGIN: &[u8] = &[
         0x73, 0x19, 0x77, 0x3D, 0xC7, 0x8A, 0x46, 0x3B, 0xAB, 0x49, 0x75, 0x85, 0xBB, 0x59, 0x09,
         0xCC,
+    ];
+
+    // 6421a61a-db18-413a-bdfb-715a5418216a
+    pub const SSH_KEY: &[u8] = &[
+        0x64, 0x21, 0xA6, 0x1A, 0xDB, 0x18, 0x41, 0x3A, 0xBD, 0xFB, 0x71, 0x5A, 0x54, 0x18, 0x21,
+        0x6A,
     ];
 
     // 6c918f85-b693-44cc-a680-98e92fdd99ab
@@ -287,6 +294,15 @@ pub mod entry_keyvalue_key {
     pub const ENVIRONMENT: &str = "Environment";
     pub const PRIVATE_KEY: &str = "Private Key";
     pub const PROVIDER: &str = "Provider";
+
+    // SSH Key entry type fields. Referenced by both the type definition and the
+    // ssh-agent key-source enumeration, so kept as shared constants.
+    pub const PUBLIC_KEY: &str = "Public Key";
+    pub const PRIVATE_KEY_PASSPHRASE: &str = "Private Key Passphrase";
+    pub const ENABLE_SSH_AGENT: &str = "Enable SSH Agent";
+    pub const REQUIRE_CONFIRMATION: &str = "Require Confirmation";
+    pub const AGENT_LIFETIME: &str = "Agent Lifetime";
+    pub const ALLOWED_HOSTS: &str = "Allowed Hosts";
 
     // Passkey fields (KeePassXC-compatible)
     pub const KPEX_PASSKEY_USERNAME: &str = "KPEX_PASSKEY_USERNAME";

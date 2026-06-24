@@ -15,6 +15,10 @@ pub mod autofill;
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub mod browser_extension;
 
+// Enumerates agent-enabled SSH_KEY entries for the desktop SSH agent service.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub mod ssh_agent;
+
 // Note: Moved module storage to db_service_ffi crate as it is used only in mobile apps for now
 
 // Modules storage and callback_service are used for now only in mobile apps

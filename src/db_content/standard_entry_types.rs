@@ -34,6 +34,7 @@ pub const STANDARD_TYPE_NAMES: &[&'static str] = &[
     DRIVER_LICENSE,
     EMAIL_ACCOUNT,
     SSH_LOGIN,
+    SSH_KEY,
     API_CREDENTIAL,
     DATABASE_CREDENTIAL,
     SOFTWARE_LICENSE,
@@ -87,6 +88,7 @@ lazy_static! {
         m.insert(DRIVER_LICENSE,build_uuid!(entry_type_uuid::DRIVER_LICENSE));
         m.insert(EMAIL_ACCOUNT,build_uuid!(entry_type_uuid::EMAIL_ACCOUNT));
         m.insert(SSH_LOGIN,build_uuid!(entry_type_uuid::SSH_LOGIN));
+        m.insert(SSH_KEY,build_uuid!(entry_type_uuid::SSH_KEY));
         m.insert(API_CREDENTIAL,build_uuid!(entry_type_uuid::API_CREDENTIAL));
         m.insert(DATABASE_CREDENTIAL,build_uuid!(entry_type_uuid::DATABASE_CREDENTIAL));
         m.insert(SOFTWARE_LICENSE,build_uuid!(entry_type_uuid::SOFTWARE_LICENSE));
@@ -486,6 +488,9 @@ lazy_static! {
             },
         );
 
+        // SSH_LOGIN is a pure server/connection type. SSH key material and agent
+        // configuration live on the separate SSH_KEY type below (one key is a
+        // reusable identity across many hosts).
         m.insert(
             build_uuid!(entry_type_uuid::SSH_LOGIN),
             EntryType {
@@ -505,23 +510,6 @@ lazy_static! {
                         ],
                     },
                     Section {
-                        name: "SSH Key".into(),
-                        field_defs: vec![
-                            FieldDef::new(PRIVATE_KEY).set_require_protection(true),
-                            FieldDef::new("Private Key Passphrase").set_require_protection(true),
-                            FieldDef::new("Public Key"),
-                        ],
-                    },
-                    Section {
-                        name: "SSH Agent".into(),
-                        field_defs: vec![
-                            FieldDef::new("Enable SSH Agent").set_data_type(FieldDataType::Bool),
-                            FieldDef::new("Require Confirmation").set_data_type(FieldDataType::Bool),
-                            FieldDef::new("Agent Lifetime"),
-                            FieldDef::new("Allowed Hosts"),
-                        ],
-                    },
-                    Section {
                         name: "Metadata".into(),
                         field_defs: vec![
                             FieldDef::new(ENVIRONMENT),
@@ -529,6 +517,37 @@ lazy_static! {
                             FieldDef::new(PROVIDER),
                             FieldDef::new(ADMIN_URL),
                             FieldDef::new(ADDITIONAL_URLS),
+                        ],
+                    },
+                ],
+            },
+        );
+
+        // SSH_KEY holds the key material + agent settings. This is the entry type
+        // the desktop SSH agent service enumerates and serves.
+        m.insert(
+            build_uuid!(entry_type_uuid::SSH_KEY),
+            EntryType {
+                uuid: build_uuid!(entry_type_uuid::SSH_KEY),
+                name: SSH_KEY.into(),
+                secondary_title: None,
+                icon_name: None,
+                sections: vec![
+                    Section {
+                        name: "SSH Key".into(),
+                        field_defs: vec![
+                            FieldDef::new(PRIVATE_KEY).set_require_protection(true),
+                            FieldDef::new(PRIVATE_KEY_PASSPHRASE).set_require_protection(true),
+                            FieldDef::new(PUBLIC_KEY),
+                        ],
+                    },
+                    Section {
+                        name: "SSH Agent".into(),
+                        field_defs: vec![
+                            FieldDef::new(ENABLE_SSH_AGENT).set_data_type(FieldDataType::Bool),
+                            FieldDef::new(REQUIRE_CONFIRMATION).set_data_type(FieldDataType::Bool),
+                            FieldDef::new(AGENT_LIFETIME),
+                            FieldDef::new(ALLOWED_HOSTS),
                         ],
                     },
                 ],
@@ -990,6 +1009,59 @@ mod tests {
             let uuid = STANDARD_TYPE_UUIDS_BY_NAME.get(name).unwrap();
             assert!(seen.insert(*uuid), "duplicate UUID for standard type '{name}'");
         }
+    }
+
+    fn entry_type_by_name(name: &str) -> &'static EntryType {
+        let uuid = STANDARD_TYPE_UUIDS_BY_NAME.get(name).unwrap();
+        UUID_TO_ENTRY_TYPE_MAP.get(uuid).unwrap()
+    }
+
+    fn field_names(et: &EntryType) -> HashSet<String> {
+        et.sections
+            .iter()
+            .flat_map(|s| s.field_defs.iter().map(|f| f.name.clone()))
+            .collect()
+    }
+
+    // The SSH key material + agent config was split out of SSH_LOGIN into the
+    // dedicated SSH_KEY type. SSH_LOGIN is now a pure connection type.
+    #[test]
+    fn ssh_login_and_ssh_key_are_split() {
+        let login = entry_type_by_name(SSH_LOGIN);
+        let login_sections: Vec<&str> = login.sections.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(login_sections, vec![CONNECTION, "Metadata"]);
+        let login_fields = field_names(login);
+        for absent in [PRIVATE_KEY, PUBLIC_KEY, ENABLE_SSH_AGENT, REQUIRE_CONFIRMATION] {
+            assert!(
+                !login_fields.contains(absent),
+                "SSH_LOGIN should not carry '{absent}' after the split"
+            );
+        }
+
+        let key = entry_type_by_name(SSH_KEY);
+        let key_sections: Vec<&str> = key.sections.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(key_sections, vec!["SSH Key", "SSH Agent"]);
+        let key_fields = field_names(key);
+        for present in [
+            PRIVATE_KEY,
+            PRIVATE_KEY_PASSPHRASE,
+            PUBLIC_KEY,
+            ENABLE_SSH_AGENT,
+            REQUIRE_CONFIRMATION,
+            AGENT_LIFETIME,
+            ALLOWED_HOSTS,
+        ] {
+            assert!(key_fields.contains(present), "SSH_KEY missing '{present}'");
+        }
+
+        // Private key material must be protected.
+        let private = key
+            .sections
+            .iter()
+            .flat_map(|s| &s.field_defs)
+            .find(|f| f.name == PRIVATE_KEY)
+            .unwrap();
+        assert!(private.require_protection, "Private Key must be protected");
     }
 
     // Entry KVs are flat, so a field name must be unique across all sections
