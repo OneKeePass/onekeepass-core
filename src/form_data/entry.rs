@@ -709,6 +709,9 @@ pub struct EntrySummary {
     pub title: Option<String>,
     pub secondary_title: Option<String>, // usually the user name
     pub entry_type_name: String,
+    // Stable entry-type identifier. Unlike entry_type_name it never changes, so
+    // the UI should key entry-type decisions off this rather than the name.
+    pub entry_type_uuid: String,
     pub icon_id: i32,
     pub custom_icon_uuid: Option<String>,
     pub history_index: Option<i32>,
@@ -742,6 +745,7 @@ impl EntrySummary {
                 //     Some("%Y-%m-%d %I:%M:%S %p"),
                 // )),
                 entry_type_name: he.entry_field.entry_type.name.clone(),
+                entry_type_uuid: he.entry_field.entry_type.uuid.to_string(),
                 icon_id: he.icon_id,
                 custom_icon_uuid: he.custom_icon_uuid.map(|u| u.to_string()),
                 history_index: Some(i as i32),
@@ -854,6 +858,7 @@ impl EntrySummary {
                 title,
                 secondary_title,
                 entry_type_name: e.entry_field.entry_type.name.clone(),
+                entry_type_uuid: e.entry_field.entry_type.uuid.to_string(),
                 icon_id: e.icon_id,
                 custom_icon_uuid: e.custom_icon_uuid.map(|u| u.to_string()),
                 history_index: None,
