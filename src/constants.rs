@@ -302,7 +302,6 @@ pub mod entry_keyvalue_key {
     pub const ENABLE_SSH_AGENT: &str = "Enable SSH Agent";
     pub const REQUIRE_CONFIRMATION: &str = "Require Confirmation";
     pub const AGENT_LIFETIME: &str = "Agent Lifetime";
-    pub const ALLOWED_HOSTS: &str = "Allowed Hosts";
 
     // Passkey fields (KeePassXC-compatible)
     pub const KPEX_PASSKEY_USERNAME: &str = "KPEX_PASSKEY_USERNAME";

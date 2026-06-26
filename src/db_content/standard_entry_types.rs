@@ -69,7 +69,6 @@ lazy_static! {
         m.insert("Purchase Date", "Enter date as YYYY-MM-DD");
         m.insert("Effective Date", "Enter date as YYYY-MM-DD");
         m.insert("Recovery Phrase", "Seed words separated by spaces");
-        m.insert("Allowed Hosts", "One or more host patterns separated by a space");
         m
     };
 
@@ -547,7 +546,6 @@ lazy_static! {
                             FieldDef::new(ENABLE_SSH_AGENT).set_data_type(FieldDataType::Bool),
                             FieldDef::new(REQUIRE_CONFIRMATION).set_data_type(FieldDataType::Bool),
                             FieldDef::new(AGENT_LIFETIME),
-                            FieldDef::new(ALLOWED_HOSTS),
                         ],
                     },
                 ],
@@ -1049,7 +1047,6 @@ mod tests {
             ENABLE_SSH_AGENT,
             REQUIRE_CONFIRMATION,
             AGENT_LIFETIME,
-            ALLOWED_HOSTS,
         ] {
             assert!(key_fields.contains(present), "SSH_KEY missing '{present}'");
         }

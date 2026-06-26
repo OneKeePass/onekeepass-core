@@ -29,9 +29,11 @@ pub struct SshAgentKeySource {
     pub passphrase: Option<String>,
     // When true, each sign request for this key must be user-confirmed.
     pub require_confirmation: bool,
-    // Carried for future enforcement; not acted on yet.
+    // "Agent Lifetime": a whole number of seconds chosen from the entry form's
+    // duration picker. After this many seconds the desktop agent stops serving
+    // the key (parsed + enforced in the agent's store, from key-load time).
+    // Empty/absent means the key never expires.
     pub agent_lifetime: Option<String>,
-    pub allowed_hosts: Option<String>,
 }
 
 fn ssh_key_type_uuid() -> Uuid {
@@ -94,7 +96,6 @@ fn collect_from_db(db_key: &str, k: &KeepassFile, out: &mut Vec<SshAgentKeySourc
             passphrase: non_empty_field(entry, entry_keyvalue_key::PRIVATE_KEY_PASSPHRASE),
             require_confirmation,
             agent_lifetime: non_empty_field(entry, entry_keyvalue_key::AGENT_LIFETIME),
-            allowed_hosts: non_empty_field(entry, entry_keyvalue_key::ALLOWED_HOSTS),
         });
     }
 }
