@@ -299,7 +299,7 @@ pub mod entry_keyvalue_key {
     // ssh-agent key-source enumeration, so kept as shared constants.
     pub const PUBLIC_KEY: &str = "Public Key";
     pub const PRIVATE_KEY_PASSPHRASE: &str = "Private Key Passphrase";
-    pub const ENABLE_SSH_AGENT: &str = "Enable SSH Agent";
+    pub const ADD_TO_SSH_AGENT: &str = "Add to SSH Agent";
     pub const REQUIRE_CONFIRMATION: &str = "Require Confirmation";
     pub const AGENT_LIFETIME: &str = "Agent Lifetime";
 

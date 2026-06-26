@@ -543,7 +543,7 @@ lazy_static! {
                     Section {
                         name: "SSH Agent".into(),
                         field_defs: vec![
-                            FieldDef::new(ENABLE_SSH_AGENT).set_data_type(FieldDataType::Bool),
+                            FieldDef::new(ADD_TO_SSH_AGENT).set_data_type(FieldDataType::Bool),
                             FieldDef::new(REQUIRE_CONFIRMATION).set_data_type(FieldDataType::Bool),
                             FieldDef::new(AGENT_LIFETIME),
                         ],
@@ -1029,7 +1029,7 @@ mod tests {
         let login_sections: Vec<&str> = login.sections.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(login_sections, vec![CONNECTION, "Metadata"]);
         let login_fields = field_names(login);
-        for absent in [PRIVATE_KEY, PUBLIC_KEY, ENABLE_SSH_AGENT, REQUIRE_CONFIRMATION] {
+        for absent in [PRIVATE_KEY, PUBLIC_KEY, ADD_TO_SSH_AGENT, REQUIRE_CONFIRMATION] {
             assert!(
                 !login_fields.contains(absent),
                 "SSH_LOGIN should not carry '{absent}' after the split"
@@ -1044,7 +1044,7 @@ mod tests {
             PRIVATE_KEY,
             PRIVATE_KEY_PASSPHRASE,
             PUBLIC_KEY,
-            ENABLE_SSH_AGENT,
+            ADD_TO_SSH_AGENT,
             REQUIRE_CONFIRMATION,
             AGENT_LIFETIME,
         ] {

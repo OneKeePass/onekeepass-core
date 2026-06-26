@@ -5,7 +5,7 @@ use crate::db_content::KeepassFile;
 use crate::db_service::{all_kdbx_cache_keys, call_main_content_action};
 use crate::error::Result;
 
-// A decrypted SSH key drawn from an SSH_KEY entry that has "Enable SSH Agent"
+// A decrypted SSH key drawn from an SSH_KEY entry that has "Add to SSH Agent"
 // turned on. This is the only data the desktop SSH agent service needs in order
 // to advertise an identity and sign with it.
 //
@@ -69,7 +69,7 @@ fn collect_from_db(db_key: &str, k: &KeepassFile, out: &mut Vec<SshAgentKeySourc
         // Only serve entries explicitly opted into the agent.
         let enabled = entry
             .entry_field
-            .find_key_value(entry_keyvalue_key::ENABLE_SSH_AGENT)
+            .find_key_value(entry_keyvalue_key::ADD_TO_SSH_AGENT)
             .map(|kv| is_truthy(&kv.value))
             .unwrap_or(false);
         if !enabled {
