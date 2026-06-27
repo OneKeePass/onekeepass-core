@@ -536,7 +536,7 @@ lazy_static! {
                         name: "SSH Key".into(),
                         field_defs: vec![
                             FieldDef::new(PRIVATE_KEY).set_require_protection(true),
-                            FieldDef::new(PRIVATE_KEY_PASSPHRASE).set_require_protection(true),
+                            FieldDef::new(PASSWORD).set_require_protection(true),
                             FieldDef::new(PUBLIC_KEY),
                         ],
                     },
@@ -1042,7 +1042,7 @@ mod tests {
         let key_fields = field_names(key);
         for present in [
             PRIVATE_KEY,
-            PRIVATE_KEY_PASSPHRASE,
+            PASSWORD,
             PUBLIC_KEY,
             ADD_TO_SSH_AGENT,
             REQUIRE_CONFIRMATION,
