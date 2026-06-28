@@ -283,6 +283,12 @@ impl EntryFormData {
         self.entry_type_uuid
     }
 
+    // True when this form belongs to the SSH Key entry type. Lets a caller (the
+    // desktop SSH agent hooks) skip work for unrelated entry edits.
+    pub fn is_ssh_key_entry(&self) -> bool {
+        self.entry_type_uuid == crate::build_uuid!(crate::constants::entry_type_uuid::SSH_KEY)
+    }
+
     pub(crate) fn entry_type_name(&self) -> &str {
         &self.entry_type_name
     }
