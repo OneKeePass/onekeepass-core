@@ -129,10 +129,10 @@ mod tests {
 
         let login = crate::build_uuid!(entry_type_uuid::LOGIN);
         let card = crate::build_uuid!(entry_type_uuid::CREDIT_DEBIT_CARD);
-        let email = crate::build_uuid!(entry_type_uuid::EMAIL_ACCOUNT);
+        let bank = crate::build_uuid!(entry_type_uuid::BANK_ACCOUNT);
 
         assert!(is_autofill_eligible_type(&login));
         assert!(!is_autofill_eligible_type(&card));
-        assert!(!is_autofill_eligible_type(&email));
+        assert!(!is_autofill_eligible_type(&bank));
     }
 }
