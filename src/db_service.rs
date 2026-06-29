@@ -626,13 +626,17 @@ pub struct EntrySearchResult {
 }
 
 // Returns true if entries of this type are offered for autofill candidate lists
-// (password or passkey). Only Login for now - other types may carry a URL but
-// are not username/password candidates. This is the single source of truth for
-// autofill type eligibility, shared by the desktop browser extension and the
-// mobile autofill flows. To allow more types, add their type UUIDs to the
-// eligible list.
+// (password or passkey). Login, Credit/Debit Card and Bank Account all carry a
+// Login Details section (UserName/Password/URL/Additional URLs), so all three are
+// username/password candidates. This is the single source of truth for autofill
+// type eligibility, shared by the desktop browser extension and the mobile
+// autofill flows. To allow more types, add their type UUIDs to the eligible list.
 pub(crate) fn is_autofill_eligible_type(type_uuid: &Uuid) -> bool {
-    let eligible = [crate::build_uuid!(crate::constants::entry_type_uuid::LOGIN)];
+    let eligible = [
+        crate::build_uuid!(crate::constants::entry_type_uuid::LOGIN),
+        crate::build_uuid!(crate::constants::entry_type_uuid::CREDIT_DEBIT_CARD),
+        crate::build_uuid!(crate::constants::entry_type_uuid::BANK_ACCOUNT),
+    ];
     eligible.contains(type_uuid)
 }
 

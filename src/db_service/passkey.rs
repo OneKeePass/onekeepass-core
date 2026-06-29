@@ -312,6 +312,16 @@ pub fn store_passkey_entry(db_key: &str, info: PasskeyStorageInfo) -> Result<Pas
     apply_passkey_storage(db_key, &info)
 }
 
+// Passkey credentials are stored only on Login-type entries: the PASSKEY_DETAILS
+// section is defined on Login alone, and registration enforces Login (new entries
+// are created as Login; get_group_entries offers only Login targets). The read
+// paths below therefore require Login type explicitly, so a non-Login entry that
+// was hand-edited to carry KPEX_PASSKEY_* custom fields is never treated as a
+// passkey source.
+fn is_login_type_entry(entry: &Entry) -> bool {
+    entry.entry_field.entry_type.uuid == crate::build_uuid!(entry_type_uuid::LOGIN)
+}
+
 // Searches all provided databases for passkey entries matching `rp_id`.
 // If `allow_credential_ids` is non-empty, further filters by credential ID.
 pub fn find_matching_passkeys(
@@ -327,6 +337,9 @@ pub fn find_matching_passkeys(
                 .collect_all_active_entries()
                 .into_iter()
                 .filter_map(|entry| {
+                    if !is_login_type_entry(entry) {
+                        return None;
+                    }
                     let stored_rp_id = entry.find_kv_field_value(KPEX_PASSKEY_RELYING_PARTY)?;
                     if stored_rp_id != rp_id {
                         return None;
@@ -372,6 +385,9 @@ pub fn get_all_passkeys(db_keys: &[String]) -> Result<Vec<PasskeySummary>> {
                 .collect_all_active_entries()
                 .into_iter()
                 .filter_map(|entry| {
+                    if !is_login_type_entry(entry) {
+                        return None;
+                    }
                     let rp_id = entry.find_kv_field_value(KPEX_PASSKEY_RELYING_PARTY)?;
                     let cred_id = entry.find_kv_field_value(KPEX_PASSKEY_CREDENTIAL_ID)?;
                     let username = entry
@@ -408,6 +424,13 @@ pub fn get_passkey_for_assertion(db_key: &str, entry_uuid: &Uuid) -> Result<Pass
                 entry_uuid
             ))
         })?;
+
+        if !is_login_type_entry(entry) {
+            return Err(Error::NotFound(format!(
+                "Entry {} is not a Login entry and cannot hold a passkey",
+                entry_uuid
+            )));
+        }
 
         let credential_id = entry
             .find_kv_field_value(KPEX_PASSKEY_CREDENTIAL_ID)
@@ -885,6 +908,50 @@ mod tests {
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].credential_id_b64url, "cred-x");
         assert_eq!(filtered[0].username, "x-user");
+
+        teardown_test_db(db_key);
+    }
+
+    #[test]
+    fn test_find_matching_passkeys_ignores_non_login_entry_with_passkey_fields() {
+        use crate::constants::entry_keyvalue_key::TITLE;
+        use crate::constants::entry_type_uuid;
+        use crate::db_content::Entry;
+
+        let db_key = "pk_test_non_login_guard";
+        setup_test_db(db_key, "PasskeyTestDB");
+
+        // Hand-craft a Credit/Debit Card entry carrying passkey custom fields with
+        // the exact KPEX_* key names (as if a user added them manually). The guard
+        // in find_matching_passkeys must still exclude it — only Login entries are
+        // valid passkey sources.
+        kp_service::call_main_content_mut_action(db_key, |k| {
+            let root_uuid = k.root.root_uuid();
+            let cc_type_uuid = crate::build_uuid!(entry_type_uuid::CREDIT_DEBIT_CARD);
+            let mut card =
+                Entry::new_blank_entry_by_type_id(&cc_type_uuid, None, Some(&root_uuid));
+            card.entry_field.update_value(TITLE, "Ghost Card");
+            card.entry_field.insert_key_value(make_passkey_kv(
+                KPEX_PASSKEY_RELYING_PARTY,
+                "ghost.com",
+                false,
+            ));
+            card.entry_field.insert_key_value(make_passkey_kv(
+                KPEX_PASSKEY_CREDENTIAL_ID,
+                "ghost-cred",
+                false,
+            ));
+            k.insert_entry(card)?;
+            Ok(())
+        })
+        .expect("inserting the card entry should succeed");
+
+        let db_keys = vec![db_key.to_string()];
+        let results = find_matching_passkeys(&db_keys, "ghost.com", &[]).unwrap();
+        assert!(
+            results.is_empty(),
+            "a non-Login entry with passkey fields must not be returned"
+        );
 
         teardown_test_db(db_key);
     }

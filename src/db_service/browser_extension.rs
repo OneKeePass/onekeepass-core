@@ -123,7 +123,7 @@ fn find_matching_entries_in_db(db_key: &str, input_url: &str) -> Result<MatchedD
 #[cfg(test)]
 mod tests {
     #[test]
-    fn only_login_type_is_autofill_eligible() {
+    fn login_card_and_bank_types_are_autofill_eligible() {
         use crate::constants::entry_type_uuid;
         use crate::db_service::is_autofill_eligible_type;
 
@@ -131,8 +131,13 @@ mod tests {
         let card = crate::build_uuid!(entry_type_uuid::CREDIT_DEBIT_CARD);
         let bank = crate::build_uuid!(entry_type_uuid::BANK_ACCOUNT);
 
+        // All three carry a Login Details section, so all are autofill candidates.
         assert!(is_autofill_eligible_type(&login));
-        assert!(!is_autofill_eligible_type(&card));
-        assert!(!is_autofill_eligible_type(&bank));
+        assert!(is_autofill_eligible_type(&card));
+        assert!(is_autofill_eligible_type(&bank));
+
+        // A non-credential type stays ineligible.
+        let passport = crate::build_uuid!(entry_type_uuid::PASSPORT);
+        assert!(!is_autofill_eligible_type(&passport));
     }
 }
