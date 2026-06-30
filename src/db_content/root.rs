@@ -1342,6 +1342,73 @@ impl Root {
         // }
     }
 
+    // For imported KeeAgent/KeePassXC-style databases, treat entries with SSH
+    // private key attachments as SSH Key entries in memory.
+    #[cfg(any(feature = "desktop-ssh-agent", rust_analyzer))]
+    pub(crate) fn adjust_imported_ssh_key_attachment_entries(
+        &mut self,
+        meta: &super::Meta,
+        attachment_content: &dyn Fn(&AttachmentHashValue) -> Option<Vec<u8>>,
+    ) {
+        use crate::constants::{entry_keyvalue_key, entry_type_uuid, GENERATOR_NAME};
+
+        log::debug!(
+            "In adjust_imported_ssh_key_attachment_entries call for generator {}",
+            meta.generator
+        );
+        if meta.generator == GENERATOR_NAME {
+            return;
+        }
+
+        log::debug!("Going to check attachments for ssh keys");
+
+        if !self
+            .all_entries
+            .values()
+            .any(|entry| !entry.binary_key_values.is_empty())
+        {
+            log::debug!("No attachments found and returning");
+            return;
+        }
+
+        let ssh_key_type_uuid = crate::build_uuid!(entry_type_uuid::SSH_KEY);
+        let ssh_key_entry_type = super::EntryType::standard_type_by_id(&ssh_key_type_uuid);
+        let sftp_type_uuid = crate::build_uuid!(entry_type_uuid::REMOTE_CONNECTION_SFTP);
+
+        for entry in self.all_entries.values_mut() {
+            if entry.binary_key_values.is_empty()
+                || entry.entry_field.entry_type.uuid == ssh_key_entry_type.uuid
+                || entry.entry_field.entry_type.uuid == sftp_type_uuid
+                || !entry_has_ssh_private_key_attachment(entry, attachment_content)
+            {
+                continue;
+            }
+
+            log::debug!(
+                "SSH agent: treating imported entry '{}' as SSH Key because it has an SSH private key attachment",
+                entry
+                    .entry_field
+                    .find_key_value(entry_keyvalue_key::TITLE)
+                    .map(|kv| kv.value.as_str())
+                    .unwrap_or("")
+            );
+
+            entry.entry_field.entry_type = ssh_key_entry_type.clone();
+
+            if entry
+                .entry_field
+                .find_key_value(entry_keyvalue_key::ADD_TO_SSH_AGENT)
+                .is_none()
+            {
+                entry.entry_field.insert_key_value(KeyValue::from(
+                    entry_keyvalue_key::ADD_TO_SSH_AGENT.into(),
+                    "true".into(),
+                    false,
+                ));
+            }
+        }
+    }
+
     // Visit each group starting with the root and do some action using the node group's data
     fn root_group_visitor_action(&self, acc: &mut dyn GroupVisitor) {
         self.group_visitor_action(&self.root_uuid, acc);
@@ -1378,4 +1445,35 @@ impl Root {
             }
         }
     }
+}
+
+// Checks whether any attachment content starts with a known SSH private key
+// header. Attachment names are ignored because users can name key files freely.
+#[cfg(any(feature = "desktop-ssh-agent", rust_analyzer))]
+fn entry_has_ssh_private_key_attachment(
+    entry: &Entry,
+    attachment_content: &dyn Fn(&AttachmentHashValue) -> Option<Vec<u8>>,
+) -> bool {
+    entry.binary_key_values.iter().any(|bkv| {
+        attachment_content(&bkv.data_hash)
+            .as_deref()
+            .map_or(false, attachment_looks_like_ssh_private_key)
+    })
+}
+
+// Lightweight content sniffing used only to decide whether an imported entry
+// should be shown/handled as an SSH Key entry.
+#[cfg(any(feature = "desktop-ssh-agent", rust_analyzer))]
+fn attachment_looks_like_ssh_private_key(bytes: &[u8]) -> bool {
+    let sniff_len = bytes.len().min(256);
+    let Ok(text) = std::str::from_utf8(&bytes[..sniff_len]) else {
+        return false;
+    };
+    let text = text.trim_start_matches('\u{feff}').trim_start();
+
+    text.starts_with("PuTTY-User-Key-File-")
+        || text.starts_with("-----BEGIN OPENSSH PRIVATE KEY-----")
+        || text.starts_with("-----BEGIN RSA PRIVATE KEY-----")
+        || text.starts_with("-----BEGIN EC PRIVATE KEY-----")
+        || text.starts_with("-----BEGIN DSA PRIVATE KEY-----")
 }

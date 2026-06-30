@@ -109,6 +109,9 @@ impl KeepassFile {
     pub(crate) fn after_xml_reading(
         &mut self,
         attachment_hash_indexed: &HashMap<i32, (AttachmentHashValue, usize)>,
+        #[cfg(any(feature = "desktop-ssh-agent", rust_analyzer))] attachment_content: &dyn Fn(
+            &AttachmentHashValue,
+        ) -> Option<Vec<u8>>,
     ) {
         // Need to read any meta specific custom data first
         self.meta.copy_from_custom_data();
@@ -130,6 +133,10 @@ impl KeepassFile {
         self.root.entries_after_xml_reading(&self.meta);
 
         self.root.adjust_auto_open_group_entries();
+
+        #[cfg(any(feature = "desktop-ssh-agent", rust_analyzer))]
+        self.root
+            .adjust_imported_ssh_key_attachment_entries(&self.meta, attachment_content);
     }
 
     // Called before writing xml content

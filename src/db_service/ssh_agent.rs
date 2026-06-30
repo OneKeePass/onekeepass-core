@@ -2,8 +2,7 @@ use uuid::Uuid;
 
 use crate::constants::{entry_keyvalue_key, entry_type_uuid};
 use crate::db_content::{AttachmentHashValue, KeepassFile};
-use crate::db_service::{all_kdbx_cache_keys, call_kdbx_context_action, call_main_content_action};
-use crate::error::Result;
+use crate::db_service::{all_kdbx_cache_keys, call_kdbx_context_action};
 
 // A decrypted SSH key drawn from an SSH_KEY entry that has "Add to SSH Agent"
 // turned on. This is the only data the desktop SSH agent service needs in order
@@ -23,7 +22,8 @@ pub struct SshAgentKeySource {
     // Stored "Public Key" field. Used only to validate the key the agent derives
     // from the private key; the advertised public key is always derived.
     pub public_key: Option<String>,
-    // OpenSSH-format private key text (the "Private Key" protected field).
+    // SSH private key text (the "Private Key" protected field). The desktop
+    // agent accepts OpenSSH keys and PuTTY PPK keys.
     pub private_key_pem: String,
     // Optional passphrase for an encrypted private key.
     pub passphrase: Option<String>,
@@ -34,18 +34,6 @@ pub struct SshAgentKeySource {
     // the key (parsed + enforced in the agent's store, from key-load time).
     // Empty/absent means the key never expires.
     pub agent_lifetime: Option<String>,
-}
-
-struct SshAgentKeyCandidate {
-    db_key: String,
-    entry_uuid: Uuid,
-    title: String,
-    public_key: Option<String>,
-    private_key_pem: Option<String>,
-    private_key_attachment: Option<(String, AttachmentHashValue)>,
-    passphrase: Option<String>,
-    require_confirmation: bool,
-    agent_lifetime: Option<String>,
 }
 
 fn ssh_key_type_uuid() -> Uuid {
@@ -70,7 +58,19 @@ fn non_empty_field(
         .filter(|v| !v.trim().is_empty())
 }
 
-fn collect_from_db(db_key: &str, k: &KeepassFile, out: &mut Vec<SshAgentKeyCandidate>) {
+// check entry is 'SSH_KEY' entry type
+// check 'Add to SSH Agent'
+// get Private Key field if present
+// otherwise find private-key-looking attachment by content
+// read attachment content from the already-held DB context
+// push SshAgentKeySource
+
+fn collect_from_db(
+    db_key: &str,
+    k: &KeepassFile,
+    attachment_content: &dyn Fn(&AttachmentHashValue) -> Option<Vec<u8>>,
+    out: &mut Vec<SshAgentKeySource>,
+) {
     let target_type = ssh_key_type_uuid();
     // Active entries only — a key moved to the recycle bin must not be served.
     for entry in k.collect_all_active_entries() {
@@ -94,16 +94,39 @@ fn collect_from_db(db_key: &str, k: &KeepassFile, out: &mut Vec<SshAgentKeyCandi
             .map(|kv| is_truthy(&kv.value))
             .unwrap_or(false);
 
-        out.push(SshAgentKeyCandidate {
+        let title = non_empty_field(entry, entry_keyvalue_key::TITLE).unwrap_or_default();
+        let private_key_pem =
+            if let Some(private_key_pem) = non_empty_field(entry, entry_keyvalue_key::PRIVATE_KEY) {
+                private_key_pem
+            } else if let Some((name, data_hash)) =
+                private_key_attachment_candidate(entry, attachment_content)
+            {
+                let Some(bytes) = attachment_content(&data_hash) else {
+                    log::warn!(
+                        "SSH agent: private key attachment '{}' for SSH Key entry '{}' was not found",
+                        name,
+                        title
+                    );
+                    continue;
+                };
+                let Some(private_key_pem) = attachment_private_key_pem(&title, &name, bytes) else {
+                    continue;
+                };
+                private_key_pem
+            } else {
+                log::debug!(
+                    "SSH agent: skipping SSH Key entry '{}' because it has neither a Private Key field nor a private key attachment",
+                    title
+                );
+                continue;
+            };
+
+        out.push(SshAgentKeySource {
             db_key: db_key.to_string(),
             entry_uuid: entry.get_uuid(),
-            title: non_empty_field(entry, entry_keyvalue_key::TITLE).unwrap_or_default(),
+            title,
             public_key: non_empty_field(entry, entry_keyvalue_key::PUBLIC_KEY),
-            private_key_pem: non_empty_field(entry, entry_keyvalue_key::PRIVATE_KEY),
-            private_key_attachment: entry
-                .binary_key_values
-                .first()
-                .map(|bkv| (bkv.key.clone(), bkv.data_hash)),
+            private_key_pem,
             passphrase: non_empty_field(entry, entry_keyvalue_key::PASSWORD),
             require_confirmation,
             agent_lifetime: non_empty_field(entry, entry_keyvalue_key::AGENT_LIFETIME),
@@ -111,102 +134,87 @@ fn collect_from_db(db_key: &str, k: &KeepassFile, out: &mut Vec<SshAgentKeyCandi
     }
 }
 
+// Finds the attachment that actually looks like a private key. We do not fall
+// back to the first attachment because public keys or notes may be attached too.
+fn private_key_attachment_candidate(
+    entry: &crate::db_content::Entry,
+    attachment_content: &dyn Fn(&AttachmentHashValue) -> Option<Vec<u8>>,
+) -> Option<(String, AttachmentHashValue)> {
+    entry
+        .binary_key_values
+        .iter()
+        .find(|bkv| {
+            attachment_content(&bkv.data_hash)
+                .as_deref()
+                .map_or(false, bytes_look_like_private_key)
+        })
+        .map(|bkv| (bkv.key.clone(), bkv.data_hash))
+}
+
+// Shared lightweight private-key header sniffing for SSH agent source loading.
+fn bytes_look_like_private_key(bytes: &[u8]) -> bool {
+    let sniff_len = bytes.len().min(256);
+    let Ok(text) = std::str::from_utf8(&bytes[..sniff_len]) else {
+        return false;
+    };
+    let text = text.trim_start_matches('\u{feff}').trim_start();
+
+    text.starts_with("PuTTY-User-Key-File-")
+        || text.starts_with("-----BEGIN OPENSSH PRIVATE KEY-----")
+        || text.starts_with("-----BEGIN RSA PRIVATE KEY-----")
+        || text.starts_with("-----BEGIN EC PRIVATE KEY-----")
+        || text.starts_with("-----BEGIN DSA PRIVATE KEY-----")
+}
+
+// Converts attachment bytes into the text passed to the desktop SSH agent.
 fn attachment_private_key_pem(
-    db_key: &str,
     entry_title: &str,
     attachment_name: &str,
-    data_hash: &AttachmentHashValue,
+    bytes: Vec<u8>,
 ) -> Option<String> {
-    let bytes = call_kdbx_context_action(db_key, |ctx| {
-        Ok(ctx.kdbx_file.get_bytes_content(data_hash))
-    });
-
-    match bytes {
-        Ok(Some(bytes)) => match String::from_utf8(bytes) {
-            Ok(s) if !s.trim().is_empty() => {
-                log::debug!(
-                    "SSH agent: using private key attachment '{}' for SSH Key entry '{}'",
-                    attachment_name,
-                    entry_title
-                );
-                Some(s)
-            }
-            Ok(_) => {
-                log::warn!(
-                    "SSH agent: private key attachment '{}' for SSH Key entry '{}' is empty",
-                    attachment_name,
-                    entry_title
-                );
-                None
-            }
-            Err(_) => {
-                log::warn!(
-                    "SSH agent: private key attachment '{}' for SSH Key entry '{}' is not valid UTF-8; skipping",
-                    attachment_name,
-                    entry_title
-                );
-                None
-            }
-        },
-        Ok(None) => {
+    match String::from_utf8(bytes) {
+        Ok(s) if !s.trim().is_empty() => {
+            log::debug!(
+                "SSH agent: using private key attachment '{}' for SSH Key entry '{}'",
+                attachment_name,
+                entry_title
+            );
+            Some(s)
+        }
+        Ok(_) => {
             log::warn!(
-                "SSH agent: private key attachment '{}' for SSH Key entry '{}' was not found",
+                "SSH agent: private key attachment '{}' for SSH Key entry '{}' is empty",
                 attachment_name,
                 entry_title
             );
             None
         }
-        Err(e) => {
+        Err(_) => {
             log::warn!(
-                "SSH agent: failed to read private key attachment '{}' for SSH Key entry '{}': {}",
+                "SSH agent: private key attachment '{}' for SSH Key entry '{}' is not valid UTF-8; skipping",
                 attachment_name,
-                entry_title,
-                e
+                entry_title
             );
             None
         }
     }
 }
 
-fn resolve_candidate(candidate: SshAgentKeyCandidate) -> Option<SshAgentKeySource> {
-    let private_key_pem = if let Some(private_key_pem) = candidate.private_key_pem {
-        private_key_pem
-    } else if let Some((name, data_hash)) = candidate.private_key_attachment.as_ref() {
-        attachment_private_key_pem(&candidate.db_key, &candidate.title, name, data_hash)?
-    } else {
-        log::debug!(
-            "SSH agent: skipping SSH Key entry '{}' because it has neither a Private Key field nor an attachment",
-            candidate.title
-        );
-        return None;
-    };
-
-    Some(SshAgentKeySource {
-        db_key: candidate.db_key,
-        entry_uuid: candidate.entry_uuid,
-        title: candidate.title,
-        public_key: candidate.public_key,
-        private_key_pem,
-        passphrase: candidate.passphrase,
-        require_confirmation: candidate.require_confirmation,
-        agent_lifetime: candidate.agent_lifetime,
-    })
-}
-
 fn collect_sources_for_db(db_key: &str) -> Vec<SshAgentKeySource> {
     let key = db_key.to_string();
-    let collected: Result<Vec<SshAgentKeyCandidate>> =
-        call_main_content_action(db_key, move |k: &KeepassFile| {
-            let mut local = Vec::new();
-            collect_from_db(&key, k, &mut local);
-            Ok(local)
-        });
-
-    collected
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(resolve_candidate)
-        .collect()
+    call_kdbx_context_action(db_key, move |ctx| {
+        let mut local = Vec::new();
+        if let Some(k) = ctx.kdbx_file.keepass_main_content.as_ref() {
+            collect_from_db(
+                &key,
+                k,
+                &|data_hash| ctx.kdbx_file.get_bytes_content(data_hash),
+                &mut local,
+            );
+        }
+        Ok(local)
+    })
+    .unwrap_or_default()
 }
 
 // Enumerates every agent-enabled SSH_KEY entry across all currently open kdbx
