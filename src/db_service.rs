@@ -8,8 +8,16 @@ mod io;
 // Passkey DB types and functions — compiled on all platforms (no cfg gate).
 pub mod passkey;
 
+// URL-based autofill entry matching — shared by the desktop browser extension
+// and the mobile autofill flows (no cfg gate).
+pub mod autofill;
+
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub mod browser_extension;
+
+// Enumerates agent-enabled SSH_KEY entries for the desktop SSH agent service.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub mod ssh_agent;
 
 // Note: Moved module storage to db_service_ffi crate as it is used only in mobile apps for now
 
@@ -91,6 +99,14 @@ pub use crate::constants::entry_type_uuid;
 pub use crate::db_merge::MergeResult;
 
 pub use crate::custom_icons::{CustomIconData, CustomIconSummary};
+
+// Re-export so the mobile FFI command dispatcher (which calls db_service::<fn>)
+// can reach the URL-only autofill manual search.
+pub use autofill::autofill_search_term;
+
+// Re-export so the Android autofill FFI can associate a native-app token with an
+// entry (capture-on-fill). See db_service::autofill::associate_app_to_entry.
+pub use autofill::associate_app_to_entry;
 
 pub use custom_icon::{
     add_custom_icon, get_custom_icon, list_custom_icons, remove_custom_icon,
@@ -609,6 +625,21 @@ pub struct EntrySearchResult {
     pub entry_items: Vec<EntrySummary>,
 }
 
+// Returns true if entries of this type are offered for autofill candidate lists
+// (password or passkey). Login, Credit/Debit Card and Bank Account all carry a
+// Login Details section (UserName/Password/URL/Additional URLs), so all three are
+// username/password candidates. This is the single source of truth for autofill
+// type eligibility, shared by the desktop browser extension and the mobile
+// autofill flows. To allow more types, add their type UUIDs to the eligible list.
+pub(crate) fn is_autofill_eligible_type(type_uuid: &Uuid) -> bool {
+    let eligible = [
+        crate::build_uuid!(crate::constants::entry_type_uuid::LOGIN),
+        crate::build_uuid!(crate::constants::entry_type_uuid::CREDIT_DEBIT_CARD),
+        crate::build_uuid!(crate::constants::entry_type_uuid::BANK_ACCOUNT),
+    ];
+    eligible.contains(type_uuid)
+}
+
 /// A simple term search. The term is searched in all fields of each entry and returned all matching entry ids
 pub fn search_term(db_key: &str, term: &str) -> Result<EntrySearchResult> {
     main_content_action!(db_key, |k: &KeepassFile| {
@@ -627,6 +658,7 @@ pub fn search_term(db_key: &str, term: &str) -> Result<EntrySearchResult> {
                     title: t1,
                     secondary_title: t2,
                     entry_type_name: e.entry_field.entry_type.name.clone(),
+                    entry_type_uuid: e.entry_field.entry_type.uuid.to_string(),
                     icon_id: e.icon_id,
                     custom_icon_uuid: e.custom_icon_uuid.map(|u| u.to_string()),
                     history_index: None,

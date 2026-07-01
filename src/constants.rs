@@ -83,6 +83,13 @@ pub mod standard_in_section_names {
     pub const ADDITIONAL_ONE_TIME_PASSWORDS: &str = "Additional One-Time Passwords";
     pub const CARD_DETAILS: &str = "Card Details";
     pub const PASSKEY_DETAILS: &str = "Passkey Details";
+
+    // Section names shared by two or more of the standard entry types added for
+    // the extended entry templates. Section names used by a single type are kept
+    // as string literals at the type definition site.
+    pub const CONNECTION: &str = "Connection";
+    pub const DATES: &str = "Dates";
+    pub const CONTACT: &str = "Contact";
 }
 
 #[allow(dead_code)]
@@ -104,7 +111,9 @@ pub mod entry_type_name {
     pub const IDENTITY: &str = "Identity";
     pub const DRIVER_LICENSE: &str = "Driver License";
 
-    //Medical Record, Membership,
+    pub const SSH_KEY: &str = "SSH Key";
+
+    //Medical Record,
 }
 
 // We can generate hex bytes like this using
@@ -174,6 +183,12 @@ pub mod entry_type_uuid {
         0x0A, 0x14, 0xD7, 0x6D, 0x8C, 0x38, 0x4C, 0x62, 0x9A, 0xD7, 0x39, 0x0D, 0xC0, 0x20, 0xA2,
         0xAF,
     ];
+
+    // 6421a61a-db18-413a-bdfb-715a5418216a
+    pub const SSH_KEY: &[u8] = &[
+        0x64, 0x21, 0xA6, 0x1A, 0xDB, 0x18, 0x41, 0x3A, 0xBD, 0xFB, 0x71, 0x5A, 0x54, 0x18, 0x21,
+        0x6A,
+    ];
 }
 
 #[allow(dead_code)]
@@ -204,6 +219,32 @@ pub mod entry_keyvalue_key {
     // pub const PRIORITY: &str = "Priority";
     // pub const SKIP_IF_NOT_EXISTS: &str = "SkipIfNotExists";
     // pub const SKIP_IF_KEY_FILE_NOT_EXISTS: &str = "SkipIfKeyFileNotExists";
+
+    // Field names shared by two or more of the extended standard entry types
+    // (Identity, Passport, Driver License, SSH Login, etc.). Fields used by a
+    // single type are kept as string literals at the type definition site,
+    // matching the existing Credit/Debit Card and Bank Account definitions.
+    pub const FIRST_NAME: &str = "First Name";
+    pub const MIDDLE_NAME: &str = "Middle Name";
+    pub const LAST_NAME: &str = "Last Name";
+    pub const DATE_OF_BIRTH: &str = "Date of Birth";
+    pub const NATIONALITY: &str = "Nationality";
+    pub const EXPIRATION_DATE: &str = "Expiration Date";
+    pub const ISSUE_DATE: &str = "Issue Date";
+    pub const EMAIL: &str = "Email";
+    pub const POSTAL_CODE: &str = "Postal Code";
+    pub const STATE_PROVINCE_REGION: &str = "State / Province / Region";
+    pub const ADMIN_URL: &str = "Admin URL";
+    pub const ENVIRONMENT: &str = "Environment";
+    pub const PRIVATE_KEY: &str = "Private Key";
+    pub const PROVIDER: &str = "Provider";
+
+    // SSH Key entry type fields. Referenced by both the type definition and the
+    // ssh-agent key-source enumeration, so kept as shared constants.
+    pub const PUBLIC_KEY: &str = "Public Key";
+    pub const ADD_TO_SSH_AGENT: &str = "Add to SSH Agent";
+    pub const REQUIRE_CONFIRMATION: &str = "Require Confirmation";
+    pub const AGENT_LIFETIME: &str = "Agent Lifetime";
 
     // Passkey fields (KeePassXC-compatible)
     pub const KPEX_PASSKEY_USERNAME: &str = "KPEX_PASSKEY_USERNAME";

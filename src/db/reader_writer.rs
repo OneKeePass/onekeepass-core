@@ -364,12 +364,24 @@ impl<'a, T: Read + Seek> KdbxFileReader<'a, T> {
         let mut r = xml_parse::parse(xml_bytes, Some(cipher))?;
 
         // IMPORTANT:We need to set attachment hashes in all entries read from xml
-        r.after_xml_reading(
-            self.kdbx_file
-                .inner_header
-                .entry_attachments
-                .attachments_index_ref_to_hash(),
-        );
+        cfg_if::cfg_if! {
+            if #[cfg(any(feature = "desktop-ssh-agent", rust_analyzer))] {
+                r.after_xml_reading(
+                    self.kdbx_file
+                        .inner_header
+                        .entry_attachments
+                        .attachments_index_ref_to_hash(),
+                    &|data_hash| self.kdbx_file.get_bytes_content(data_hash),
+                );
+            } else {
+                r.after_xml_reading(
+                    self.kdbx_file
+                        .inner_header
+                        .entry_attachments
+                        .attachments_index_ref_to_hash(),
+                );
+            }
+        }
         self.kdbx_file.keepass_main_content = Some(r);
         Ok(())
     }

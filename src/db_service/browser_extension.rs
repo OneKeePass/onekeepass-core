@@ -8,20 +8,15 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde::Serialize;
 
-use crate::constants::entry_keyvalue_key::ADDITIONAL_URLS;
 use crate::constants::entry_keyvalue_key::PASSWORD;
-use crate::constants::entry_keyvalue_key::TITLE;
-use crate::constants::entry_keyvalue_key::URL;
 use crate::constants::entry_keyvalue_key::USER_NAME;
 use crate::db_content::KeepassFile;
 use crate::db_service::{call_kdbx_context_mut_action, call_main_content_action, KdbxContext};
 use crate::error::Error;
 use crate::error::Result;
-use crate::form_data::parsing::EntryPlaceHolderParser;
 use crate::form_data::EntrySummary;
 use crate::util;
 
-use url::Url;
 use uuid::Uuid;
 
 // NOTE: To use these macros in this module, we need to import all fns used
@@ -33,7 +28,7 @@ use crate::main_content_action;
 pub use super::passkey::{
     create_and_store_passkey, find_matching_passkeys, get_db_groups, get_db_name,
     get_group_entries, get_passkey_for_assertion, store_passkey_entry, EntryBasicInfo, GroupInfo,
-    PasskeyEntry, PasskeyStorageInfo, PasskeySummary,
+    PasskeyEntry, PasskeyStorageInfo, PasskeyStoreOutcome, PasskeySummary,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -112,107 +107,37 @@ pub fn custom_icon_for_browser_extension(
     main_content_action!(db_key, action)
 }
 
-fn any_additional_urls_matching(input_url: &str, additional_urls: &str) -> bool {
-    let urls: Vec<&str> = additional_urls.split_whitespace().collect();
-    urls.iter().any(|au| url_matched(input_url, au))
-}
-
+// Builds the per-db matched-entries result. The actual URL matching is delegated
+// to the shared autofill matcher (crate::db_service::autofill) so the desktop
+// browser extension and the mobile autofill flows match identically.
 fn find_matching_entries_in_db(db_key: &str, input_url: &str) -> Result<MatchedDbEntries> {
-    // log::debug!("find_matching_entries_in_db Going to find match for input_url {}",&input_url);
-    let action = |k: &KeepassFile| {
-        let entries = k.collect_all_active_entries();
-        let db_name = k.meta.database_name().clone();
-        let entry_summaries = entries
-            .iter()
-            .filter_map(|e| {
-                let (parsed_fields, entry_fields) =
-                    EntryPlaceHolderParser::place_holder_resolved_entry_fields(&k.root, e);
-
-                let Some(entry_field_url) = entry_fields.get(URL) else {
-                    return None;
-                };
-
-                let entry_field_url_matched = url_matched(input_url, entry_field_url);
-
-                // log::debug!("find_matching_entries_in_db Finding matching for the entry_field_url {} and matched? {} ",&entry_field_url,&matched);
-
-                if !entry_field_url_matched {
-                    // Check the additional urls if any
-                    let matched = if let Some(urls) = entry_fields.get(ADDITIONAL_URLS) {
-                        any_additional_urls_matching(input_url, urls)
-                    } else {
-                        entry_field_url_matched
-                    };
-
-                    // The final matched flag should be true to consider
-                    if !matched {
-                        // No match either with entry url or with additional url
-                        return None;
-                    }
-                }
-
-                let title = entry_fields.get(TITLE).cloned();
-                let secondary_title = EntrySummary::secondary_title(e, &parsed_fields);
-
-                Some(EntrySummary {
-                    uuid: e.uuid.to_string(),
-                    parent_group_uuid: e.parent_group_uuid(),
-                    title,
-                    secondary_title,
-                    entry_type_name: e.entry_field.entry_type.name.clone(),
-                    icon_id: e.icon_id,
-                    custom_icon_uuid: e.custom_icon_uuid.map(|u| u.to_string()),
-                    history_index: None,
-                    modified_time: Some(e.times.last_modification_time.and_utc().timestamp()),
-                    created_time: Some(e.times.creation_time.and_utc().timestamp()),
-                })
-            })
-            .collect::<Vec<EntrySummary>>();
-
-        let matched_db_entries = MatchedDbEntries {
-            db_name,
-            db_key: db_key.to_string(),
-            entry_summaries,
-        };
-        Ok(matched_db_entries)
-    };
-
-    main_content_action!(db_key, action)
-}
-
-fn url_matched(input: &str, entry_field_val: &str) -> bool {
-    let Ok(input_url) = Url::parse(input) else {
-        return false;
-    };
-
-    let Ok(entry_url) = Url::parse(entry_field_val) else {
-        return false;
-    };
-
-    // log::debug!("entry_url.scheme {:?}, entry_url.domain {:?}, entry_url.path {}",entry_url.scheme(),entry_url.domain(),entry_url.path() );
-
-    input_url.scheme() == entry_url.scheme()
-        && input_url.domain() == entry_url.domain()
-        && input_url.path() == entry_url.path()
+    let entry_summaries =
+        crate::db_service::autofill::find_matching_login_entries(db_key, input_url)?;
+    Ok(MatchedDbEntries {
+        db_name: get_db_name(db_key)?,
+        db_key: db_key.to_string(),
+        entry_summaries,
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    #[ignore]
     #[test]
-    fn verify_url_matching() {
-        let r = url_matched(
-            "https://gemini.google.com/app/",
-            "https://gemini.google.com/app/",
-        );
-        println!("r is {}", r);
+    fn login_card_and_bank_types_are_autofill_eligible() {
+        use crate::constants::entry_type_uuid;
+        use crate::db_service::is_autofill_eligible_type;
 
-        let r = url_matched(
-            "https://gemini.google.com/app/",
-            "https://gemini.google.com/app",
-        );
-        println!("r2 is {}", r);
+        let login = crate::build_uuid!(entry_type_uuid::LOGIN);
+        let card = crate::build_uuid!(entry_type_uuid::CREDIT_DEBIT_CARD);
+        let bank = crate::build_uuid!(entry_type_uuid::BANK_ACCOUNT);
+
+        // All three carry a Login Details section, so all are autofill candidates.
+        assert!(is_autofill_eligible_type(&login));
+        assert!(is_autofill_eligible_type(&card));
+        assert!(is_autofill_eligible_type(&bank));
+
+        // A non-credential type stays ineligible.
+        let passport = crate::build_uuid!(entry_type_uuid::PASSPORT);
+        assert!(!is_autofill_eligible_type(&passport));
     }
 }

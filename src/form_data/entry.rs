@@ -231,6 +231,72 @@ impl EntryFormData {
         self.title = title;
     }
 
+    // Adds a tag if it is not already present. Used when building form data
+    // programmatically within the core (e.g. tagging a passkey entry).
+    pub(crate) fn add_tag(&mut self, tag: &str) {
+        if !self.tags.iter().any(|t| t == tag) {
+            self.tags.push(tag.to_string());
+        }
+    }
+
+    // Returns the value of the Additional URLs field (a whitespace-separated list
+    // of url tokens) wherever it appears among the entry's sections, if set.
+    pub(crate) fn additional_urls(&self) -> Option<&str> {
+        use crate::constants::entry_keyvalue_key::ADDITIONAL_URLS;
+        self.section_fields
+            .values()
+            .flatten()
+            .find(|k| k.key == ADDITIONAL_URLS)
+            .and_then(|k| k.value.as_deref())
+    }
+
+    // Appends a url token to the Additional URLs field (space-separated), preserving
+    // any existing tokens. Returns false (no change) when the entry has no Additional
+    // URLs field. Caller is responsible for any duplicate check.
+    pub(crate) fn append_additional_url(&mut self, url: &str) -> bool {
+        use crate::constants::entry_keyvalue_key::ADDITIONAL_URLS;
+        for kvds in self.section_fields.values_mut() {
+            if let Some(kvd) = kvds.iter_mut().find(|k| k.key == ADDITIONAL_URLS) {
+                let new_value = match kvd.value.as_deref() {
+                    Some(v) if !v.trim().is_empty() => format!("{} {}", v.trim(), url),
+                    _ => url.to_string(),
+                };
+                log::debug!("Added the app url {} to additional urls field", &new_value);
+                kvd.value = Some(new_value);
+                return true;
+            }
+        }
+        false
+    }
+
+    // Read-only accessors used by callers (e.g. passkey storage) that need to
+    // report which entry was created/updated.
+    pub(crate) fn uuid(&self) -> Uuid {
+        self.uuid
+    }
+
+    pub(crate) fn group_uuid(&self) -> Uuid {
+        self.group_uuid
+    }
+
+    pub(crate) fn entry_type_uuid(&self) -> Uuid {
+        self.entry_type_uuid
+    }
+
+    // True when this form belongs to the SSH Key entry type. Lets a caller (the
+    // desktop SSH agent hooks) skip work for unrelated entry edits.
+    pub fn is_ssh_key_entry(&self) -> bool {
+        self.entry_type_uuid == crate::build_uuid!(crate::constants::entry_type_uuid::SSH_KEY)
+    }
+
+    pub(crate) fn entry_type_name(&self) -> &str {
+        &self.entry_type_name
+    }
+
+    pub(crate) fn tags(&self) -> &[String] {
+        &self.tags
+    }
+
     // Sets the value of a specific field within a named section.
     // No-op if the section or the field key does not exist.
     pub(crate) fn set_field_value_in_section(
@@ -649,6 +715,9 @@ pub struct EntrySummary {
     pub title: Option<String>,
     pub secondary_title: Option<String>, // usually the user name
     pub entry_type_name: String,
+    // Stable entry-type identifier. Unlike entry_type_name it never changes, so
+    // the UI should key entry-type decisions off this rather than the name.
+    pub entry_type_uuid: String,
     pub icon_id: i32,
     pub custom_icon_uuid: Option<String>,
     pub history_index: Option<i32>,
@@ -682,6 +751,7 @@ impl EntrySummary {
                 //     Some("%Y-%m-%d %I:%M:%S %p"),
                 // )),
                 entry_type_name: he.entry_field.entry_type.name.clone(),
+                entry_type_uuid: he.entry_field.entry_type.uuid.to_string(),
                 icon_id: he.icon_id,
                 custom_icon_uuid: he.custom_icon_uuid.map(|u| u.to_string()),
                 history_index: Some(i as i32),
@@ -712,13 +782,35 @@ impl EntrySummary {
                 }
             })
         } else if let Some(ref t) = entry.entry_field.entry_type.secondary_title {
-            let val = entry.find_kv_field_value(t);
-            if parsed_fields.is_empty() {
-                val
+            // Resolves a field's value, preferring the parsed (decrypted) value
+            // when parsed_fields is available.
+            let resolve = |name: &str| -> Option<String> {
+                let val = entry.find_kv_field_value(name);
+                if parsed_fields.is_empty() {
+                    val
+                } else {
+                    parsed_fields
+                        .get(&name.to_uppercase())
+                        .map_or(val, |s| Some(s.to_string()))
+                }
+            };
+            let non_empty = |o: &Option<String>| o.as_ref().map_or(false, |s| !s.trim().is_empty());
+
+            let primary = resolve(t);
+            if non_empty(&primary) {
+                primary
             } else {
-                parsed_fields
-                    .get(&t.to_uppercase())
-                    .map_or(val, |s| Some(s.to_string()))
+                // Fall back to First Name when the configured secondary-title
+                // field is blank. This is used by the identity-document templates
+                // (Identity, Passport, Driver License) whose secondary title is
+                // Last Name. It is a no-op for other types, which have no
+                // First Name field.
+                let fallback = resolve(FIRST_NAME);
+                if non_empty(&fallback) {
+                    fallback
+                } else {
+                    primary
+                }
             }
         } else {
             let secondary_title: Option<String> = entry
@@ -772,6 +864,7 @@ impl EntrySummary {
                 title,
                 secondary_title,
                 entry_type_name: e.entry_field.entry_type.name.clone(),
+                entry_type_uuid: e.entry_field.entry_type.uuid.to_string(),
                 icon_id: e.icon_id,
                 custom_icon_uuid: e.custom_icon_uuid.map(|u| u.to_string()),
                 history_index: None,

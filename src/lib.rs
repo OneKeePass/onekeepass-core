@@ -10,6 +10,7 @@ pub mod custom_icons;
 
 mod db;
 mod db_merge;
+mod net_tls;
 #[cfg(feature = "favicon")]
 pub mod favicon;
 mod form_data;

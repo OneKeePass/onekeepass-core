@@ -29,6 +29,10 @@ pub const STANDARD_TYPE_NAMES: &[&'static str] = &[
     LOGIN,
     CREDIT_DEBIT_CARD,
     BANK_ACCOUNT,
+    IDENTITY,
+    PASSPORT,
+    DRIVER_LICENSE,
+    SSH_KEY,
     WIRELESS_ROUTER,
     AUTO_DB_OPEN,
     REMOTE_CONNECTION_SFTP,
@@ -46,6 +50,17 @@ lazy_static! {
         let mut m = HashMap::new();
         m.insert("Additional URLs", "One or more additional URLs separated by a space");
         m.insert("CVC", "Card Verification Value/Number");
+        // Date fields currently render as plain text on both desktop and mobile,
+        // so a format hint is shown. The wording is kept type-neutral because the
+        // helper-text key is the bare field name shared across entry types.
+        m.insert("Date of Birth", "Enter date as YYYY-MM-DD");
+        m.insert("Issue Date", "Enter date as YYYY-MM-DD");
+        m.insert("Expiration Date", "Enter date as YYYY-MM-DD");
+        m.insert("Created Date", "Enter date as YYYY-MM-DD");
+        m.insert("Start Date", "Enter date as YYYY-MM-DD");
+        m.insert("Purchase Date", "Enter date as YYYY-MM-DD");
+        m.insert("Effective Date", "Enter date as YYYY-MM-DD");
+        m.insert("Recovery Phrase", "Seed words separated by spaces");
         m
     };
 
@@ -59,6 +74,10 @@ lazy_static! {
         m.insert(AUTO_DB_OPEN,build_uuid!(entry_type_uuid::AUTO_DB_OPEN));
         m.insert(REMOTE_CONNECTION_SFTP,build_uuid!(entry_type_uuid::REMOTE_CONNECTION_SFTP));
         m.insert(REMOTE_CONNECTION_WEBDAV,build_uuid!(entry_type_uuid::REMOTE_CONNECTION_WEBDAV));
+        m.insert(IDENTITY,build_uuid!(entry_type_uuid::IDENTITY));
+        m.insert(PASSPORT,build_uuid!(entry_type_uuid::PASSPORT));
+        m.insert(DRIVER_LICENSE,build_uuid!(entry_type_uuid::DRIVER_LICENSE));
+        m.insert(SSH_KEY,build_uuid!(entry_type_uuid::SSH_KEY));
         m
     };
 
@@ -309,6 +328,179 @@ lazy_static! {
             },
         );
 
+        // ---- Extended standard entry templates ----
+        // Identity, Passport and Driver License reuse the UUIDs reserved earlier
+        // in entry_type_uuid. The remaining types use newly generated UUIDs.
+        // Secondary titles use non-protected fields only, since the entry list
+        // shows the secondary title's raw value (no masking except Credit Card).
+
+        m.insert(
+            build_uuid!(entry_type_uuid::IDENTITY),
+            EntryType {
+                uuid: build_uuid!(entry_type_uuid::IDENTITY),
+                name: IDENTITY.into(),
+                secondary_title: Some(LAST_NAME.into()),
+                icon_name: None,
+                sections: vec![
+                    Section {
+                        name: "Identity".into(),
+                        field_defs: vec![
+                            FieldDef::new(FIRST_NAME),
+                            FieldDef::new(MIDDLE_NAME),
+                            FieldDef::new(LAST_NAME),
+                            FieldDef::new(DATE_OF_BIRTH).set_data_type(FieldDataType::Date),
+                            FieldDef::new("Gender"),
+                            FieldDef::new(NATIONALITY),
+                        ],
+                    },
+                    Section {
+                        name: CONTACT.into(),
+                        field_defs: vec![
+                            FieldDef::new(EMAIL),
+                            FieldDef::new("Phone Number"),
+                            FieldDef::new("Alternate Phone"),
+                        ],
+                    },
+                    Section {
+                        name: "Address".into(),
+                        field_defs: vec![
+                            FieldDef::new("Address Line1"),
+                            FieldDef::new("Address Line2"),
+                            FieldDef::new("City"),
+                            FieldDef::new(STATE_PROVINCE_REGION),
+                            FieldDef::new(POSTAL_CODE),
+                            FieldDef::new("Country"),
+                        ],
+                    },
+                    Section {
+                        name: "Sensitive Details".into(),
+                        field_defs: vec![
+                            FieldDef::new("National ID").set_require_protection(true),
+                            FieldDef::new("Tax ID").set_require_protection(true),
+                        ],
+                    },
+                ],
+            },
+        );
+
+        m.insert(
+            build_uuid!(entry_type_uuid::PASSPORT),
+            EntryType {
+                uuid: build_uuid!(entry_type_uuid::PASSPORT),
+                name: PASSPORT.into(),
+                secondary_title: Some(LAST_NAME.into()),
+                icon_name: None,
+                sections: vec![
+                    Section {
+                        name: "Passport Details".into(),
+                        field_defs: vec![
+                            FieldDef::new(FIRST_NAME),
+                            FieldDef::new(MIDDLE_NAME),
+                            FieldDef::new(LAST_NAME),
+                            FieldDef::new("Passport Number").set_require_protection(true),
+                            FieldDef::new(NATIONALITY),
+                            FieldDef::new(DATE_OF_BIRTH).set_data_type(FieldDataType::Date),
+                            FieldDef::new("Place of Birth"),
+                            FieldDef::new("Sex"),
+                        ],
+                    },
+                    Section {
+                        name: "Issuance".into(),
+                        field_defs: vec![
+                            FieldDef::new("Issuing Country"),
+                            FieldDef::new("Issuing Authority"),
+                            FieldDef::new(ISSUE_DATE).set_data_type(FieldDataType::Date),
+                            FieldDef::new(EXPIRATION_DATE).set_data_type(FieldDataType::Date),
+                        ],
+                    },
+                    Section {
+                        name: "Travel".into(),
+                        field_defs: vec![
+                            FieldDef::new("Visa Number"),
+                            FieldDef::new("Known Traveler Number"),
+                            FieldDef::new("Redress Number"),
+                        ],
+                    },
+                    Section {
+                        name: "Emergency Contact".into(),
+                        field_defs: vec![
+                            FieldDef::new("Name"),
+                            FieldDef::new("Phone"),
+                        ],
+                    },
+                ],
+            },
+        );
+
+        m.insert(
+            build_uuid!(entry_type_uuid::DRIVER_LICENSE),
+            EntryType {
+                uuid: build_uuid!(entry_type_uuid::DRIVER_LICENSE),
+                name: DRIVER_LICENSE.into(),
+                secondary_title: Some(LAST_NAME.into()),
+                icon_name: None,
+                sections: vec![
+                    Section {
+                        name: "License Details".into(),
+                        field_defs: vec![
+                            FieldDef::new(FIRST_NAME),
+                            FieldDef::new(MIDDLE_NAME),
+                            FieldDef::new(LAST_NAME),
+                            FieldDef::new("License Number").set_require_protection(true),
+                            FieldDef::new("Class"),
+                            FieldDef::new(STATE_PROVINCE_REGION),
+                            FieldDef::new("Country"),
+                        ],
+                    },
+                    Section {
+                        name: DATES.into(),
+                        field_defs: vec![
+                            FieldDef::new(ISSUE_DATE).set_data_type(FieldDataType::Date),
+                            FieldDef::new(EXPIRATION_DATE).set_data_type(FieldDataType::Date),
+                            FieldDef::new(DATE_OF_BIRTH).set_data_type(FieldDataType::Date),
+                        ],
+                    },
+                    Section {
+                        name: "Restrictions".into(),
+                        field_defs: vec![
+                            FieldDef::new("Restrictions"),
+                            FieldDef::new("Endorsements"),
+                        ],
+                    },
+                ],
+            },
+        );
+
+        // SSH_KEY holds the key material + agent settings. This is the entry type
+        // the desktop SSH agent service enumerates and serves.
+        m.insert(
+            build_uuid!(entry_type_uuid::SSH_KEY),
+            EntryType {
+                uuid: build_uuid!(entry_type_uuid::SSH_KEY),
+                name: SSH_KEY.into(),
+                secondary_title: None,
+                icon_name: None,
+                sections: vec![
+                    Section {
+                        name: "SSH Key".into(),
+                        field_defs: vec![
+                            FieldDef::new(PRIVATE_KEY).set_require_protection(true),
+                            FieldDef::new(PASSWORD).set_require_protection(true),
+                            FieldDef::new(PUBLIC_KEY),
+                        ],
+                    },
+                    Section {
+                        name: "SSH Agent".into(),
+                        field_defs: vec![
+                            FieldDef::new(ADD_TO_SSH_AGENT).set_data_type(FieldDataType::Bool),
+                            FieldDef::new(REQUIRE_CONFIRMATION).set_data_type(FieldDataType::Bool),
+                            FieldDef::new(AGENT_LIFETIME),
+                        ],
+                    },
+                ],
+            },
+        );
+
         m
     };
 }
@@ -413,3 +605,103 @@ pub fn standard_section_names(name: &str) -> Vec<&str> {
         .map_or_else(|| vec![], |f| f)
 }
 */
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    // Guards the unwrap() calls in standard_types_ordered_by_id() and
+    // standard_type_uuids_names_ordered_by_id(): every name listed in
+    // STANDARD_TYPE_NAMES must resolve to a UUID and to an EntryType.
+    #[test]
+    fn every_standard_type_is_fully_registered() {
+        for name in STANDARD_TYPE_NAMES {
+            let uuid = STANDARD_TYPE_UUIDS_BY_NAME
+                .get(name)
+                .unwrap_or_else(|| panic!("'{name}' missing from STANDARD_TYPE_UUIDS_BY_NAME"));
+            let entry_type = UUID_TO_ENTRY_TYPE_MAP
+                .get(uuid)
+                .unwrap_or_else(|| panic!("'{name}' missing from UUID_TO_ENTRY_TYPE_MAP"));
+            assert_eq!(
+                &entry_type.name, name,
+                "EntryType.name does not match registry name for '{name}'"
+            );
+            assert_eq!(
+                &entry_type.uuid, uuid,
+                "EntryType.uuid does not match registry uuid for '{name}'"
+            );
+        }
+    }
+
+    #[test]
+    fn standard_type_uuids_are_unique() {
+        let mut seen = HashSet::new();
+        for name in STANDARD_TYPE_NAMES {
+            let uuid = STANDARD_TYPE_UUIDS_BY_NAME.get(name).unwrap();
+            assert!(seen.insert(*uuid), "duplicate UUID for standard type '{name}'");
+        }
+    }
+
+    fn entry_type_by_name(name: &str) -> &'static EntryType {
+        let uuid = STANDARD_TYPE_UUIDS_BY_NAME.get(name).unwrap();
+        UUID_TO_ENTRY_TYPE_MAP.get(uuid).unwrap()
+    }
+
+    fn field_names(et: &EntryType) -> HashSet<String> {
+        et.sections
+            .iter()
+            .flat_map(|s| s.field_defs.iter().map(|f| f.name.clone()))
+            .collect()
+    }
+
+    // SSH_KEY holds the key material + agent config and is the entry type the
+    // desktop SSH agent service enumerates and serves.
+    #[test]
+    fn ssh_key_has_key_material_and_agent_config() {
+        let key = entry_type_by_name(SSH_KEY);
+        let key_sections: Vec<&str> = key.sections.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(key_sections, vec!["SSH Key", "SSH Agent"]);
+        let key_fields = field_names(key);
+        for present in [
+            PRIVATE_KEY,
+            PASSWORD,
+            PUBLIC_KEY,
+            ADD_TO_SSH_AGENT,
+            REQUIRE_CONFIRMATION,
+            AGENT_LIFETIME,
+        ] {
+            assert!(key_fields.contains(present), "SSH_KEY missing '{present}'");
+        }
+
+        // Private key material must be protected.
+        let private = key
+            .sections
+            .iter()
+            .flat_map(|s| &s.field_defs)
+            .find(|f| f.name == PRIVATE_KEY)
+            .unwrap();
+        assert!(private.require_protection, "Private Key must be protected");
+    }
+
+    // Entry KVs are flat, so a field name must be unique across all sections
+    // within a single entry type (section names may coincide with field names,
+    // which is fine - they live in different namespaces).
+    #[test]
+    fn field_names_unique_within_each_standard_type() {
+        for name in STANDARD_TYPE_NAMES {
+            let uuid = STANDARD_TYPE_UUIDS_BY_NAME.get(name).unwrap();
+            let entry_type = UUID_TO_ENTRY_TYPE_MAP.get(uuid).unwrap();
+            let mut seen = HashSet::new();
+            for section in &entry_type.sections {
+                for fd in &section.field_defs {
+                    assert!(
+                        seen.insert(fd.name.clone()),
+                        "duplicate field '{}' in entry type '{name}'",
+                        fd.name
+                    );
+                }
+            }
+        }
+    }
+}

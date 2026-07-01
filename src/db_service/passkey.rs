@@ -25,6 +25,10 @@ use crate::util;
 // inside the macro expansion as well.
 use crate::main_content_action;
 
+// Tag applied to any entry that holds a passkey (new or updated). Lets the UI
+// group/filter passkey-bearing entries.
+const PASSKEY_TAG: &str = "Passkey";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -89,6 +93,18 @@ pub struct EntryBasicInfo {
     pub title: String,
 }
 
+// Identifies the entry (and its group, type and tags) that a passkey was stored
+// on, so callers can refresh/navigate the UI to the affected entry - including
+// precise navigation when the UI groups entries by type or tag.
+#[derive(Clone, Debug, Serialize)]
+pub struct PasskeyStoreOutcome {
+    pub entry_uuid: Uuid,
+    pub group_uuid: Uuid,
+    pub entry_type_uuid: Uuid,
+    pub entry_type_name: String,
+    pub tags: Vec<String>,
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Private helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -149,17 +165,31 @@ fn passkey_kvds(info: &PasskeyStorageInfo) -> Vec<KeyValueData> {
 //
 // Shared by `store_passkey_entry` (mobile) and `create_and_store_passkey` (desktop).
 // Does NOT save the database to disk.
-fn apply_passkey_storage(db_key: &str, info: &PasskeyStorageInfo) -> Result<()> {
+fn apply_passkey_storage(db_key: &str, info: &PasskeyStorageInfo) -> Result<PasskeyStoreOutcome> {
     match info.entry_uuid {
         Some(uuid) => {
             // Update an existing entry via EntryFormData so that
             // update_entry_from_form_data -> Entry::update() creates history.
             let mut form_data = super::get_entry_form_data_by_id(db_key, &uuid)?;
-            // Reflect the passkey username in the standard UserName field.
-            form_data.set_field_value_in_section(LOGIN_DETAILS, USER_NAME, &info.username);
+            // Tag the entry as a passkey holder (no-op if already tagged).
+            form_data.add_tag(PASSKEY_TAG);
+            // Capture the entry's group, type and tags before form_data is
+            // consumed by update_entry_from_form_data. The tags now include the
+            // Passkey tag so the UI can navigate/filter precisely.
+            let outcome = PasskeyStoreOutcome {
+                entry_uuid: uuid,
+                group_uuid: form_data.group_uuid(),
+                entry_type_uuid: form_data.entry_type_uuid(),
+                entry_type_name: form_data.entry_type_name().to_string(),
+                tags: form_data.tags().to_vec(),
+            };
+            // Note: we intentionally do NOT overwrite the existing UserName field
+            // when adding a passkey to an existing entry, so a user-entered value
+            // is preserved.
             // Replace all passkey custom fields.
             form_data.set_or_replace_section_fields(PASSKEY_DETAILS, passkey_kvds(info));
-            super::update_entry_from_form_data(db_key, form_data)
+            super::update_entry_from_form_data(db_key, form_data)?;
+            Ok(outcome)
         }
         None => {
             // Resolve or create the parent group.
@@ -193,7 +223,18 @@ fn apply_passkey_storage(db_key: &str, info: &PasskeyStorageInfo) -> Result<()> 
                 &format!("https://{}", &info.rp_id),
             );
             form_data.set_or_replace_section_fields(PASSKEY_DETAILS, passkey_kvds(info));
-            super::insert_entry_from_form_data(db_key, form_data)
+            // Tag the new entry as a passkey holder.
+            form_data.add_tag(PASSKEY_TAG);
+            // Capture identifying fields before form_data is consumed by insert.
+            let outcome = PasskeyStoreOutcome {
+                entry_uuid: form_data.uuid(),
+                group_uuid: parent_uuid,
+                entry_type_uuid: form_data.entry_type_uuid(),
+                entry_type_name: form_data.entry_type_name().to_string(),
+                tags: form_data.tags().to_vec(),
+            };
+            super::insert_entry_from_form_data(db_key, form_data)?;
+            Ok(outcome)
         }
     }
 }
@@ -231,8 +272,12 @@ pub fn get_db_groups(db_key: &str) -> Result<Vec<GroupInfo>> {
     main_content_action!(db_key, action, no_times)
 }
 
-// Returns all active entries that belong directly to `group_uuid`, sorted by title.
+// Returns the active Login-type entries that belong directly to `group_uuid`,
+// sorted by title. Only Login entries are returned because passkey custom fields
+// are defined for the Login entry type only - the user picks a target entry to
+// add a passkey to.
 pub fn get_group_entries(db_key: &str, group_uuid: &Uuid) -> Result<Vec<EntryBasicInfo>> {
+    let login_type_uuid = crate::build_uuid!(entry_type_uuid::LOGIN);
     let action = |k: &KeepassFile| {
         let group = k
             .root
@@ -243,6 +288,9 @@ pub fn get_group_entries(db_key: &str, group_uuid: &Uuid) -> Result<Vec<EntryBas
             .iter()
             .filter_map(|entry_uuid| {
                 let entry = k.root.entry_by_id(entry_uuid)?;
+                if entry.entry_field.entry_type.uuid != login_type_uuid {
+                    return None;
+                }
                 let title = entry.find_kv_field_value(TITLE).unwrap_or_default();
                 Some(EntryBasicInfo {
                     entry_uuid: entry_uuid.to_string(),
@@ -260,8 +308,18 @@ pub fn get_group_entries(db_key: &str, group_uuid: &Uuid) -> Result<Vec<EntryBas
 //
 // If `info.entry_uuid` is `Some`, the existing entry is updated (with history).
 // Otherwise a new Login entry is created.
-pub fn store_passkey_entry(db_key: &str, info: PasskeyStorageInfo) -> Result<()> {
+pub fn store_passkey_entry(db_key: &str, info: PasskeyStorageInfo) -> Result<PasskeyStoreOutcome> {
     apply_passkey_storage(db_key, &info)
+}
+
+// Passkey credentials are stored only on Login-type entries: the PASSKEY_DETAILS
+// section is defined on Login alone, and registration enforces Login (new entries
+// are created as Login; get_group_entries offers only Login targets). The read
+// paths below therefore require Login type explicitly, so a non-Login entry that
+// was hand-edited to carry KPEX_PASSKEY_* custom fields is never treated as a
+// passkey source.
+fn is_login_type_entry(entry: &Entry) -> bool {
+    entry.entry_field.entry_type.uuid == crate::build_uuid!(entry_type_uuid::LOGIN)
 }
 
 // Searches all provided databases for passkey entries matching `rp_id`.
@@ -279,6 +337,9 @@ pub fn find_matching_passkeys(
                 .collect_all_active_entries()
                 .into_iter()
                 .filter_map(|entry| {
+                    if !is_login_type_entry(entry) {
+                        return None;
+                    }
                     let stored_rp_id = entry.find_kv_field_value(KPEX_PASSKEY_RELYING_PARTY)?;
                     if stored_rp_id != rp_id {
                         return None;
@@ -324,6 +385,9 @@ pub fn get_all_passkeys(db_keys: &[String]) -> Result<Vec<PasskeySummary>> {
                 .collect_all_active_entries()
                 .into_iter()
                 .filter_map(|entry| {
+                    if !is_login_type_entry(entry) {
+                        return None;
+                    }
                     let rp_id = entry.find_kv_field_value(KPEX_PASSKEY_RELYING_PARTY)?;
                     let cred_id = entry.find_kv_field_value(KPEX_PASSKEY_CREDENTIAL_ID)?;
                     let username = entry
@@ -360,6 +424,13 @@ pub fn get_passkey_for_assertion(db_key: &str, entry_uuid: &Uuid) -> Result<Pass
                 entry_uuid
             ))
         })?;
+
+        if !is_login_type_entry(entry) {
+            return Err(Error::NotFound(format!(
+                "Entry {} is not a Login entry and cannot hold a passkey",
+                entry_uuid
+            )));
+        }
 
         let credential_id = entry
             .find_kv_field_value(KPEX_PASSKEY_CREDENTIAL_ID)
@@ -403,10 +474,10 @@ pub fn create_and_store_passkey(
     db_key: &str,
     info: PasskeyStorageInfo,
     backup_file_name: Option<&str>,
-) -> Result<()> {
-    apply_passkey_storage(db_key, &info)?;
+) -> Result<PasskeyStoreOutcome> {
+    let outcome = apply_passkey_storage(db_key, &info)?;
     super::save_kdbx_with_backup(db_key, backup_file_name, false)?;
-    Ok(())
+    Ok(outcome)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -649,6 +720,116 @@ mod tests {
     }
 
     #[test]
+    fn test_store_passkey_existing_entry_preserves_username_and_adds_tag() {
+        use crate::constants::entry_keyvalue_key::{TITLE, USER_NAME};
+        use crate::db_content::Entry;
+
+        let db_key = "pk_test_preserve_username";
+        setup_test_db(db_key, "PasskeyTestDB");
+
+        let entry_uuid: Uuid = kp_service::call_main_content_mut_action(db_key, |k| {
+            let mut entry = Entry::new_login_entry(Some(&k.root.root_uuid()));
+            entry.entry_field.update_value(TITLE, "Has Username");
+            entry.entry_field.update_value(USER_NAME, "original-user");
+            let uuid = entry.get_uuid();
+            k.insert_entry(entry)?;
+            Ok(uuid)
+        })
+        .expect("insert pre-existing entry should succeed");
+
+        let info = PasskeyStorageInfo {
+            credential_id_b64url: "cred-preserve".to_string(),
+            private_key_pem: "pem".to_string(),
+            rp_id: "preserve.com".to_string(),
+            rp_name: "Preserve".to_string(),
+            // A different username from the one already on the entry.
+            username: "passkey-user@preserve.com".to_string(),
+            user_handle_b64url: "aGFuZGxl".to_string(),
+            origin: "https://preserve.com".to_string(),
+            entry_uuid: Some(entry_uuid),
+            new_entry_name: None,
+            group_uuid: None,
+            new_group_name: None,
+        };
+        let outcome = store_passkey_entry(db_key, info).expect("store should succeed");
+
+        // The outcome's tags include the Passkey tag for UI navigation.
+        assert!(outcome.tags.iter().any(|t| t == "Passkey"));
+
+        kp_service::call_main_content_mut_action(db_key, |k| {
+            let entry = k.root.entry_by_id(&entry_uuid).unwrap();
+            // The existing UserName must NOT be overwritten by the passkey username.
+            assert_eq!(
+                entry.find_kv_field_value(USER_NAME).as_deref(),
+                Some("original-user")
+            );
+            // The Passkey tag is applied.
+            assert!(entry.tags.split(';').any(|t| t == "Passkey"));
+            Ok(())
+        })
+        .unwrap();
+
+        teardown_test_db(db_key);
+    }
+
+    #[test]
+    fn test_store_passkey_new_entry_has_passkey_tag() {
+        let db_key = "pk_test_new_entry_tag";
+        setup_test_db(db_key, "PasskeyTestDB");
+
+        let info = make_test_passkey_info(db_key, "tagged.com", "cred-tagged", "alice");
+        let outcome = store_passkey_entry(db_key, info).expect("store should succeed");
+
+        assert!(outcome.tags.iter().any(|t| t == "Passkey"));
+
+        let entry_uuid = Uuid::parse_str(&outcome.entry_uuid.to_string()).unwrap();
+        kp_service::call_main_content_mut_action(db_key, |k| {
+            let entry = k.root.entry_by_id(&entry_uuid).unwrap();
+            assert!(entry.tags.split(';').any(|t| t == "Passkey"));
+            Ok(())
+        })
+        .unwrap();
+
+        teardown_test_db(db_key);
+    }
+
+    #[test]
+    fn test_get_group_entries_returns_only_login_entries() {
+        use crate::constants::entry_keyvalue_key::TITLE;
+        use crate::constants::entry_type_uuid;
+        use crate::db_content::Entry;
+
+        let db_key = "pk_test_login_only";
+        setup_test_db(db_key, "PasskeyTestDB");
+
+        let (group_uuid, _login_uuid): (Uuid, Uuid) =
+            kp_service::call_main_content_mut_action(db_key, |k| {
+                let root_uuid = k.root.root_uuid();
+
+                let mut login = Entry::new_login_entry(Some(&root_uuid));
+                login.entry_field.update_value(TITLE, "A Login Entry");
+                let login_uuid = login.get_uuid();
+                k.insert_entry(login)?;
+
+                // A non-Login entry (Credit/Debit Card) in the same (root) group.
+                let cc_type_uuid = crate::build_uuid!(entry_type_uuid::CREDIT_DEBIT_CARD);
+                let mut card =
+                    Entry::new_blank_entry_by_type_id(&cc_type_uuid, None, Some(&root_uuid));
+                card.entry_field.update_value(TITLE, "A Card Entry");
+                k.insert_entry(card)?;
+
+                Ok((root_uuid, login_uuid))
+            })
+            .expect("inserting test entries should succeed");
+
+        let entries = get_group_entries(db_key, &group_uuid).expect("get_group_entries should work");
+        assert_eq!(entries.len(), 1, "only the Login entry should be returned");
+        assert_eq!(entries[0].title, "A Login Entry");
+
+        teardown_test_db(db_key);
+    }
+
+    #[test]
     fn test_store_passkey_nonexistent_entry_uuid_returns_error() {
         let db_key = "pk_test_bad_uuid";
         setup_test_db(db_key, "PasskeyTestDB");
@@ -727,6 +908,50 @@ mod tests {
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].credential_id_b64url, "cred-x");
         assert_eq!(filtered[0].username, "x-user");
+
+        teardown_test_db(db_key);
+    }
+
+    #[test]
+    fn test_find_matching_passkeys_ignores_non_login_entry_with_passkey_fields() {
+        use crate::constants::entry_keyvalue_key::TITLE;
+        use crate::constants::entry_type_uuid;
+        use crate::db_content::Entry;
+
+        let db_key = "pk_test_non_login_guard";
+        setup_test_db(db_key, "PasskeyTestDB");
+
+        // Hand-craft a Credit/Debit Card entry carrying passkey custom fields with
+        // the exact KPEX_* key names (as if a user added them manually). The guard
+        // in find_matching_passkeys must still exclude it — only Login entries are
+        // valid passkey sources.
+        kp_service::call_main_content_mut_action(db_key, |k| {
+            let root_uuid = k.root.root_uuid();
+            let cc_type_uuid = crate::build_uuid!(entry_type_uuid::CREDIT_DEBIT_CARD);
+            let mut card =
+                Entry::new_blank_entry_by_type_id(&cc_type_uuid, None, Some(&root_uuid));
+            card.entry_field.update_value(TITLE, "Ghost Card");
+            card.entry_field.insert_key_value(make_passkey_kv(
+                KPEX_PASSKEY_RELYING_PARTY,
+                "ghost.com",
+                false,
+            ));
+            card.entry_field.insert_key_value(make_passkey_kv(
+                KPEX_PASSKEY_CREDENTIAL_ID,
+                "ghost-cred",
+                false,
+            ));
+            k.insert_entry(card)?;
+            Ok(())
+        })
+        .expect("inserting the card entry should succeed");
+
+        let db_keys = vec![db_key.to_string()];
+        let results = find_matching_passkeys(&db_keys, "ghost.com", &[]).unwrap();
+        assert!(
+            results.is_empty(),
+            "a non-Login entry with passkey fields must not be returned"
+        );
 
         teardown_test_db(db_key);
     }
