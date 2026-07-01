@@ -240,7 +240,7 @@ pub(crate) fn move_group_between_keepass_files(
     let icons_to_copy = collect_owned_icons(&source.meta, &icon_uuids);
     let entry_types_to_copy = collect_owned_entry_types(&source.meta, &entry_type_uuids);
 
-    // Phase 2: mutate target.
+    // mutate target.
     copy_custom_icons_into(&mut target.meta, icons_to_copy);
     copy_custom_entry_types_into(&mut target.meta, entry_types_to_copy);
 
@@ -263,7 +263,7 @@ pub(crate) fn move_group_between_keepass_files(
         target.insert_entry_cross_db(e)?;
     }
 
-    // Phase 3: remove the subtree from source.
+    // remove the subtree from source.
     source.root.remove_group_subtree_cross_db_move(group_uuid)?;
 
     let target_parent_group_name = target

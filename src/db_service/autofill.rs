@@ -26,7 +26,7 @@ use crate::main_content_action;
 
 // Decides whether a stored entry URL matches the incoming login URL.
 //
-// Phase 1 matching (see the URL-Matching-Relaxation plan): require scheme + exact
+// Matching (see the URL-Matching-Relaxation plan): require scheme + exact
 // host equality and ignore the path. The path is dropped because real login flows
 // (OAuth / SSO) use transient paths and trailing-slash differences are common.
 //
@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn exact_host_required_no_subdomain_match() {
-        // Phase 1 keeps exact host: apex <-> www and sibling subdomains do NOT
+        // Keeps exact host: apex <-> www and sibling subdomains do NOT
         // match (that broadening is a deliberate later phase).
         assert!(!url_matched("https://www.viator.com/", "https://viator.com/"));
         assert!(!url_matched(
