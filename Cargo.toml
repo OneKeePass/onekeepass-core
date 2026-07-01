@@ -48,9 +48,6 @@ csv = "1.4.0"
 
 ######## SFTP and WebDav ########
 
-## SFTP and WebDav module moved to mobile side  
-## Need to review whether we need to  use SFTP and WebDav modules in desktop
-## For now leaving it here just for Error enum building which is yet to be replaced
 
 russh-sftp = "2.3.0"
 ## russh 0.60.3+ fixes RUSTSEC-2026-0154 (unbounded SSH-agent frame allocation).
