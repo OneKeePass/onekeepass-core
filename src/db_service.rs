@@ -933,6 +933,24 @@ pub fn entry_key_value_fields(db_key: &str, entry_uuid: &Uuid) -> Result<HashMap
     })
 }
 
+pub fn all_entry_custom_data_keys(db_key: &str) -> Result<Vec<String>> {
+    main_content_action!(db_key, move |k: &KeepassFile| {
+        let mut keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (_, entry) in k.root.all_entries().iter() {
+            for item in entry.custom_data.get_items() {
+                keys.insert(item.key.clone());
+            }
+        }
+        Ok(keys.into_iter().collect())
+    })
+}
+
+pub fn all_entry_uuids(db_key: &str) -> Result<Vec<Uuid>> {
+    main_content_action!(db_key, move |k: &KeepassFile| {
+        Ok(k.root.all_entries().keys().copied().collect())
+    })
+}
+
 pub fn history_entry_by_index(
     db_key: &str,
     entry_uuid: &Uuid,
