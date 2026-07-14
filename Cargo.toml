@@ -1,6 +1,6 @@
 [package]
 name = "onekeepass-core"
-version = "0.23.1"
+version = "0.23.2"
 authors = ["jeyasankar"]
 edition = "2021"
 

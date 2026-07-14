@@ -6,7 +6,7 @@ use std::convert::From;
 use uuid::Uuid;
 
 use crate::constants::entry_keyvalue_key::*;
-use crate::constants::entry_type_name::CREDIT_DEBIT_CARD;
+use crate::constants::entry_type_name::{CREDIT_DEBIT_CARD, SSH_KEY};
 use crate::constants::standard_in_section_names::ADDITIONAL_ONE_TIME_PASSWORDS;
 use crate::password_passphrase_generator::PasswordScore;
 
@@ -768,6 +768,20 @@ impl EntrySummary {
         entry: &Entry,
         parsed_fields: &HashMap<String, String>,
     ) -> Option<String> {
+        // Resolves a field's value, preferring the parsed (decrypted) value
+        // when parsed_fields is available.
+        let resolve = |name: &str| -> Option<String> {
+            let val = entry.find_kv_field_value(name);
+            if parsed_fields.is_empty() {
+                val
+            } else {
+                parsed_fields
+                    .get(&name.to_uppercase())
+                    .map_or(val, |s| Some(s.to_string()))
+            }
+        };
+        let non_empty = |o: &Option<String>| o.as_ref().map_or(false, |s| !s.trim().is_empty());
+
         if entry.entry_field.entry_type.name == CREDIT_DEBIT_CARD {
             entry.entry_field.find_key_value(NUMBER).map(|f| {
                 let s = f.value.trim();
@@ -781,21 +795,17 @@ impl EntrySummary {
                     util::empty_str()
                 }
             })
+        } else if entry.entry_field.entry_type.name == SSH_KEY {
+            // UserName was added to the SSH Key type after release 0.23.0.
+            // Entries created before that have no username value and keep
+            // showing the Public Key value as before.
+            let user_name = resolve(USER_NAME);
+            if non_empty(&user_name) {
+                user_name
+            } else {
+                resolve(PUBLIC_KEY)
+            }
         } else if let Some(ref t) = entry.entry_field.entry_type.secondary_title {
-            // Resolves a field's value, preferring the parsed (decrypted) value
-            // when parsed_fields is available.
-            let resolve = |name: &str| -> Option<String> {
-                let val = entry.find_kv_field_value(name);
-                if parsed_fields.is_empty() {
-                    val
-                } else {
-                    parsed_fields
-                        .get(&name.to_uppercase())
-                        .map_or(val, |s| Some(s.to_string()))
-                }
-            };
-            let non_empty = |o: &Option<String>| o.as_ref().map_or(false, |s| !s.trim().is_empty());
-
             let primary = resolve(t);
             if non_empty(&primary) {
                 primary
