@@ -484,6 +484,7 @@ lazy_static! {
                     Section {
                         name: "SSH Key".into(),
                         field_defs: vec![
+                            FieldDef::new(USER_NAME),
                             FieldDef::new(PRIVATE_KEY).set_require_protection(true),
                             FieldDef::new(PASSWORD).set_require_protection(true),
                             FieldDef::new(PUBLIC_KEY),
@@ -664,6 +665,7 @@ mod tests {
         assert_eq!(key_sections, vec!["SSH Key", "SSH Agent"]);
         let key_fields = field_names(key);
         for present in [
+            USER_NAME,
             PRIVATE_KEY,
             PASSWORD,
             PUBLIC_KEY,
