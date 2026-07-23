@@ -1106,6 +1106,16 @@ impl Root {
 
     // Should this be moved to parent 'KeepassFile' ?
     // Sets the hash value of attachments to entries during the reading of the db file
+    // Memory-security lock: volatile-zero all entry field values (incl.
+    // history) before the content is dropped on lock.
+    pub(crate) fn zeroize_sensitive_content(&mut self) {
+        for id in self.get_all_inorder_entry_uuids() {
+            if let Some(e) = self.all_entries.get_mut(&id) {
+                e.zeroize_sensitive_content();
+            }
+        }
+    }
+
     pub fn set_attachment_hashes(
         &mut self,
         attachment_hash_indexed: &HashMap<i32, (AttachmentHashValue, usize)>,

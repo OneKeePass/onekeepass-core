@@ -169,6 +169,21 @@ impl AttachmentSet {
     pub fn attachment_hash_to_index_ref(&self) -> &HashMap<AttachmentHashValue, i32> {
         &self.hash_index_ref
     }
+
+    // Memory-security lock: move the attachment byte blobs out (leaving the
+    // index lookup maps intact so entry links can still be restored) so the bytes
+    // can be encrypted while the db is locked.
+    pub(crate) fn take_attachment_bytes(&mut self) -> HashMap<AttachmentHashValue, Vec<u8>> {
+        std::mem::take(&mut self.attachments)
+    }
+
+    // Restores the attachment byte blobs taken by `take_attachment_bytes` on unlock.
+    pub(crate) fn restore_attachment_bytes(
+        &mut self,
+        attachments: HashMap<AttachmentHashValue, Vec<u8>>,
+    ) {
+        self.attachments = attachments;
+    }
 }
 
 #[derive(Clone)]

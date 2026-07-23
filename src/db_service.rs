@@ -165,7 +165,7 @@ pub(crate) struct KdbxContext {
     // unlocked databases only (see `unlocked_kdbx_cache_keys`). Available to both
     // desktop and mobile since this is the shared core.
     pub(crate) locked: bool,
-    // Phase 2 memory-security lock: while `locked`, the decrypted content is removed
+    // Memory-security lock: while `locked`, the decrypted content is removed
     // from `kdbx_file.keepass_main_content` and held here as ciphertext (encrypted
     // with the session enc key). Restored on unlock. `None` when unlocked or when the
     // caller only toggled the `locked` flag without encrypting content.
@@ -527,7 +527,7 @@ pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
 
 // Called after user has successfully completed the biometeric based authentication
 pub fn unlock_kdbx_on_biometric_authentication(db_key: &str) -> Result<KdbxLoaded> {
-    // Restore the decrypted content (Phase 2) and clear the locked flag FIRST, so
+    // Restore the decrypted content ( ) and clear the locked flag FIRST, so
     // the metadata below is read from restored content. No-op if content was never
     // encrypted (e.g. mobile).
     restore_locked_content(db_key)?;
@@ -549,7 +549,7 @@ pub fn unlock_kdbx(
     key_file_name: Option<&str>,
 ) -> Result<KdbxLoaded> {
     // Verify credentials against the stored composite key. This works while the
-    // content is encrypted (Phase 2): compare_key uses the composite key, not the
+    // content is encrypted ( ): compare_key uses the composite key, not the
     // decrypted content.
     let matched = call_kdbx_context_action(db_key, |ctx: &KdbxContext| {
         ctx.kdbx_file.compare_key(password, key_file_name)

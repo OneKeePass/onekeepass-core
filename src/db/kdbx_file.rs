@@ -242,35 +242,63 @@ impl KdbxFile {
         &self.checksum_hash
     }
 
-    // memory-security lock: serialize + encrypt the decrypted content
-    // (`keepass_main_content`) so only ciphertext remains in RAM while locked, then
-    // drop the plaintext tree. Returns the encrypted blob to hold in the
-    // KdbxContext until unlock. Returns Ok(None) if there is no content loaded.
+    // Memory-security lock: serialize + encrypt the decrypted content
+    // (`keepass_main_content`) AND the attachment byte blobs so only ciphertext
+    // remains in RAM while locked, then wipe the plaintext. Returns the encrypted
+    // blob to hold in the KdbxContext until unlock, or Ok(None) if no content loaded.
     //
-    // Note: attachment bytes live in `inner_header` (only entry `Ref` indices are in
-    // the content XML), so they are NOT covered by this blob yet - see the Phase 2
-    // plan's attachment follow-up. `secured_database_keys` is already encrypted in
-    // RAM and is left untouched (needed to save).
+    // The content tree and the attachment bytes are framed into one plaintext buffer
+    // and encrypted together with the session enc key + a fresh nonce. The inner
+    // header's attachment *index* maps are kept (needed to relink entries on unlock);
+    // only the byte blobs are moved out and encrypted. `secured_database_keys` is
+    // already encrypted in RAM and is left untouched (needed to save).
     pub(crate) fn lock_content(&mut self, db_key: &str) -> Result<Option<Vec<u8>>> {
-        if let Some(ref kp) = self.keepass_main_content {
+        use zeroize::Zeroize;
+
+        if let Some(mut kp) = self.keepass_main_content.take() {
             // None cipher: protected values are serialized as plaintext *inside* the
             // blob, which is then AES-GCM encrypted as a whole. Entries keep the
             // `index_ref` set at load, so write_xml emits correct Binary Refs.
-            let xml_bytes = crate::xml_parse::write_xml(kp, None)?;
-            let blob = encrypt_content_blob(db_key, &xml_bytes)?;
-            // Drop the decrypted content. (Zeroing the freed heap is a follow-up - "make the wipe real".)
-            self.keepass_main_content = None;
+            let mut xml_bytes = crate::xml_parse::write_xml(&kp, None)?;
+
+            // Move attachment byte blobs out (index maps stay for relink on unlock).
+            let mut attachments = self.inner_header.entry_attachments.take_attachment_bytes();
+
+            let mut framed = frame_locked_content(&xml_bytes, &attachments);
+            let blob = encrypt_content_blob(db_key, &framed)?;
+
+            // Make the wipe real: volatile-zero every transient plaintext buffer and
+            // the dropped object graph (Rust does not zero on drop).
+            framed.zeroize();
+            xml_bytes.zeroize();
+            for (_h, data) in attachments.iter_mut() {
+                data.zeroize();
+            }
+            kp.zeroize_sensitive_content();
+            // `attachments` (zeroed) and `kp` (scrubbed) drop here;
+            // keepass_main_content is already None via take().
+
             Ok(Some(blob))
         } else {
             Ok(None)
         }
     }
 
-    // Reverse of `lock_content`: decrypt + parse the blob back into
-    // `keepass_main_content`, restoring attachment hash links from the preserved
+    // Reverse of `lock_content`: decrypt + unframe the blob, restore attachment bytes
+    // and the parsed content, relinking attachment hashes from the preserved
     // inner-header index (mirrors the load path's `after_xml_reading`).
     pub(crate) fn unlock_content(&mut self, db_key: &str, blob: &[u8]) -> Result<()> {
-        let xml_bytes = decrypt_content_blob(db_key, blob)?;
+        use zeroize::Zeroize;
+
+        let mut framed = decrypt_content_blob(db_key, blob)?;
+        let (mut xml_bytes, attachments) = unframe_locked_content(&framed)?;
+
+        // Restore attachment bytes BEFORE parse/after_xml_reading so the ssh-agent
+        // closure can read attachment content during relinking.
+        self.inner_header
+            .entry_attachments
+            .restore_attachment_bytes(attachments);
+
         let mut kp = crate::xml_parse::parse(&xml_bytes, None)?;
 
         // Mirror reader_writer.rs read_xml_content post-parse linking.
@@ -292,6 +320,10 @@ impl KdbxFile {
         }
 
         self.keepass_main_content = Some(kp);
+
+        // Wipe the transient plaintext buffers.
+        xml_bytes.zeroize();
+        framed.zeroize();
         Ok(())
     }
 }
@@ -334,6 +366,59 @@ fn decrypt_content_blob(db_key: &str, blob: &[u8]) -> Result<Vec<u8>> {
     let (nonce, ciphertext) = blob.split_at(12);
     let kc = crypto::KeyCipher::from(&keyinfo.key, nonce);
     kc.decrypt(ciphertext)
+}
+
+// Frames the content XML and the attachment byte blobs into a single plaintext
+// buffer (all lengths are little-endian u64), to be encrypted as one blob:
+//   [content_len][content_xml][count]( [hash][data_len][data] )*
+fn frame_locked_content(
+    content_xml: &[u8],
+    attachments: &HashMap<AttachmentHashValue, Vec<u8>>,
+) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(content_xml.len() + 16);
+    buf.extend_from_slice(&(content_xml.len() as u64).to_le_bytes());
+    buf.extend_from_slice(content_xml);
+    buf.extend_from_slice(&(attachments.len() as u64).to_le_bytes());
+    for (hash, data) in attachments {
+        buf.extend_from_slice(&hash.to_le_bytes());
+        buf.extend_from_slice(&(data.len() as u64).to_le_bytes());
+        buf.extend_from_slice(data);
+    }
+    buf
+}
+
+fn unframe_locked_content(
+    framed: &[u8],
+) -> Result<(Vec<u8>, HashMap<AttachmentHashValue, Vec<u8>>)> {
+    let corrupt = || Error::UnexpectedError("Corrupt locked content frame".into());
+
+    let mut pos = 0usize;
+    let read_u64 = |framed: &[u8], pos: &mut usize| -> Result<u64> {
+        let end = pos.checked_add(8).ok_or_else(corrupt)?;
+        let slice = framed.get(*pos..end).ok_or_else(corrupt)?;
+        *pos = end;
+        Ok(u64::from_le_bytes(slice.try_into().map_err(|_| corrupt())?))
+    };
+    let read_bytes = |framed: &[u8], pos: &mut usize, len: usize| -> Result<Vec<u8>> {
+        let end = pos.checked_add(len).ok_or_else(corrupt)?;
+        let slice = framed.get(*pos..end).ok_or_else(corrupt)?;
+        *pos = end;
+        Ok(slice.to_vec())
+    };
+
+    let content_len = read_u64(framed, &mut pos)? as usize;
+    let content_xml = read_bytes(framed, &mut pos, content_len)?;
+
+    let count = read_u64(framed, &mut pos)? as usize;
+    let mut attachments = HashMap::with_capacity(count);
+    for _ in 0..count {
+        let hash = read_u64(framed, &mut pos)? as AttachmentHashValue;
+        let data_len = read_u64(framed, &mut pos)? as usize;
+        let data = read_bytes(framed, &mut pos, data_len)?;
+        attachments.insert(hash, data);
+    }
+
+    Ok((content_xml, attachments))
 }
 
 #[derive(Default, Clone)]
@@ -642,5 +727,47 @@ impl InnerHeader {
         writer.write(&vec![0u8; 4])?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod phase2_frame_tests {
+    use super::*;
+
+    #[test]
+    fn frame_unframe_round_trip_with_attachments() {
+        let content = b"<KeePassFile>...</KeePassFile>".to_vec();
+        let mut attachments: HashMap<AttachmentHashValue, Vec<u8>> = HashMap::new();
+        attachments.insert(11u64, vec![1, 2, 3, 4, 5]);
+        attachments.insert(22u64, (0u8..200).collect());
+        attachments.insert(33u64, vec![]); // empty attachment
+
+        let framed = frame_locked_content(&content, &attachments);
+        let (content_out, attachments_out) = unframe_locked_content(&framed).unwrap();
+
+        assert_eq!(content, content_out);
+        assert_eq!(attachments, attachments_out);
+    }
+
+    #[test]
+    fn frame_unframe_round_trip_no_attachments() {
+        let content = b"only-content".to_vec();
+        let attachments: HashMap<AttachmentHashValue, Vec<u8>> = HashMap::new();
+        let framed = frame_locked_content(&content, &attachments);
+        let (content_out, attachments_out) = unframe_locked_content(&framed).unwrap();
+        assert_eq!(content, content_out);
+        assert!(attachments_out.is_empty());
+    }
+
+    #[test]
+    fn unframe_rejects_truncated_frame() {
+        let content = b"abc".to_vec();
+        let mut attachments: HashMap<AttachmentHashValue, Vec<u8>> = HashMap::new();
+        attachments.insert(1u64, vec![9, 9, 9]);
+        let framed = frame_locked_content(&content, &attachments);
+        // Truncating anywhere must be rejected, never panic.
+        assert!(unframe_locked_content(&framed[..framed.len() - 1]).is_err());
+        assert!(unframe_locked_content(&framed[..4]).is_err());
+        assert!(unframe_locked_content(&[]).is_err());
     }
 }

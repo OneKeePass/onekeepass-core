@@ -130,6 +130,17 @@ impl EntryField {
         self.fields.values().collect()
     }
 
+    // Memory-security lock: volatile-zero every field value in place (all
+    // fields, not only protected ones - Notes/Title/URL can be sensitive too). Used
+    // before the content object graph is dropped on lock so plaintext does not
+    // linger in freed heap.
+    pub(crate) fn zeroize_values(&mut self) {
+        use zeroize::Zeroize;
+        for kv in self.fields.values_mut() {
+            kv.value.zeroize();
+        }
+    }
+
     pub fn find_key_value(&self, key: &str) -> Option<&KeyValue> {
         self.fields.values().find(|f| f.key == key)
     }
@@ -487,6 +498,15 @@ impl Entry {
         // IMPORATNT: It is assumed each entry found in historty.entries should have empty history
         for e in &mut self.history.entries {
             e.set_attachment_hashes(attachment_hash_indexed);
+        }
+    }
+
+    // Memory-security lock: volatile-zero this entry's field values and all
+    // of its history entries' values before the content is dropped on lock.
+    pub(crate) fn zeroize_sensitive_content(&mut self) {
+        self.entry_field.zeroize_values();
+        for e in &mut self.history.entries {
+            e.zeroize_sensitive_content();
         }
     }
 
