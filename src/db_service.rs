@@ -155,11 +155,16 @@ pub fn kdbx_context_statuses(db_key: &str) -> Result<KdbxContextStatus> {
 }
 pub(crate) struct KdbxContext {
     pub(crate) kdbx_file: KdbxFile,
-    /// The time of the most recent reading of the database
+    // The time of the most recent reading of the database
     pub(crate) last_read_time: NaiveDateTime, // Need to use NaiveDateTime::signed_duration_since to get duration from this
-    ///  The time of the most recent writing to the database
+    //  The time of the most recent writing to the database
     pub(crate) last_write_time: NaiveDateTime,
     pub(crate) save_pending: bool,
+    // Whether the database is currently locked (UI-authorization state). A fresh
+    // open/create starts unlocked. Used to gate browser-extension access to
+    // unlocked databases only (see `unlocked_kdbx_cache_keys`). Available to both
+    // desktop and mobile since this is the shared core.
+    pub(crate) locked: bool,
 }
 
 // Need to implement Default explicitly as there is no default support in NaiveDateTime
@@ -170,6 +175,7 @@ impl Default for KdbxContext {
             last_read_time: util::now_utc(),
             last_write_time: util::now_utc(),
             save_pending: false,
+            locked: false,
         }
     }
 }
@@ -195,11 +201,11 @@ fn main_store() -> &'static MainStore {
     &MAIN_STORE
 }
 
-/// Inserts a `KdbxFile` directly into the in-memory cache.
-///
-/// Intended **only** for unit tests that need to populate the cache without
-/// going through the full disk-IO path (i.e. without calling `create_kdbx` or
-/// `load_kdbx`).
+// Inserts a `KdbxFile` directly into the in-memory cache.
+//
+// Intended **only** for unit tests that need to populate the cache without
+// going through the full disk-IO path (i.e. without calling `create_kdbx` or
+// `load_kdbx`).
 #[cfg(test)]
 pub(crate) fn insert_kdbx_for_test(kdbx_file: KdbxFile) {
     KdbxContext::insert(kdbx_file);
@@ -265,7 +271,7 @@ macro_rules! main_content_mut_action {
     };
 }
 
-/// A macro to call a db reading and then update the last read time for tracking
+// A macro to call a db reading and then update the last read time for tracking
 #[macro_export]
 macro_rules! kdbx_context_action {
     ($db_key:expr,$closure_fn:expr) => {{
@@ -380,6 +386,35 @@ pub fn all_kdbx_cache_keys() -> Result<Vec<String>> {
     Ok(vec)
 }
 
+// Open db keys that are currently unlocked. Used to gate browser-extension access
+// so that a locked (but still open) database is not reachable for autofill or
+// passkeys.
+pub fn unlocked_kdbx_cache_keys() -> Result<Vec<String>> {
+    let store = main_store().lock().unwrap();
+    let mut vec = vec![];
+    for (k, ctx) in store.iter() {
+        if !ctx.locked {
+            vec.push(k.clone());
+        }
+    }
+    Ok(vec)
+}
+
+// Sets/clears the locked flag for an open database. Locking is a UI-authorization
+// state; toggling it does NOT mark the database dirty (so we use the direct mut
+// action rather than the `kdbx_context_mut_action!` macro, which bumps
+// save_pending/last_write_time).
+pub fn set_db_locked(db_key: &str, locked: bool) -> Result<()> {
+    call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
+        ctx.locked = locked;
+        Ok(())
+    })
+}
+
+pub fn is_db_locked(db_key: &str) -> Result<bool> {
+    call_kdbx_context_action(db_key, |ctx: &KdbxContext| Ok(ctx.locked))
+}
+
 pub fn is_db_opened(db_key: &str) -> bool {
     let store = main_store().lock().unwrap();
     store.contains_key(db_key)
@@ -401,7 +436,7 @@ pub fn close_all_databases() -> Result<()> {
     Ok(())
 }
 
-/// Removes the previously opened KDBX file from cache
+// Removes the previously opened KDBX file from cache
 pub fn close_kdbx(db_key: &str) -> Result<()> {
     let mut store = main_store().lock().unwrap();
     // UI side save is handled for any changes.
@@ -453,14 +488,17 @@ pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
 
 // Called after user has successfully completed the biometeric based authentication
 pub fn unlock_kdbx_on_biometric_authentication(db_key: &str) -> Result<KdbxLoaded> {
-    kdbx_context_action!(db_key, |ctx: &KdbxContext| {
+    let kdbx_loaded = kdbx_context_action!(db_key, |ctx: &KdbxContext| {
         Ok(KdbxLoaded {
             db_key: db_key.into(),
             database_name: ctx.kdbx_file.get_database_name().into(),
             file_name: util::file_name(db_key),
             key_file_name: ctx.kdbx_file.get_key_file_name(),
         })
-    })
+    })?;
+    // Successful biometric reveal — mark unlocked.
+    set_db_locked(db_key, false)?;
+    Ok(kdbx_loaded)
 }
 
 // Compares the entered credentials with the stored one for a quick unlock of the db
@@ -469,7 +507,7 @@ pub fn unlock_kdbx(
     password: Option<&str>,
     key_file_name: Option<&str>,
 ) -> Result<KdbxLoaded> {
-    kdbx_context_action!(db_key, |ctx: &KdbxContext| {
+    let kdbx_loaded = kdbx_context_action!(db_key, |ctx: &KdbxContext| {
         if ctx.kdbx_file.compare_key(password, key_file_name)? {
             Ok(KdbxLoaded {
                 db_key: db_key.into(),
@@ -481,7 +519,11 @@ pub fn unlock_kdbx(
             // Same error as if db file verification failure happening in load_kdbx
             Err(Error::HeaderHmacHashCheckFailed)
         }
-    })
+    })?;
+    // Credentials matched — mark unlocked. (On mismatch we returned early above,
+    // leaving the flag untouched.)
+    set_db_locked(db_key, false)?;
+    Ok(kdbx_loaded)
 }
 
 // Gather all unique tags that are used in all groups and entries
@@ -640,7 +682,7 @@ pub(crate) fn is_autofill_eligible_type(type_uuid: &Uuid) -> bool {
     eligible.contains(type_uuid)
 }
 
-/// A simple term search. The term is searched in all fields of each entry and returned all matching entry ids
+// A simple term search. The term is searched in all fields of each entry and returned all matching entry ids
 pub fn search_term(db_key: &str, term: &str) -> Result<EntrySearchResult> {
     main_content_action!(db_key, |k: &KeepassFile| {
         let mut search_result = EntrySearchResult {
