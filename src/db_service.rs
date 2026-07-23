@@ -165,6 +165,11 @@ pub(crate) struct KdbxContext {
     // unlocked databases only (see `unlocked_kdbx_cache_keys`). Available to both
     // desktop and mobile since this is the shared core.
     pub(crate) locked: bool,
+    // Phase 2 memory-security lock: while `locked`, the decrypted content is removed
+    // from `kdbx_file.keepass_main_content` and held here as ciphertext (encrypted
+    // with the session enc key). Restored on unlock. `None` when unlocked or when the
+    // caller only toggled the `locked` flag without encrypting content.
+    pub(crate) locked_content_blob: Option<Vec<u8>>,
 }
 
 // Need to implement Default explicitly as there is no default support in NaiveDateTime
@@ -176,6 +181,7 @@ impl Default for KdbxContext {
             last_write_time: util::now_utc(),
             save_pending: false,
             locked: false,
+            locked_content_blob: None,
         }
     }
 }
@@ -415,6 +421,39 @@ pub fn is_db_locked(db_key: &str) -> Result<bool> {
     call_kdbx_context_action(db_key, |ctx: &KdbxContext| Ok(ctx.locked))
 }
 
+// Memory-security lock. Encrypts the decrypted content in place (only
+// ciphertext remains in RAM while locked) and marks the db locked. Idempotent: a
+// second call while already locked is a no-op. Unsaved edits are preserved (we
+// encrypt the live content, not discard it), so no save is forced here.
+//
+// Reuses the existing per-session enc key (already in the OS key store from the
+// open/create) - no new secret. The enc key is intentionally NOT removed on lock
+// since it is needed to decrypt on unlock.
+pub fn lock_kdbx(db_key: &str) -> Result<()> {
+    call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
+        if !ctx.locked {
+            ctx.locked_content_blob = ctx.kdbx_file.lock_content(db_key)?;
+            ctx.locked = true;
+        }
+        Ok(())
+    })
+}
+
+// Decrypts the held content blob back into `keepass_main_content` and clears the
+// locked flag. Safe to call when there is no blob (e.g. the flag was toggled
+// without content encryption, or on mobile which does not encrypt content yet) -
+// it just clears the flag. Callers should invoke this BEFORE reading any content
+// (e.g. building KdbxLoaded metadata).
+fn restore_locked_content(db_key: &str) -> Result<()> {
+    call_kdbx_context_mut_action(db_key, |ctx: &mut KdbxContext| {
+        if let Some(blob) = ctx.locked_content_blob.take() {
+            ctx.kdbx_file.unlock_content(db_key, &blob)?;
+        }
+        ctx.locked = false;
+        Ok(())
+    })
+}
+
 pub fn is_db_opened(db_key: &str) -> bool {
     let store = main_store().lock().unwrap();
     store.contains_key(db_key)
@@ -488,17 +527,19 @@ pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
 
 // Called after user has successfully completed the biometeric based authentication
 pub fn unlock_kdbx_on_biometric_authentication(db_key: &str) -> Result<KdbxLoaded> {
-    let kdbx_loaded = kdbx_context_action!(db_key, |ctx: &KdbxContext| {
+    // Restore the decrypted content (Phase 2) and clear the locked flag FIRST, so
+    // the metadata below is read from restored content. No-op if content was never
+    // encrypted (e.g. mobile).
+    restore_locked_content(db_key)?;
+
+    kdbx_context_action!(db_key, |ctx: &KdbxContext| {
         Ok(KdbxLoaded {
             db_key: db_key.into(),
             database_name: ctx.kdbx_file.get_database_name().into(),
             file_name: util::file_name(db_key),
             key_file_name: ctx.kdbx_file.get_key_file_name(),
         })
-    })?;
-    // Successful biometric reveal — mark unlocked.
-    set_db_locked(db_key, false)?;
-    Ok(kdbx_loaded)
+    })
 }
 
 // Compares the entered credentials with the stored one for a quick unlock of the db
@@ -507,23 +548,30 @@ pub fn unlock_kdbx(
     password: Option<&str>,
     key_file_name: Option<&str>,
 ) -> Result<KdbxLoaded> {
-    let kdbx_loaded = kdbx_context_action!(db_key, |ctx: &KdbxContext| {
-        if ctx.kdbx_file.compare_key(password, key_file_name)? {
-            Ok(KdbxLoaded {
-                db_key: db_key.into(),
-                database_name: ctx.kdbx_file.get_database_name().into(),
-                file_name: util::file_name(db_key),
-                key_file_name: ctx.kdbx_file.get_key_file_name(),
-            })
-        } else {
-            // Same error as if db file verification failure happening in load_kdbx
-            Err(Error::HeaderHmacHashCheckFailed)
-        }
+    // Verify credentials against the stored composite key. This works while the
+    // content is encrypted (Phase 2): compare_key uses the composite key, not the
+    // decrypted content.
+    let matched = call_kdbx_context_action(db_key, |ctx: &KdbxContext| {
+        ctx.kdbx_file.compare_key(password, key_file_name)
     })?;
-    // Credentials matched — mark unlocked. (On mismatch we returned early above,
-    // leaving the flag untouched.)
-    set_db_locked(db_key, false)?;
-    Ok(kdbx_loaded)
+    if !matched {
+        // Same error as if db file verification failure happening in load_kdbx.
+        // On mismatch we return early, leaving the locked state untouched.
+        return Err(Error::HeaderHmacHashCheckFailed);
+    }
+
+    // Credentials matched — restore the decrypted content and clear the locked flag,
+    // then read the metadata from the restored content.
+    restore_locked_content(db_key)?;
+
+    kdbx_context_action!(db_key, |ctx: &KdbxContext| {
+        Ok(KdbxLoaded {
+            db_key: db_key.into(),
+            database_name: ctx.kdbx_file.get_database_name().into(),
+            file_name: util::file_name(db_key),
+            key_file_name: ctx.kdbx_file.get_key_file_name(),
+        })
+    })
 }
 
 // Gather all unique tags that are used in all groups and entries
