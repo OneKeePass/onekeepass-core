@@ -635,6 +635,14 @@ fn read_db<R: Read + Seek>(buff: &mut R, kdbx_file: KdbxFile) -> Result<KdbxFile
 }
 
 pub fn write_db<W: Write + Read + Seek>(buff: &mut W, kdbx_file: &mut KdbxFile) -> Result<()> {
+    // A locked database has had its decrypted content taken out and encrypted in
+    // memory (keepass_main_content is None). Writing it now would serialize empty
+    // content and overwrite the file with a near-empty database. This is the
+    // single choke point for every save path (desktop, mobile, save-as,
+    // save-all), so guarding here prevents that data loss regardless of caller.
+    if kdbx_file.keepass_main_content.is_none() {
+        return Err(Error::DbLocked);
+    }
     let mut w = KdbxFileWriter::new(buff, kdbx_file);
     let _wr = w.write()?;
     Ok(())

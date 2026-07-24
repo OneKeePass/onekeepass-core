@@ -55,6 +55,13 @@ fn lock_unlock_content_round_trip() {
     // lock again is idempotent
     db_service::lock_kdbx(&db_key).unwrap();
 
+    // Saving a locked db must fail rather than overwrite the file with empty
+    // content (its keepass_main_content is None while locked).
+    assert!(
+        db_service::save_kdbx_with_backup(&db_key, None, true).is_err(),
+        "saving a locked db must be refused, not write empty content"
+    );
+
     // --- Unlock via credentials: wrong password stays locked ---
     assert!(
         db_service::unlock_kdbx(&db_key, Some("wrong"), None).is_err(),
