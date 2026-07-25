@@ -1084,6 +1084,12 @@ pub fn clone_entry(
     })
 }
 
+pub fn clone_group(db_key: &str, group_uuid: &Uuid, new_name: Option<String>) -> Result<Uuid> {
+    main_content_mut_action!(db_key, move |k: &mut KeepassFile| {
+        k.root.clone_group(group_uuid, new_name.clone())
+    })
+}
+
 pub fn update_group(db_key: &str, group: Group) -> Result<()> {
     main_content_mut_action!(db_key, |k: &mut KeepassFile| {
         Ok(k.root.update_group(group.clone(), false))

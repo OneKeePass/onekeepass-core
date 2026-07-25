@@ -1104,6 +1104,90 @@ impl Root {
         Ok(new_e_uuid)
     }
 
+    // Clones a group along with all its entries and nested sub groups. The cloned
+    // top group is placed under the same parent as the source group. Entry
+    // histories are not carried over to the clones. 'new_top_name', when set, is
+    // used as the name of the cloned top group (the callers typically pass a
+    // "<name> - Clone" style value); nested sub groups and entries keep their
+    // original names.
+    pub fn clone_group(&mut self, group_uuid: &Uuid, new_top_name: Option<String>) -> Result<Uuid> {
+        let Some(source_group) = self.all_groups.get(group_uuid) else {
+            return Err(Error::NotFound("Group is not found to clone".into()));
+        };
+
+        let parent_group_uuid = source_group.parent_group_uuid;
+
+        // The root group (and any group without a valid parent) cannot be cloned
+        // as there is no parent to place the clone under.
+        if parent_group_uuid == Uuid::default() {
+            return Err(Error::UnexpectedError(
+                "The root group cannot be cloned".into(),
+            ));
+        }
+
+        self.clone_group_recursive(group_uuid, parent_group_uuid, new_top_name)
+    }
+
+    // Recursively clones the source group under 'new_parent_group_uuid'. The
+    // cloned group is inserted first (so it is a valid parent) before its entries
+    // and sub groups are cloned into it.
+    fn clone_group_recursive(
+        &mut self,
+        source_group_uuid: &Uuid,
+        new_parent_group_uuid: Uuid,
+        name_override: Option<String>,
+    ) -> Result<Uuid> {
+        let Some(source_group) = self.all_groups.get(source_group_uuid) else {
+            return Err(Error::NotFound("Group is not found to clone".into()));
+        };
+
+        // Snapshot the child ids before we start mutating 'all_groups'
+        let child_group_uuids = source_group.group_uuids.clone();
+        let child_entry_uuids = source_group.entry_uuids.clone();
+
+        let mut cloned_group = source_group.clone();
+        let new_g_uuid = uuid::Uuid::new_v4();
+        cloned_group.uuid = new_g_uuid;
+        cloned_group.parent_group_uuid = new_parent_group_uuid;
+
+        if let Some(name) = name_override {
+            cloned_group.name = name;
+        }
+
+        // Children are attached below as the cloned entries/sub groups are inserted
+        cloned_group.clear_children();
+
+        let n = util::now_utc();
+        cloned_group.times.creation_time = n;
+        cloned_group.times.last_modification_time = n;
+        cloned_group.times.last_access_time = n;
+
+        // Add the cloned group to its new parent and to the groups lookup map
+        self.all_groups
+            .entry(new_parent_group_uuid)
+            .and_modify(|g| g.group_uuids.push(new_g_uuid));
+        self.all_groups.insert(new_g_uuid, cloned_group);
+
+        // Clone the direct entries into the cloned group - without histories and
+        // without reference linking; the titles are retained
+        for entry_uuid in child_entry_uuids.iter() {
+            let entry_clone_option = EntryCloneOption {
+                new_title: None,
+                parent_group_uuid: new_g_uuid,
+                keep_histories: false,
+                link_by_reference: false,
+            };
+            self.clone_entry(entry_uuid, &entry_clone_option)?;
+        }
+
+        // Recurse into the sub groups, keeping their original names
+        for sub_group_uuid in child_group_uuids.iter() {
+            self.clone_group_recursive(sub_group_uuid, new_g_uuid, None)?;
+        }
+
+        Ok(new_g_uuid)
+    }
+
     // Should this be moved to parent 'KeepassFile' ?
     // Sets the hash value of attachments to entries during the reading of the db file
     // Memory-security lock: volatile-zero all entry field values (incl.
