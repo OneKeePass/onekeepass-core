@@ -198,7 +198,7 @@ fn bool_to_xml_bool(flag: bool) -> String {
 }
 
 impl<'a> XmlReader<'a> {
-    pub fn new(data: &[u8], cipher: Option<ProtectedContentStreamCipher>) -> XmlReader {
+    pub fn new(data: &'_ [u8], cipher: Option<ProtectedContentStreamCipher>) -> XmlReader<'_> {
         let mut qxmlreader = QuickXmlReader::from_reader(data);
         qxmlreader.config_mut().trim_text(true);
         // qxmlreader.trim_text(true);
@@ -212,21 +212,22 @@ impl<'a> XmlReader<'a> {
         log::trace!("Going to parse read the the xml  ...");
         let mut kp = KeepassFile::new();
         let mut buf: Vec<u8> = vec![];
-        let mut xml_decl_available = false;
+        // XML declarations are optional according to the XML specification.
+        // let mut xml_decl_available = false;
         loop {
             match self.reader.read_event_into(&mut buf) {
                 Ok(Event::Decl(ref _e)) => {
-                    xml_decl_available = true;
+                    // xml_decl_available = true;
                 }
                 Ok(Event::DocType(_)) => {}
                 Ok(Event::PI(_)) => {}
                 Ok(Event::Text(_)) => {}
                 Ok(Event::Start(ref e)) => {
-                    if !xml_decl_available {
-                        return Err(Error::XmlReadingFailed(format!(
-                            "Xml content does not have XML decl"
-                        )));
-                    }
+                    // if !xml_decl_available {
+                    //     return Err(Error::XmlReadingFailed(format!(
+                    //         "Xml content does not have XML decl"
+                    //     )));
+                    // }
                     match e.name().as_ref() {
                         KEEPASS_FILE => {
                             let r = self.read_top_level()?;
@@ -1805,6 +1806,24 @@ mod tests {
         );
     }
 
+    #[test]
+    fn read_database_xml_without_declaration() {
+        let xml = r#"<KeePassFile>
+            <Meta>
+                <Generator>OneKeePass</Generator>
+            </Meta>
+            <Root>
+                <Group>
+                    <UUID>3aBY+AcLQmiPas0vjK2zng==</UUID>
+                    <Name>Root</Name>
+                </Group>
+            </Root>
+        </KeePassFile>"#;
+
+        let mut reader = XmlReader::new(xml.as_bytes(), None);
+        assert!(reader.parse().is_ok());
+    }
+
     #[ignore]
     #[test]
     fn read_sample_text_xml() {
@@ -1961,7 +1980,7 @@ mod tests {
         let file_name = test_file("PasswordsXC1-Tags.xml"); //TODO Need to add this test xml to repo
                                                             // Using local sample KeePass xml content
         let file_name =
-            "/Users/jeyasankar/mytemp/Keepass-sample/RustDevSamples/xml/PasswordsXC1-Tags.xml";
+            "~/mytemp/Keepass-sample/RustDevSamples/xml/PasswordsXC1-Tags.xml";
 
         //This is the inner stream key used to decrypt the Protected data of sunch as password in this particular xml content
         // This key will not work with other xml content!
