@@ -10,7 +10,10 @@
 use serde::Serialize;
 
 use super::model::ImportedKind;
-use crate::constants::entry_keyvalue_key::{NOTES, OTP, PASSWORD, TITLE, URL, USER_NAME};
+use crate::constants::entry_keyvalue_key::{
+    ADDITIONAL_URLS, EMAIL, NOTES, OTP, PASSWORD, POSTAL_CODE, STATE_PROVINCE_REGION, TITLE, URL,
+    USER_NAME,
+};
 
 // Mirrors the two pseudo fields the csv mapping already understands
 const GROUP: &str = "Group";
@@ -63,6 +66,17 @@ pub(crate) struct CsvProfile {
     // they are named so the mapping dialog stops offering them, since turning them into
     // custom fields on every entry produces noise the user then has to delete by hand
     pub(crate) ignored_columns: &'static [&'static str],
+
+    // (entry kind, okp field name, source column) written straight onto the entry. The
+    // mapping dialog can only express the ten login shaped fields, so a card number or a
+    // postal code has no row to be mapped in - without this it stays an unmapped column
+    // and is dropped unless the user ticks the custom fields box.
+    //
+    // Scoped by kind because a field only exists on the type that declares it. A login
+    // row must not be given a "Number" field its entry type knows nothing about, and the
+    // same source column can legitimately target different fields on different kinds -
+    // NordPass "zipcode" is the card's Zip Code and the identity's Postal Code
+    pub(crate) extra_fields: &'static [(ImportedKind, &'static str, &'static str)],
 }
 
 impl CsvProfile {
@@ -98,8 +112,15 @@ impl CsvProfile {
         .into_iter()
         .flatten()
         .chain(self.ignored_columns.iter().copied())
+        .chain(self.extra_fields.iter().map(|(_, _, column)| *column))
         .filter_map(|name| headers.iter().find(|h| eq_loose(h, name)).cloned())
-        .collect()
+        .fold(Vec::new(), |mut acc, column| {
+            // The same column can feed more than one kind, so it must not be listed twice
+            if !acc.contains(&column) {
+                acc.push(column);
+            }
+            acc
+        })
     }
 
     fn matches(&self, headers: &[String]) -> bool {
@@ -175,6 +196,7 @@ pub(crate) const PROFILES: &[CsvProfile] = &[
         skip_folders: &[],
         icon_column: None,
         ignored_columns: &[],
+        extra_fields: &[],
     },
     CsvProfile {
         id: "onepassword",
@@ -199,6 +221,7 @@ pub(crate) const PROFILES: &[CsvProfile] = &[
         skip_folders: &[],
         icon_column: None,
         ignored_columns: &[],
+        extra_fields: &[],
     },
     CsvProfile {
         id: "lastpass",
@@ -223,6 +246,7 @@ pub(crate) const PROFILES: &[CsvProfile] = &[
         skip_folders: &[],
         icon_column: None,
         ignored_columns: &[],
+        extra_fields: &[],
     },
     CsvProfile {
         id: "keepassxc",
@@ -253,6 +277,7 @@ pub(crate) const PROFILES: &[CsvProfile] = &[
         icon_column: Some("Icon"),
         // Source timestamps are deliberately not applied to an imported entry
         ignored_columns: &["Last Modified", "Created"],
+        extra_fields: &[],
     },
     CsvProfile {
         id: "nordpass",
@@ -279,6 +304,29 @@ pub(crate) const PROFILES: &[CsvProfile] = &[
         skip_folders: &[],
         icon_column: None,
         ignored_columns: &[],
+        // NordPass is the only profile whose csv carries card and identity data. Without
+        // these the columns stay unmapped and a card row imports as a Credit/Debit Card
+        // entry with every card field empty.
+        // "expirydate" is left out on purpose - NordPass writes one cell where the card
+        // type has separate Expiration Month and Year fields, and splitting it is a
+        // guess too far while the profile itself is unverified. "full_name" is left out
+        // because the identity type has no single full name field
+        extra_fields: &[
+            // The login type declares Additional URLs, so the column has a real home
+            (ImportedKind::Login, ADDITIONAL_URLS, "additional_urls"),
+            (ImportedKind::CreditCard, "Cardholder Name", "cardholdername"),
+            (ImportedKind::CreditCard, "Number", "cardnumber"),
+            (ImportedKind::CreditCard, "CVC", "cvc"),
+            (ImportedKind::CreditCard, "Zip Code", "zipcode"),
+            (ImportedKind::Identity, EMAIL, "email"),
+            (ImportedKind::Identity, "Phone Number", "phone_number"),
+            (ImportedKind::Identity, "Address Line1", "address1"),
+            (ImportedKind::Identity, "Address Line2", "address2"),
+            (ImportedKind::Identity, "City", "city"),
+            (ImportedKind::Identity, STATE_PROVINCE_REGION, "state"),
+            (ImportedKind::Identity, POSTAL_CODE, "zipcode"),
+            (ImportedKind::Identity, "Country", "country"),
+        ],
     },
     CsvProfile {
         id: "protonpass",
@@ -305,7 +353,11 @@ pub(crate) const PROFILES: &[CsvProfile] = &[
         strip_root_folder: false,
         skip_folders: &[],
         icon_column: None,
-        ignored_columns: &[],
+        // Source timestamps are deliberately not applied to an imported entry.
+        // "email" is left offered rather than ignored - Proton Pass puts the login
+        // identifier there when "username" is blank, so the user may well want it
+        ignored_columns: &["createTime", "modifyTime"],
+        extra_fields: &[],
     },
     CsvProfile {
         id: "dashlane",
@@ -329,6 +381,7 @@ pub(crate) const PROFILES: &[CsvProfile] = &[
         skip_folders: &[],
         icon_column: None,
         ignored_columns: &[],
+        extra_fields: &[],
     },
     CsvProfile {
         id: "safari",
@@ -351,6 +404,7 @@ pub(crate) const PROFILES: &[CsvProfile] = &[
         skip_folders: &[],
         icon_column: None,
         ignored_columns: &[],
+        extra_fields: &[],
     },
     CsvProfile {
         id: "firefox",
@@ -372,6 +426,7 @@ pub(crate) const PROFILES: &[CsvProfile] = &[
         skip_folders: &[],
         icon_column: None,
         ignored_columns: &[],
+        extra_fields: &[],
     },
     CsvProfile {
         id: "chrome",
@@ -395,6 +450,7 @@ pub(crate) const PROFILES: &[CsvProfile] = &[
         skip_folders: &[],
         icon_column: None,
         ignored_columns: &[],
+        extra_fields: &[],
     },
 ];
 

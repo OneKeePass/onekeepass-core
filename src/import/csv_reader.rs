@@ -170,6 +170,14 @@ impl CsvImportMapping {
             strip_root_folder: profile.map_or(false, |p| p.strip_root_folder),
             skip_folders: profile.map_or(&[], |p| p.skip_folders),
             icon_column: column_index(profile.and_then(|p| p.icon_column)),
+            extra_fields: profile.map_or_else(Vec::new, |p| {
+                p.extra_fields
+                    .iter()
+                    .filter_map(|(kind, field_name, column)| {
+                        column_index(Some(column)).map(|i| (*kind, *field_name, i))
+                    })
+                    .collect()
+            }),
         };
 
         // The csv records are turned into the canonical import model first, and a single
@@ -221,6 +229,10 @@ struct CsvLookup {
 
     // Column holding the standard kdbx icon index
     icon_column: Option<usize>,
+
+    // (entry kind, okp field name, column) written straight onto the entry for rows of
+    // that kind. Covers the typed fields the login shaped mapping grid cannot express
+    extra_fields: Vec<(ImportedKind, &'static str, usize)>,
 }
 
 impl CsvLookup {
@@ -248,10 +260,11 @@ impl CsvLookup {
     }
 
     fn to_imported_item(&self, csv_record: &CsvDataRecord) -> ImportedItem {
+        let kind = self.kind(csv_record);
         ImportedItem {
-            kind: self.kind(csv_record),
+            kind,
             folder_path: self.folder_path(csv_record),
-            fields: self.fields(csv_record),
+            fields: self.fields(csv_record, kind),
             tags: self.tags(csv_record),
             icon_id: self
                 .icon_column
@@ -323,7 +336,7 @@ impl CsvLookup {
         path
     }
 
-    fn fields(&self, csv_record: &CsvDataRecord) -> Vec<ImportedField> {
+    fn fields(&self, csv_record: &CsvDataRecord, kind: ImportedKind) -> Vec<ImportedField> {
         let standard = self
             .standard_fields
             .iter()
@@ -362,9 +375,42 @@ impl CsvLookup {
             })
             .collect();
 
+        self.append_extra_fields(csv_record, kind, &mut fields);
         self.append_packed_fields(csv_record, &mut fields);
 
         fields
+    }
+
+    // Typed fields the mapping grid has no row for, such as a card's Number. Only those
+    // declared for this row's kind are written, since the field exists only on the entry
+    // type that declares it. Protection is not decided here - the writer takes it from
+    // the entry type, which is where it is defined
+    fn append_extra_fields(
+        &self,
+        csv_record: &CsvDataRecord,
+        kind: ImportedKind,
+        fields: &mut Vec<ImportedField>,
+    ) {
+        for (field_kind, field_name, i) in &self.extra_fields {
+            if *field_kind != kind {
+                continue;
+            }
+
+            let Some(value) = csv_record.get(*i).filter(|v| !v.trim().is_empty()) else {
+                continue;
+            };
+
+            if fields.iter().any(|f| f.name == *field_name) {
+                continue;
+            }
+
+            fields.push(ImportedField {
+                name: field_name.to_string(),
+                value: value.clone(),
+                protected: false,
+                custom: false,
+            });
+        }
     }
 
     // Expands the exporter's packed custom field cell into separate entry fields. Names
@@ -605,6 +651,7 @@ mod tests {
             strip_root_folder: false,
             skip_folders: &[],
             icon_column: None,
+            extra_fields: vec![],
         }
     }
 
@@ -646,6 +693,7 @@ mod tests {
             strip_root_folder: false,
             skip_folders: &[],
             icon_column: None,
+            extra_fields: vec![],
         };
         assert!(lookup.folder_path(&record(&["Work"])).is_empty());
     }
@@ -672,6 +720,7 @@ mod tests {
             strip_root_folder: false,
             skip_folders: &[],
             icon_column: None,
+            extra_fields: vec![],
         };
 
         let item = lookup.to_imported_item(&record(&["Site", "s3cret", "ref-1", "a;b"]));
@@ -711,6 +760,7 @@ mod tests {
             strip_root_folder: false,
             skip_folders: &[],
             icon_column: None,
+            extra_fields: vec![],
         };
 
         let item = lookup.to_imported_item(&record(&["JBSWY3DPEHPK3PXP"]));
@@ -739,6 +789,7 @@ mod tests {
             strip_root_folder: false,
             skip_folders: &[],
             icon_column: None,
+            extra_fields: vec![],
         };
 
         let item = lookup.to_imported_item(&record(&["work, email ,social"]));
@@ -938,6 +989,71 @@ mod tests {
     fn no_icon_column_leaves_the_entry_icon_alone() {
         let lookup = lookup_with_group_at(0);
         assert_eq!(lookup.to_imported_item(&record(&["Work"])).icon_id, None);
+    }
+
+    // Card and identity columns have no row in the login shaped mapping grid, so without
+    // the profile writing them straight onto the entry they are dropped
+    #[test]
+    fn extra_fields_are_written_for_the_matching_kind_only() {
+        let mut lookup = lookup_with_group_at(0);
+        lookup.type_column = Some(1);
+        lookup.type_values = &[
+            ("password", ImportedKind::Login),
+            ("credit_card", ImportedKind::CreditCard),
+        ];
+        lookup.extra_fields = vec![(ImportedKind::CreditCard, "Number", 2)];
+
+        let card = lookup.to_imported_item(&record(&["Cards", "credit_card", "4111"]));
+        assert!(card.fields.iter().any(|f| f.name == "Number" && f.value == "4111"));
+
+        // A login has no Number field on its entry type, so it must not be given one
+        let login = lookup.to_imported_item(&record(&["Web", "password", "4111"]));
+        assert!(login.fields.iter().all(|f| f.name != "Number"));
+    }
+
+    #[test]
+    fn an_empty_extra_field_is_not_written() {
+        let mut lookup = lookup_with_group_at(0);
+        lookup.extra_fields = vec![(ImportedKind::Login, "Number", 1)];
+
+        let item = lookup.to_imported_item(&record(&["Web", "   "]));
+        assert!(item.fields.iter().all(|f| f.name != "Number"));
+    }
+
+    // The user's own mapping wins over the profile's table
+    #[test]
+    fn an_extra_field_does_not_overwrite_a_mapped_field() {
+        let mut standard_fields = HashMap::new();
+        standard_fields.insert("Number".to_string(), 1);
+
+        let mut lookup = lookup_with_group_at(0);
+        lookup.standard_fields = standard_fields;
+        lookup.extra_fields = vec![(ImportedKind::Login, "Number", 2)];
+
+        let item = lookup.to_imported_item(&record(&["Web", "mapped", "extra"]));
+        let numbers: Vec<&str> = item
+            .fields
+            .iter()
+            .filter(|f| f.name == "Number")
+            .map(|f| f.value.as_str())
+            .collect();
+        assert_eq!(numbers, vec!["mapped"]);
+    }
+
+    // A profile with no extra fields must behave exactly as it did before the mechanism
+    // existed - this is what keeps the verified Bitwarden / 1Password / KeePassXC paths
+    // untouched
+    #[test]
+    fn a_profile_without_extra_fields_is_unaffected() {
+        let mut standard_fields = HashMap::new();
+        standard_fields.insert("Title".to_string(), 1);
+
+        let mut lookup = lookup_with_group_at(0);
+        lookup.standard_fields = standard_fields;
+
+        let item = lookup.to_imported_item(&record(&["Web", "A site"]));
+        assert_eq!(item.fields.len(), 1);
+        assert_eq!(item.fields[0].name, "Title");
     }
 
     #[test]

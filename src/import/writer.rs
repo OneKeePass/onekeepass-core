@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::{
     constants::entry_type_uuid,
-    db_content::{Entry, Group, KeepassFile, KeyValue, Section},
+    db_content::{Entry, EntryType, Group, KeepassFile, KeyValue, Section},
     error::Result,
 };
 
@@ -45,7 +45,14 @@ impl ImportWriter {
             }
 
             for field in &item.fields {
-                let kv = KeyValue::from(field.name.clone(), field.value.clone(), field.protected);
+                // Whether a field holds a secret is a property of the entry type, not of
+                // the source file - a card's CVC and PIN are protected wherever they came
+                // from. The source can still force protection on (a vendor marking a
+                // custom field hidden), it just cannot turn it off
+                let protected = field.protected
+                    || requires_protection(&entry.entry_field.entry_type, &field.name);
+
+                let kv = KeyValue::from(field.name.clone(), field.value.clone(), protected);
                 entry.entry_field.insert_key_value(kv);
             }
 
@@ -75,6 +82,15 @@ impl ImportWriter {
 
         Ok(parent_uuid)
     }
+}
+
+fn requires_protection(entry_type: &EntryType, field_name: &str) -> bool {
+    entry_type.sections.iter().any(|section| {
+        section
+            .field_defs
+            .iter()
+            .any(|field_def| field_def.name == field_name && field_def.require_protection)
+    })
 }
 
 // Declares this item's custom fields on its entry type. Built from the item because the
@@ -349,6 +365,48 @@ mod tests {
             icons.contains(&default_icon),
             "an item without an icon keeps its entry type's own"
         );
+    }
+
+    // A card's CVC is a secret wherever it came from. The entry type says so, and that is
+    // what the writer honours - the importer does not have to know
+    #[test]
+    fn the_entry_type_decides_which_fields_are_protected() {
+        let mut kp = empty_db();
+
+        let card = ImportedItem {
+            kind: ImportedKind::CreditCard,
+            fields: vec![
+                ImportedField {
+                    name: "CVC".to_string(),
+                    value: "123".to_string(),
+                    protected: false,
+                    custom: false,
+                },
+                ImportedField {
+                    name: "Number".to_string(),
+                    value: "4111".to_string(),
+                    protected: false,
+                    custom: false,
+                },
+            ],
+            ..item(vec!["Cards"])
+        };
+
+        writer().write(&[card], &mut kp).unwrap();
+
+        let entry_uuid = kp.root.group_by_name("Cards").unwrap().entry_uuids[0];
+        let entry = kp.root.entry_by_id(&entry_uuid).unwrap();
+        let protected_of = |name: &str| {
+            entry
+                .entry_field
+                .get_key_values()
+                .iter()
+                .find(|kv| kv.key == name)
+                .map(|kv| kv.protected)
+        };
+
+        assert_eq!(protected_of("CVC"), Some(true), "CVC is declared protected");
+        assert_eq!(protected_of("Number"), Some(false), "the card number is not");
     }
 
     // A source folder called "Recycle Bin" must not resolve onto the target database's
