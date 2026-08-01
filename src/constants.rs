@@ -103,7 +103,7 @@ pub mod entry_type_name {
 
     // Remote-storage connection entry types. A user keeps SFTP / WebDAV server
     // credentials as regular kdbx entries; the remote_storage resolver looks
-    // them up by entry uuid (= connection id). See Plans-Created/Remote-Storage.
+    // them up by entry uuid (= connection id).
     pub const REMOTE_CONNECTION_SFTP: &str = "SFTP Connection";
     pub const REMOTE_CONNECTION_WEBDAV: &str = "WebDAV Connection";
 
