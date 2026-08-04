@@ -532,9 +532,10 @@ pub fn rename_db_key(old_db_key: &str, new_db_key: &str) -> Result<KdbxLoaded> {
 
 // Called after user has successfully completed the biometeric based authentication
 pub fn unlock_kdbx_on_biometric_authentication(db_key: &str) -> Result<KdbxLoaded> {
-    // Restore the decrypted content ( ) and clear the locked flag FIRST, so
-    // the metadata below is read from restored content. No-op if content was never
-    // encrypted (e.g. mobile).
+    // Restore the decrypted content and clear the locked flag FIRST, so the
+    // metadata below is read from restored content. When there is no locked
+    // content blob (a db opened but never locked, or the autofill path which
+    // does not encrypt), this only clears the flag.
     restore_locked_content(db_key)?;
 
     kdbx_context_action!(db_key, |ctx: &KdbxContext| {
@@ -554,7 +555,7 @@ pub fn unlock_kdbx(
     key_file_name: Option<&str>,
 ) -> Result<KdbxLoaded> {
     // Verify credentials against the stored composite key. This works while the
-    // content is encrypted ( ): compare_key uses the composite key, not the
+    // content is encrypted: compare_key uses the composite key, not the
     // decrypted content.
     let matched = call_kdbx_context_action(db_key, |ctx: &KdbxContext| {
         ctx.kdbx_file.compare_key(password, key_file_name)
