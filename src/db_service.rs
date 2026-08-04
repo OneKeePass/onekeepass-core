@@ -123,6 +123,8 @@ pub use crate::remote_storage::connection_entry::{
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub use crate::import::csv_reader::{CsvImport, CsvImportMapping, CsvImportOptions, CvsHeaderInfo};
+
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub use crate::import::profile::{
     all_profiles, profile_mapping, DetectedProfile, ProfileInfo, SuggestedMapping,
 };
