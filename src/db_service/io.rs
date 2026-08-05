@@ -309,6 +309,7 @@ pub fn save_kdbx_to_writer<W: Read + Write + Seek>(
 
 // Desktop
 // Called to save all modified db files in one go and also creating backups in desktop
+// After we introduced encryption of locked db conetnt, only unlocked databases are saved
 pub fn save_all_modified_dbs_with_backups(
     db_keys_and_backups: Vec<(String, Option<String>)>,
 ) -> Result<Vec<SaveAllResponse>> {
@@ -325,7 +326,17 @@ pub fn save_all_modified_dbs_with_backups(
     for (db_key, backup_file_name) in db_keys_and_backups {
         match store.get_mut(&db_key) {
             Some(ctx) => {
-                if ctx.save_pending == true {
+                if ctx.locked {
+                    // A locked db cannot be saved (its content is encrypted in
+                    // memory). Skip it rather than writing empty content or
+                    // failing the whole quit/save-all. Unlock to save it.
+                    save_result.push(SaveAllResponse {
+                        db_key,
+                        save_status: SaveStatus::Message(
+                            "The database is locked. Unlock it to save the changes.".into(),
+                        ),
+                    })
+                } else if ctx.save_pending == true {
                     match write_kdbx_file_with_backup_file(
                         &mut ctx.kdbx_file,
                         backup_file_name.as_deref(),

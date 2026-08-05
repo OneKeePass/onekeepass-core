@@ -169,6 +169,21 @@ impl AttachmentSet {
     pub fn attachment_hash_to_index_ref(&self) -> &HashMap<AttachmentHashValue, i32> {
         &self.hash_index_ref
     }
+
+    // Memory-security lock: move the attachment byte blobs out (leaving the
+    // index lookup maps intact so entry links can still be restored) so the bytes
+    // can be encrypted while the db is locked.
+    pub(crate) fn take_attachment_bytes(&mut self) -> HashMap<AttachmentHashValue, Vec<u8>> {
+        std::mem::take(&mut self.attachments)
+    }
+
+    // Restores the attachment byte blobs taken by `take_attachment_bytes` on unlock.
+    pub(crate) fn restore_attachment_bytes(
+        &mut self,
+        attachments: HashMap<AttachmentHashValue, Vec<u8>>,
+    ) {
+        self.attachments = attachments;
+    }
 }
 
 #[derive(Clone)]
@@ -620,6 +635,14 @@ fn read_db<R: Read + Seek>(buff: &mut R, kdbx_file: KdbxFile) -> Result<KdbxFile
 }
 
 pub fn write_db<W: Write + Read + Seek>(buff: &mut W, kdbx_file: &mut KdbxFile) -> Result<()> {
+    // A locked database has had its decrypted content taken out and encrypted in
+    // memory (keepass_main_content is None). Writing it now would serialize empty
+    // content and overwrite the file with a near-empty database. This is the
+    // single choke point for every save path (desktop, mobile, save-as,
+    // save-all), so guarding here prevents that data loss regardless of caller.
+    if kdbx_file.keepass_main_content.is_none() {
+        return Err(Error::DbLocked);
+    }
     let mut w = KdbxFileWriter::new(buff, kdbx_file);
     let _wr = w.write()?;
     Ok(())

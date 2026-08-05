@@ -14,6 +14,12 @@ pub enum Error {
     #[error("DbFileContentChangeDetected")]
     DbFileContentChangeDetected,
 
+    // A locked database has its decrypted content encrypted in memory
+    // (keepass_main_content is None); saving it would overwrite the file with
+    // empty content. The database must be unlocked before it can be saved.
+    #[error("DatabaseLockedCannotSave")]
+    DbLocked,
+
     #[error("MergeFailedCredentialsChanged")]
     MergeFailedCredentialsChanged,
 

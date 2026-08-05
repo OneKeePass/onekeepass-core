@@ -414,7 +414,7 @@ mod tests {
 
     #[test]
     fn same_registrable_domain_matches() {
-        // Phase 2: apex <-> www and sibling subdomains match when they share a
+        // apex <-> www and sibling subdomains match when they share a
         // registrable domain (eTLD+1).
         assert!(url_matched("https://www.viator.com/", "https://viator.com/"));
         assert!(url_matched(

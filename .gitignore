@@ -2,7 +2,7 @@
 # will have compiled files and executables
 /target/
 WixTools
-Cargo.lock
+# Cargo.lock
 .DS_Store
 .lsp
 .clj-kondo

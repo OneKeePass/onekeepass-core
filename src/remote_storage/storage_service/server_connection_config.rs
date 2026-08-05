@@ -258,12 +258,35 @@ fn config_store() -> &'static ConfigStore {
     &CONFIG_STORE
 }
 
+// Session only in memory store of the configs that are resolved from a kdbx
+// REMOTE_CONNECTION_SFTP / _WEBDAV entry.
+//
+// Deliberately kept separate from 'config_store' - that one mirrors the
+// persisted blob store (mobile secure store) and is what the connection
+// listing shows and what write_config serializes. A kdbx sourced config must
+// never appear as an 'app secure store' connection nor be written to that
+// persisted store, but it still needs to outlive the closing of the kdbx that
+// holds the connection entry so that the remote db opened through it stays
+// saveable
+fn session_cache_store() -> &'static ConfigStore {
+    static SESSION_CACHE_STORE: once_cell::sync::Lazy<ConfigStore> =
+        once_cell::sync::Lazy::new(Default::default);
+    &SESSION_CACHE_STORE
+}
+
 // The inner state is just two Vecs of config records; a panic inside the
 // lock scope cannot leave them in a torn state, so we recover the guard
 // rather than letting one bad attempt permanently break every subsequent
 // call with PoisonError.
 fn lock_config_store() -> std::sync::MutexGuard<'static, ConnectionConfigs> {
     config_store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+// See the comment in 'lock_config_store' for the poison recovery
+fn lock_session_cache_store() -> std::sync::MutexGuard<'static, ConnectionConfigs> {
+    session_cache_store()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
@@ -300,6 +323,12 @@ impl ConnectionConfigs {
         // Kdbx-entry source wins: walk all open dbs looking for a
         // REMOTE_CONNECTION_SFTP / _WEBDAV entry whose uuid matches.
         if let Some(config) = Self::find_in_kdbx_entry_source(connection_id, &request) {
+            return Some(config);
+        }
+
+        // Session cache next: the kdbx that holds the connection entry may have
+        // been closed while the remote db opened through it is still open.
+        if let Some(config) = Self::find_in_session_cache(connection_id, &request) {
             return Some(config);
         }
 
@@ -369,11 +398,27 @@ impl ConnectionConfigs {
         }
     }
 
+    fn find_in_session_cache(
+        connection_id: &Uuid,
+        request: &RemoteStorageType,
+    ) -> Option<RemoteStorageTypeConfig> {
+        let configs = lock_session_cache_store();
+        Self::find_in_configs(&configs, connection_id, request)
+    }
+
     fn find_in_blob_store(
         connection_id: &Uuid,
         request: &RemoteStorageType,
     ) -> Option<RemoteStorageTypeConfig> {
         let configs = lock_config_store();
+        Self::find_in_configs(&configs, connection_id, request)
+    }
+
+    fn find_in_configs(
+        configs: &ConnectionConfigs,
+        connection_id: &Uuid,
+        request: &RemoteStorageType,
+    ) -> Option<RemoteStorageTypeConfig> {
         match request {
             RemoteStorageType::Sftp => {
                 let configs = &configs.sftp_connections;
@@ -388,20 +433,19 @@ impl ConnectionConfigs {
         }
     }
 
-    // Caches a resolved config in the in-memory store WITHOUT persisting it.
+    // Caches a resolved config in the session only store WITHOUT persisting it.
     //
-    // Used when a remote db is opened/saved from a kdbx-entry-backed connection
-    // (the desktop case, where REMOTE_CONNECTION_SFTP / _WEBDAV entries are the
-    // only source and no Crw is installed). The kdbx that holds the connection
-    // entry can be closed while the remote db it sourced stays open; caching the
-    // resolved config here lets find_remote_storage_config's in-memory fallback
-    // keep resolving the connection so the still-open remote db remains saveable.
+    // Used when a remote db is opened/saved from a kdbx-entry-backed connection.
+    // The kdbx that holds the connection entry can be closed while the remote db
+    // it sourced stays open; caching the resolved config here lets
+    // find_remote_storage_config keep resolving the connection so the still-open
+    // remote db remains saveable.
     //
-    // Deliberately does not call write_config: on mobile (where a Crw is
-    // installed) the in-memory store mirrors the persisted blob store, and this
-    // session-only cache must never be written back to that persisted store.
+    // The session cache is a store of its own (see 'session_cache_store') and is
+    // never listed as an app secure store connection and never serialized by
+    // write_config.
     pub(crate) fn cache_config_in_memory(request: RemoteStorageTypeConfig) {
-        let mut conns = lock_config_store();
+        let mut conns = lock_session_cache_store();
         match request {
             RemoteStorageTypeConfig::Sftp(config) => {
                 Self::internal_add_or_update_config(&mut conns.sftp_connections, config);
@@ -412,17 +456,17 @@ impl ConnectionConfigs {
         }
     }
 
-    // Removes a config from the in-memory store WITHOUT persisting the removal.
+    // Removes a config from the session only store.
     //
     // The counterpart to cache_config_in_memory: called when a remote db is
     // closed so its cached connection credentials do not linger in memory longer
-    // than the db that needed them. As with the cache, write_config is not
-    // called so a mobile persisted blob-store entry is never deleted by this.
+    // than the db that needed them. Only the session cache is touched here and
+    // so a persisted blob-store config is never deleted by this.
     pub fn remove_config_in_memory(
         remote_type: RemoteStorageType,
         connection_id: &Uuid,
     ) {
-        let mut configs = lock_config_store();
+        let mut configs = lock_session_cache_store();
         match remote_type {
             RemoteStorageType::Sftp => {
                 Self::interal_delete_config(connection_id, &mut configs.sftp_connections);

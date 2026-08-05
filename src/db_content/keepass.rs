@@ -105,6 +105,16 @@ impl KeepassFile {
         self.root.insert_entry_cross_db(entry)
     }
 
+    // Memory-security lock: volatile-zero the sensitive in-memory content
+    // (entry field values, incl. history) before this KeepassFile is dropped on
+    // lock. Rust does not zero on drop, so without this the plaintext would linger
+    // in freed heap. Best-effort: wipes the primary resident copy; transient copies
+    // made earlier by normal operations are not tracked. (Meta is not scrubbed -
+    // it holds no entry secrets.)
+    pub(crate) fn zeroize_sensitive_content(&mut self) {
+        self.root.zeroize_sensitive_content();
+    }
+
     // Called after reading xml content
     pub(crate) fn after_xml_reading(
         &mut self,
