@@ -101,8 +101,8 @@ pub use crate::db_merge::MergeResult;
 pub use crate::custom_icons::{CustomIconData, CustomIconSummary};
 
 // Re-export so the mobile FFI command dispatcher (which calls db_service::<fn>)
-// can reach the URL-only autofill manual search, and its TOTP-mode variant.
-pub use autofill::{autofill_search_term, autofill_search_term_filtered};
+// can reach the URL-only autofill manual search.
+pub use autofill::autofill_search_term;
 
 // Re-export so the Android autofill FFI can associate a native-app token with an
 // entry (capture-on-fill). See db_service::autofill::associate_app_to_entry.
