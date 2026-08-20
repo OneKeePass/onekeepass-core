@@ -615,6 +615,32 @@ impl Entry {
             .map(|pd| pd.current_otp_token_data().ok())
             .flatten()
     }
+
+    // The one otp field whose token represents this entry in a list, with its current token
+    //
+    // An entry may hold several otp fields - the standard one plus any in the additional
+    // one-time passwords section - and a list row has room for a single code. Where the
+    // choice is not obvious nothing is returned: showing one of several codes with no way
+    // to tell which field it came from invites copying the wrong one, and the row falling
+    // back to no code at all leaves the user to open the entry, as before
+    pub(crate) fn list_otp_token_data(&self) -> Option<(String, CurrentOtpTokenData)> {
+        let parsed = self.parsed_otp_values.as_ref()?;
+
+        // The standard field wins whenever it is present and usable
+        if let Some(data) = self.current_otp_token_data(OTP) {
+            return Some((OTP.to_string(), data));
+        }
+
+        // Otherwise only a single custom field is unambiguous enough to show
+        let mut names = parsed.keys();
+        let only_name = match (names.next(), names.next()) {
+            (Some(name), None) => name.clone(),
+            _ => return None,
+        };
+
+        self.current_otp_token_data(&only_name)
+            .map(|data| (only_name, data))
+    }
 }
 
 impl Entry {
@@ -1243,6 +1269,72 @@ mod tests {
     fn entry_new_has_empty_history() {
         let e = Entry::new();
         assert!(e.histories().is_empty());
+    }
+
+    // Entry::list_otp_token_data - which single otp field represents an entry on a list row
+
+    fn otp_url(secret: &str) -> String {
+        format!("otpauth://totp/OneKeePass:test?secret={}&period=30", secret)
+    }
+
+    // Builds an entry holding the given otp fields, parsed as loading a database would
+    fn entry_with_otp_fields(fields: &[(&str, &str)]) -> Entry {
+        let mut e = Entry::new();
+        for (key, value) in fields {
+            e.entry_field.insert_key_value(make_kv(key, value, true));
+        }
+        e.parse_all_otp_fields();
+        e
+    }
+
+    #[test]
+    fn list_otp_token_data_uses_the_standard_field() {
+        let e = entry_with_otp_fields(&[("otp", &otp_url("JBSWY3DPEHPK3PXP"))]);
+        let (field_name, data) = e.list_otp_token_data().unwrap();
+        assert_eq!(field_name, "otp");
+        assert_eq!(data.period, 30);
+        assert!(!data.token.is_empty());
+    }
+
+    #[test]
+    fn list_otp_token_data_uses_a_lone_custom_field() {
+        let e = entry_with_otp_fields(&[("My Git OTP Code", &otp_url("JBSWY3DPEHPK3PXP"))]);
+        let (field_name, _data) = e.list_otp_token_data().unwrap();
+        assert_eq!(field_name, "My Git OTP Code");
+    }
+
+    #[test]
+    fn list_otp_token_data_prefers_the_standard_field_over_a_custom_one() {
+        let e = entry_with_otp_fields(&[
+            ("My Git OTP Code", &otp_url("JBSWY3DPEHPK3PXP")),
+            ("otp", &otp_url("GEZDGNBVGY3TQOJQ")),
+        ]);
+        let (field_name, _data) = e.list_otp_token_data().unwrap();
+        assert_eq!(field_name, "otp");
+    }
+
+    // Two custom fields and no standard one is the ambiguous case: showing either code
+    // would give the user no way to tell which field it came from
+    #[test]
+    fn list_otp_token_data_is_none_for_two_custom_fields() {
+        let e = entry_with_otp_fields(&[
+            ("My Git OTP Code", &otp_url("JBSWY3DPEHPK3PXP")),
+            ("My AWS OTP Code", &otp_url("GEZDGNBVGY3TQOJQ")),
+        ]);
+        assert!(e.list_otp_token_data().is_none());
+    }
+
+    #[test]
+    fn list_otp_token_data_is_none_without_any_otp_field() {
+        let e = entry_with_otp_fields(&[("UserName", "user@example.com")]);
+        assert!(e.list_otp_token_data().is_none());
+    }
+
+    // An unparseable url leaves no parsed value behind, so the entry has nothing to show
+    #[test]
+    fn list_otp_token_data_is_none_for_an_unparseable_url() {
+        let e = entry_with_otp_fields(&[("otp", "otpauth://totp/no-secret-here")]);
+        assert!(e.list_otp_token_data().is_none());
     }
 }
 

@@ -88,9 +88,9 @@ pub use crate::db_content::{
 
 pub use crate::form_data::{
     CategoryDetail, CurrentOtpTokenData, DbSettings, EntryCategories, EntryCategory,
-    EntryCategoryGrouping, EntryCategoryInfo, EntryFormData, EntrySummary, EntryTypeFormData,
-    EntryTypeHeader, EntryTypeHeaders, EntryTypeNames, GroupSummary, GroupTree, KdbxLoaded,
-    KdbxSaved,
+    EntryCategoryGrouping, EntryCategoryInfo, EntryFormData, EntryListOtpToken, EntrySummary,
+    EntryTypeFormData, EntryTypeHeader, EntryTypeHeaders, EntryTypeNames, GroupSummary, GroupTree,
+    KdbxLoaded, KdbxSaved,
 };
 
 pub use crate::constants::entry_keyvalue_key;
@@ -1009,6 +1009,35 @@ pub fn entry_form_current_otps(
                 entry_uuid
             ))),
         }
+    })
+}
+
+// Gets the current token of every entry in 'entry_uuids' that has one
+//
+// Entries with no otp field, with an unparseable otp url, or with several otp fields and
+// no standard one are simply absent from the result - see Entry::list_otp_token_data. So a
+// caller showing codes on a list needs no separate 'does this entry have 2FA' query, and
+// one call serves a whole page of rows
+pub fn entry_list_current_otps(
+    db_key: &str,
+    entry_uuids: &[Uuid],
+) -> Result<Vec<EntryListOtpToken>> {
+    main_content_action!(db_key, move |k: &KeepassFile| {
+        let tokens = entry_uuids
+            .iter()
+            .filter_map(|entry_uuid| {
+                let entry = k.root.entry_by_id(entry_uuid)?;
+                let (otp_field_name, data) = entry.list_otp_token_data()?;
+                Some(EntryListOtpToken {
+                    entry_uuid: entry_uuid.to_string(),
+                    otp_field_name,
+                    token: data.token,
+                    ttl: data.ttl,
+                    period: data.period,
+                })
+            })
+            .collect();
+        Ok(tokens)
     })
 }
 
