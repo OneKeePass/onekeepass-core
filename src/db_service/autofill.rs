@@ -163,8 +163,9 @@ fn has_usable_otp_field(entry: &Entry) -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OtpEntryIdentity {
     pub entry_uuid: String,
-    // Shown by the OS in the code suggestion. Follows the passkey identities in using the
-    // user name, with the title as the fallback when there is no user name
+    // Shown by the OS in the code suggestion. The user name and the title together, since
+    // either alone can leave two entries looking identical there, and whichever one is
+    // present when the other is empty
     pub label: String,
     // The entry's URL field and each of its Additional URLs
     pub service_urls: Vec<String>,
