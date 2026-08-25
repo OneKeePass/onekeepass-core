@@ -708,6 +708,20 @@ impl From<&EntryFormData> for Entry {
     }
 }
 
+// The current token of one entry, for showing a code on an entry list row
+//
+// 'entry_uuid' is a String to match EntrySummary's own uuid, so the UI can pair a token
+// with its row without converting either side. 'otp_field_name' says which field the token
+// came from, so that copying it copies the right field
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct EntryListOtpToken {
+    pub entry_uuid: String,
+    pub otp_field_name: String,
+    pub token: String,
+    pub ttl: u64,
+    pub period: u64,
+}
+
 #[derive(Serialize, Deserialize, Debug, Default, PartialEq, Eq)]
 pub struct EntrySummary {
     pub uuid: String,

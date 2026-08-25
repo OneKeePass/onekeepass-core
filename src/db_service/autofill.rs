@@ -7,11 +7,12 @@
 //   * an entry matches when the incoming URL matches its URL field or any of its
 //     Additional URLs.
 
+use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
 use crate::constants::entry_keyvalue_key::{ADDITIONAL_URLS, NOTES, OTP, TITLE, URL, USER_NAME};
-use crate::db_content::KeepassFile;
+use crate::db_content::{Entry, KeepassFile, OtpData};
 use crate::db_service::{call_kdbx_context_mut_action, call_main_content_action, KdbxContext};
 use crate::error::Result;
 use crate::form_data::parsing::EntryPlaceHolderParser;
@@ -138,11 +139,120 @@ fn match_rank(
     [url_pair, additional_pair].into_iter().flatten().min()
 }
 
+// Whether the entry carries a TOTP that autofill can generate a code from: a field
+// named `otp` whose value parses as an otp url.
+//
+// Keyed on the field name and not on the section. Every path that creates an otp field
+// (manual setup, QR scan, the android otpauth:// intent) names it `otp`; it lands in the
+// Additional One-Time Passwords section only for entry types that have no standard otp
+// field def. Differently named fields in that section are deliberately not considered -
+// autofill is a one-tap flow, so the field to fill from has to be unambiguous, and the
+// standard field is the entry's login code by construction.
+fn has_usable_otp_field(entry: &Entry) -> bool {
+    entry
+        .entry_field
+        .get_key_values()
+        .iter()
+        .any(|kv| kv.key == OTP && OtpData::from_url(&kv.value).is_ok())
+}
+
+// An entry autofill can produce a TOTP for, together with the services it applies to.
+// iOS registers these with ASCredentialIdentityStore as one time code identities, which is
+// what makes the OS offer OneKeePass on a verification code field - see the parallel
+// passkey identity registration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OtpEntryIdentity {
+    pub entry_uuid: String,
+    // Shown by the OS in the code suggestion. The user name and the title together, since
+    // either alone can leave two entries looking identical there, and whichever one is
+    // present when the other is empty
+    pub label: String,
+    // The entry's URL field and each of its Additional URLs
+    pub service_urls: Vec<String>,
+}
+
+// All entries in `db_key` that autofill can generate a TOTP for and that carry at least one
+// url to match a service against. Place holders are resolved, as they are for matching
+pub fn otp_entry_identities(db_key: &str) -> Result<Vec<OtpEntryIdentity>> {
+    main_content_action!(db_key, |k: &KeepassFile| {
+        let identities = k
+            .collect_all_active_entries()
+            .iter()
+            .filter_map(|e| {
+                if !super::is_autofill_eligible_type(&e.entry_field.entry_type.uuid)
+                    || !has_usable_otp_field(e)
+                {
+                    return None;
+                }
+
+                let (_parsed_fields, entry_fields) =
+                    EntryPlaceHolderParser::place_holder_resolved_entry_fields(&k.root, e);
+
+                let mut service_urls: Vec<String> = vec![];
+                if let Some(u) = entry_fields.get(URL) {
+                    if !u.trim().is_empty() {
+                        service_urls.push(u.trim().to_string());
+                    }
+                }
+                if let Some(urls) = entry_fields.get(ADDITIONAL_URLS) {
+                    service_urls.extend(urls.split_whitespace().map(|u| u.to_string()));
+                }
+
+                // With no url there is no service to key the identity on
+                if service_urls.is_empty() {
+                    return None;
+                }
+
+                // iOS shows this under its own 'verification code for this website' caption, so
+                // the label only has to say which entry the code comes from. The user name alone
+                // cannot separate two entries sharing one, hence the title as well
+                let title = entry_fields
+                    .get(TITLE)
+                    .map(|s| s.trim())
+                    .unwrap_or_default()
+                    .to_string();
+                let user_name = entry_fields
+                    .get(USER_NAME)
+                    .map(|s| s.trim())
+                    .unwrap_or_default()
+                    .to_string();
+
+                let label = match (user_name.is_empty(), title.is_empty()) {
+                    (false, false) => format!("{} | {}", user_name, title),
+                    (true, false) => title,
+                    (false, true) => user_name,
+                    // Nothing to show in the suggestion, so it is not offered at all
+                    (true, true) => return None,
+                };
+
+                Some(OtpEntryIdentity {
+                    entry_uuid: e.uuid.to_string(),
+                    label,
+                    service_urls,
+                })
+            })
+            .collect();
+
+        Ok(identities)
+    })
+}
+
 // Returns the autofill-eligible entries in `db_key` whose URL field (or Additional
 // URLs field) matches `input_url`, ordered by match strength: exact host before
 // registrable-domain (primary), URL-field before Additional-URLs (secondary). URL
 // place holders are resolved before matching.
 pub fn find_matching_login_entries(db_key: &str, input_url: &str) -> Result<Vec<EntrySummary>> {
+    find_matching_entries(db_key, input_url, false)
+}
+
+// As find_matching_login_entries, but when `require_otp` is set only entries that can
+// produce a TOTP are returned. Used by the mobile TOTP autofill flow, where offering an
+// entry with no otp field would dead-end the user.
+pub fn find_matching_entries(
+    db_key: &str,
+    input_url: &str,
+    require_otp: bool,
+) -> Result<Vec<EntrySummary>> {
     main_content_action!(db_key, |k: &KeepassFile| {
         // (rank, summary) pairs; rank = (host strength, field source), smaller = better.
         let mut ranked: Vec<((u8, u8), EntrySummary)> = k
@@ -151,6 +261,11 @@ pub fn find_matching_login_entries(db_key: &str, input_url: &str) -> Result<Vec<
             .filter_map(|e| {
                 // Only autofill-eligible types (Login / Card / Bank) are offered.
                 if !super::is_autofill_eligible_type(&e.entry_field.entry_type.uuid) {
+                    return None;
+                }
+
+                // TOTP autofill offers only entries it can actually generate a code from.
+                if require_otp && !has_usable_otp_field(e) {
                     return None;
                 }
 
@@ -229,6 +344,17 @@ fn search_field_priority(key: &str) -> u8 {
 // `autofill_search_term_url_only` below. Ordering results by field priority
 // (url > additional urls > title > ...) is a separate ranking step, not done here.
 pub fn autofill_search_term(db_key: &str, term: &str) -> Result<EntrySearchResult> {
+    autofill_search_term_filtered(db_key, term, false)
+}
+
+// As autofill_search_term, but when `require_otp` is set only entries that can produce a
+// TOTP are returned - the manual-search counterpart of find_matching_entries, so that
+// searching in TOTP mode cannot surface an entry the user then cannot fill from.
+pub fn autofill_search_term_filtered(
+    db_key: &str,
+    term: &str,
+    require_otp: bool,
+) -> Result<EntrySearchResult> {
     let term_lc = term.trim().to_lowercase();
 
     main_content_action!(db_key, |k: &KeepassFile| {
@@ -249,6 +375,11 @@ pub fn autofill_search_term(db_key: &str, term: &str) -> Result<EntrySearchResul
         for e in k.collect_all_active_entries() {
             // Only autofill-eligible types (Login / Card / Bank) are offered.
             if !super::is_autofill_eligible_type(&e.entry_field.entry_type.uuid) {
+                continue;
+            }
+
+            // TOTP autofill offers only entries it can actually generate a code from.
+            if require_otp && !has_usable_otp_field(e) {
                 continue;
             }
 
@@ -551,6 +682,58 @@ mod tests {
         assert!(url_reg < add_reg);
         // When both fields match, the stronger pairing is chosen.
         assert_eq!(match_rank(Some(RegistrableDomain), Some(ExactHost)), add_exact);
+    }
+
+    const TEST_OTP_URL: &str =
+        "otpauth://totp/OkpTest:alice@example.com?secret=JBSWY3DPEHPK3PXP&issuer=OkpTest";
+
+    // A blank Login entry (which already carries an empty standard `otp` field) with the
+    // named field set to `value`.
+    fn login_entry_with(field_name: &str, value: &str) -> Entry {
+        use crate::db_content::KeyValue;
+        let mut e = Entry::new_login_entry(None);
+        e.entry_field
+            .insert_key_value(KeyValue::from(field_name.into(), value.into(), true));
+        e
+    }
+
+    #[test]
+    fn standard_otp_field_is_usable() {
+        assert!(has_usable_otp_field(&login_entry_with(OTP, TEST_OTP_URL)));
+    }
+
+    #[test]
+    fn unusable_otp_fields() {
+        // Empty standard otp field - a blank Login entry always has one, so this is the
+        // "entry has no OTP set up" case and must not be offered.
+        assert!(!has_usable_otp_field(&Entry::new_login_entry(None)));
+        // A value that is not a parseable otp url (e.g. a bare secret pasted by hand)
+        // would show no token in the UI either.
+        assert!(!has_usable_otp_field(&login_entry_with(
+            OTP,
+            "JBSWY3DPEHPK3PXP"
+        )));
+        assert!(!has_usable_otp_field(&login_entry_with(
+            OTP,
+            "otpauth://totp/broken?no_secret=1"
+        )));
+    }
+
+    #[test]
+    fn otp_url_under_another_field_name_is_not_usable() {
+        // Pins the autofill design decision: only the standard `otp` field is filled
+        // from. A valid otp url in the Additional One-Time Passwords section (or in a
+        // field a foreign kdbx named differently) still shows a live token in the entry
+        // form - token display is name-agnostic - but autofill must not guess which of
+        // several codes the site wants.
+        assert!(!has_usable_otp_field(&login_entry_with(
+            "My Git OTP Code",
+            TEST_OTP_URL
+        )));
+        assert!(!has_usable_otp_field(&login_entry_with(
+            "TOTP",
+            TEST_OTP_URL
+        )));
     }
 
     #[test]
