@@ -226,6 +226,10 @@ pub struct EntryFormData {
 }
 
 impl EntryFormData {
+    pub fn entry_uuid(&self) -> Uuid {
+        self.uuid
+    }
+
     // Sets the entry title. Used when building form data programmatically within the core.
     pub(crate) fn set_title(&mut self, title: String) {
         self.title = title;
