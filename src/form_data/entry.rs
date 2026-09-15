@@ -379,14 +379,10 @@ impl EntryFormData {
                         // Clone values from KeyValue to KeyValueData
                         let mut kvd: KeyValueData = (&kv).into();
 
-                        // Following may be requird when we change a field's protection flag
-                        // in FieldDef from its earlier definition.
-                        // May Need more tests to confirm no other issue.
-                        // if kvd.protected != fd.require_protection {
-                        //     // Overriding the old protected flag read from db with new value from
-                        //     // field definition
-                        //     kvd.protected = fd.require_protection;
-                        // }
+                        // The field def is the source of truth for the protection flag. The flag read
+                        // from db may be out of date when the field def's protection is changed later
+                        // or when an entry was saved before this field def existed
+                        kvd.protected = fd.require_protection;
 
                         // Additionally, the following field values are found in FieldDef and
                         // kvd is populated from them
@@ -443,6 +439,7 @@ impl EntryFormData {
                         kvd.helper_text = fd.helper_text(); //fd.helper_text.clone();
                         kvd.standard_field = standard_field_names.contains(&fd.name.as_str());
                         kvd.key = fd.name.clone();
+                        kvd.protected = fd.require_protection;
 
                         // Completed the combining of this field with its definition to create KVD
                         field_names_done.push(kvd.key.clone());
