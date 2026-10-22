@@ -1,6 +1,6 @@
 [package]
 name = "onekeepass-core"
-version = "0.25.1"
+version = "0.26.0"
 authors = ["jeyasankar"]
 edition = "2021"
 
@@ -79,7 +79,7 @@ webpki-roots = "1.0"
 
 ## rusqlite = { version = "0.32.0", features = ["bundled"] }
 
-botan = {version = "0.11.1", features = ["vendored"] }
+botan = {version = "0.14.0", features = ["vendored"] }
 
 # Passkey / WebAuthn cryptography (shared across desktop and mobile)
 p256           = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
