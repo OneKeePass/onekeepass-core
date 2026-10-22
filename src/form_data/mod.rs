@@ -1,6 +1,7 @@
 mod categories;
 mod db_setting;
 mod entry;
+mod entry_find;
 pub(crate) mod parsing;
 
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,7 @@ use crate::{db::KdbxFile, db_content::Meta, util};
 
 pub use self::categories::*;
 pub use self::entry::*;
+pub use self::entry_find::*;
 
 pub use self::db_setting::*;
 

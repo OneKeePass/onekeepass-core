@@ -88,8 +88,8 @@ pub use crate::db_content::{
 
 pub use crate::form_data::{
     CategoryDetail, CurrentOtpTokenData, DbSettings, EntryCategories, EntryCategory,
-    EntryCategoryGrouping, EntryCategoryInfo, EntryFormData, EntryListOtpToken, EntrySummary,
-    EntryTypeFormData, EntryTypeHeader, EntryTypeHeaders, EntryTypeNames, GroupSummary, GroupTree,
+    EntryCategoryGrouping, EntryCategoryInfo, EntryFindItem, EntryFindKind, EntryFindResult,
+    EntryFormData, EntryListOtpToken, EntrySummary, EntryTypeFormData, EntryTypeHeader, EntryTypeHeaders, EntryTypeNames, GroupSummary, GroupTree,
     KdbxLoaded, KdbxSaved,
 };
 
@@ -914,6 +914,12 @@ pub fn entry_summary_data(
     };
     main_content_action!(db_key, action)
 }
+// Entries matching the given kind (attachments, history, passkeys, totp or all by size)
+// for the on demand find entries page
+pub fn find_entries(db_key: &str, kind: EntryFindKind) -> Result<EntryFindResult> {
+    main_content_action!(db_key, move |k: &KeepassFile| Ok(form_data::find_entries(k, kind)))
+}
+
 pub fn get_group_by_id(db_key: &str, group_uuid: &Uuid) -> Result<Group> {
     main_content_action!(db_key, move |k: &KeepassFile| {
         match k.root.group_by_id(group_uuid) {
