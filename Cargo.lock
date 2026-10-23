@@ -2130,6 +2130,7 @@ dependencies = [
  "argon2-sys",
  "base64",
  "botan",
+ "botan-sys",
  "cfg-if",
  "chbs",
  "chrono",

@@ -5,7 +5,9 @@ authors = ["jeyasankar"]
 edition = "2021"
 
 [dependencies]
-argon2-sys = "0.1.0"
+# Argon2 KDF reference C implementation. Botan is the default Argon2 backend;
+# enable the 'argon2-sys-kdf' feature to switch back to this one.
+argon2-sys = { version = "0.1.0", optional = true }
 
 secstr = "0.5.1"
 # Volatile, non-elidable zeroing of in-memory secrets. Used by the  
@@ -80,6 +82,10 @@ webpki-roots = "1.0"
 ## rusqlite = { version = "0.32.0", features = ["bundled"] }
 
 botan = {version = "0.14.0", features = ["vendored"] }
+# Direct FFI access is needed for Argon2 because botan's safe
+# derive_key_from_password takes a &str and the KDBX composite key is binary.
+# Keep this version in sync with the botan-sys version that botan depends on.
+botan-sys = "1.20260811.1"
 
 # Passkey / WebAuthn cryptography (shared across desktop and mobile)
 p256           = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
@@ -97,6 +103,9 @@ features = ["common-password"]
 [features]
 favicon = ["dep:reqwest", "dep:image", "dep:ico"]
 desktop-ssh-agent = []
+# Use argon2-sys instead of Botan for the Argon2 KDF. Also enables the
+# Botan vs argon2-sys output comparison tests in crypto::kdf
+argon2-sys-kdf = ["dep:argon2-sys"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(rust_analyzer)'] }
