@@ -261,45 +261,45 @@ pub mod entry_keyvalue_key {
 //#[allow(non_upper_case_globals)]
 #[allow(dead_code)]
 pub mod xml_element {
-    pub const KEEPASS_FILE: &[u8] = b"KeePassFile";
-    pub const META: &[u8] = b"Meta";
-    pub const ROOT: &[u8] = b"Root";
+    pub const KEEPASS_FILE: &str = "KeePassFile";
+    pub const META: &str = "Meta";
+    pub const ROOT: &str = "Root";
 
     //Meta
-    pub const GENERATOR: &[u8] = b"Generator";
-    pub const DATABASE_NAME: &[u8] = b"DatabaseName";
-    pub const DATABASE_NAME_CHANGED: &[u8] = b"DatabaseNameChanged"; //date time
-    pub const DATABASE_DESCRIPTION: &[u8] = b"DatabaseDescription";
-    pub const DATABASE_DESCRIPTION_CHANGED: &[u8] = b"DatabaseDescriptionChanged";
-    pub const SETTINGS_CHANGED: &[u8] = b"SettingsChanged";
+    pub const GENERATOR: &str = "Generator";
+    pub const DATABASE_NAME: &str = "DatabaseName";
+    pub const DATABASE_NAME_CHANGED: &str = "DatabaseNameChanged"; //date time
+    pub const DATABASE_DESCRIPTION: &str = "DatabaseDescription";
+    pub const DATABASE_DESCRIPTION_CHANGED: &str = "DatabaseDescriptionChanged";
+    pub const SETTINGS_CHANGED: &str = "SettingsChanged";
 
-    pub const DEFAULT_USER_NAME: &[u8] = b"DefaultUserName";
-    pub const DEFAULT_USER_NAME_CHANGED: &[u8] = b"DefaultUserNameChanged";
+    pub const DEFAULT_USER_NAME: &str = "DefaultUserName";
+    pub const DEFAULT_USER_NAME_CHANGED: &str = "DefaultUserNameChanged";
 
-    pub const MASTER_KEY_CHANGED: &[u8] = b"MasterKeyChanged";
-    pub const RECYCLE_BIN_ENABLED: &[u8] = b"RecycleBinEnabled";
+    pub const MASTER_KEY_CHANGED: &str = "MasterKeyChanged";
+    pub const RECYCLE_BIN_ENABLED: &str = "RecycleBinEnabled";
 
-    pub const RECYCLE_BIN_UUID: &[u8] = b"RecycleBinUUID";
-    pub const RECYCLE_BIN_CHANGED: &[u8] = b"RecycleBinChanged";
+    pub const RECYCLE_BIN_UUID: &str = "RecycleBinUUID";
+    pub const RECYCLE_BIN_CHANGED: &str = "RecycleBinChanged";
 
-    pub const ENTRY_TEMPLATE_GROUP: &[u8] = b"EntryTemplatesGroup";
-    pub const ENTRY_TEMPLATE_GROUP_CHANGED: &[u8] = b"EntryTemplatesGroupChanged";
+    pub const ENTRY_TEMPLATE_GROUP: &str = "EntryTemplatesGroup";
+    pub const ENTRY_TEMPLATE_GROUP_CHANGED: &str = "EntryTemplatesGroupChanged";
 
-    pub const HISTORY_MAX_ITEMS: &[u8] = b"HistoryMaxItems";
-    pub const MAINTENANCE_HISTORY_DAYS: &[u8] = b"MaintenanceHistoryDays";
-    pub const HISTORY_MAX_SIZE: &[u8] = b"HistoryMaxSize";
-    pub const LAST_SELECTED_GROUP: &[u8] = b"LastSelectedGroup";
+    pub const HISTORY_MAX_ITEMS: &str = "HistoryMaxItems";
+    pub const MAINTENANCE_HISTORY_DAYS: &str = "MaintenanceHistoryDays";
+    pub const HISTORY_MAX_SIZE: &str = "HistoryMaxSize";
+    pub const LAST_SELECTED_GROUP: &str = "LastSelectedGroup";
 
-    pub const MEMORY_PROTECTION: &[u8] = b"MemoryProtection";
-    pub const PROTECT_TITLE: &[u8] = b"ProtectTitle";
-    pub const PROTECT_USER_NAME: &[u8] = b"ProtectUserName";
-    pub const PROTECT_PASSWORD: &[u8] = b"ProtectPassword";
-    pub const PROTECT_URL: &[u8] = b"ProtectURL";
-    pub const PROTECT_NOTES: &[u8] = b"ProtectNotes";
+    pub const MEMORY_PROTECTION: &str = "MemoryProtection";
+    pub const PROTECT_TITLE: &str = "ProtectTitle";
+    pub const PROTECT_USER_NAME: &str = "ProtectUserName";
+    pub const PROTECT_PASSWORD: &str = "ProtectPassword";
+    pub const PROTECT_URL: &str = "ProtectURL";
+    pub const PROTECT_NOTES: &str = "ProtectNotes";
 
-    pub const CUSTOM_ICONS: &[u8] = b"CustomIcons";
-    pub const ICON: &[u8] = b"Icon";
-    pub const DATA: &[u8] = b"Data";
+    pub const CUSTOM_ICONS: &str = "CustomIcons";
+    pub const ICON: &str = "Icon";
+    pub const DATA: &str = "Data";
     // NAME and LAST_MODIFICATION_TIME are added in VERSION_41 of CUSTOM_ICONS
 
     // It seems, 'KeePass' removes an entry or group completely and writes its UUID
@@ -308,81 +308,81 @@ pub mod xml_element {
     // Gives the user an option later to empty recycle bin or undo
     // However, when groups or entries are deleted permanently, the uuids of those objectes
     // are added under DeletedObjects after removing the groups/entries content from db
-    pub const DELETED_OBJECTS: &[u8] = b"DeletedObjects";
-    pub const DELETED_OBJECT: &[u8] = b"DeletedObject";
-    pub const DELETION_TIME: &[u8] = b"DeletionTime";
+    pub const DELETED_OBJECTS: &str = "DeletedObjects";
+    pub const DELETED_OBJECT: &str = "DeletedObject";
+    pub const DELETION_TIME: &str = "DeletionTime";
 
     //Some Common tags
 
     //Custom Data
-    pub const CUSTOM_DATA: &[u8] = b"CustomData";
-    pub const ITEM: &[u8] = b"Item";
+    pub const CUSTOM_DATA: &str = "CustomData";
+    pub const ITEM: &str = "Item";
 
     //Times
-    pub const TIMES: &[u8] = b"Times";
-    pub const LAST_MODIFICATION_TIME: &[u8] = b"LastModificationTime";
-    pub const CREATION_TIME: &[u8] = b"CreationTime";
-    pub const LAST_ACCESS_TIME: &[u8] = b"LastAccessTime";
-    pub const EXPIRES: &[u8] = b"Expires";
-    pub const EXPIRY_TIME: &[u8] = b"ExpiryTime";
-    pub const LOCATION_CHANGED: &[u8] = b"LocationChanged";
-    pub const USAGE_COUNT: &[u8] = b"UsageCount";
+    pub const TIMES: &str = "Times";
+    pub const LAST_MODIFICATION_TIME: &str = "LastModificationTime";
+    pub const CREATION_TIME: &str = "CreationTime";
+    pub const LAST_ACCESS_TIME: &str = "LastAccessTime";
+    pub const EXPIRES: &str = "Expires";
+    pub const EXPIRY_TIME: &str = "ExpiryTime";
+    pub const LOCATION_CHANGED: &str = "LocationChanged";
+    pub const USAGE_COUNT: &str = "UsageCount";
 
     //pub const :&[u8]  = b"";
-    pub const NOTES: &[u8] = b"Notes";
-    pub const TAGS: &[u8] = b"Tags";
+    pub const NOTES: &str = "Notes";
+    pub const TAGS: &str = "Tags";
 
-    pub const GROUP: &[u8] = b"Group";
-    pub const UUID: &[u8] = b"UUID";
-    pub const NAME: &[u8] = b"Name";
-    pub const ICON_ID: &[u8] = b"IconID";
-    pub const LAST_TOP_VISIBLE_ENTRY: &[u8] = b"LastTopVisibleEntry";
-    pub const IS_EXPANDED: &[u8] = b"IsExpanded";
+    pub const GROUP: &str = "Group";
+    pub const UUID: &str = "UUID";
+    pub const NAME: &str = "Name";
+    pub const ICON_ID: &str = "IconID";
+    pub const LAST_TOP_VISIBLE_ENTRY: &str = "LastTopVisibleEntry";
+    pub const IS_EXPANDED: &str = "IsExpanded";
 
     //
 
     //Entry
-    pub const ENTRY: &[u8] = b"Entry";
-    pub const BINARY: &[u8] = b"Binary";
-    pub const STRING: &[u8] = b"String";
-    pub const KEY: &[u8] = b"Key";
-    pub const VALUE: &[u8] = b"Value"; //
-    pub const HISTORY: &[u8] = b"History";
-    pub const CUSTOM_ICON_UUID: &[u8] = b"CustomIconUUID";
+    pub const ENTRY: &str = "Entry";
+    pub const BINARY: &str = "Binary";
+    pub const STRING: &str = "String";
+    pub const KEY: &str = "Key";
+    pub const VALUE: &str = "Value"; //
+    pub const HISTORY: &str = "History";
+    pub const CUSTOM_ICON_UUID: &str = "CustomIconUUID";
 
     // AutoKey related
     // Entry level
-    pub const AUTO_TYPE: &[u8] = b"AutoType";
-    pub const ENABLED: &[u8] = b"Enabled";
+    pub const AUTO_TYPE: &str = "AutoType";
+    pub const ENABLED: &str = "Enabled";
     // empty means use the inherited default one (from group)
-    pub const DEFAULT_SEQUENCE: &[u8] = b"DefaultSequence";
+    pub const DEFAULT_SEQUENCE: &str = "DefaultSequence";
     // multiple association possible for an entry
-    pub const ASSOCIATION: &[u8] = b"Association";
-    pub const WINDOW: &[u8] = b"Window";
+    pub const ASSOCIATION: &str = "Association";
+    pub const WINDOW: &str = "Window";
     // KeystrokeSequence cab be empty empty. If so, use the entry's default sequence
-    pub const KEY_STROKE_SEQUENCE: &[u8] = b"KeystrokeSequence";
+    pub const KEY_STROKE_SEQUENCE: &str = "KeystrokeSequence";
 
     // <EnableAutoType>null</EnableAutoType> when 'Inherit from parent is diabled'
     // <EnableAutoType>true</EnableAutoType> when 'enable' is selected
 
-    pub const ENABLE_AUTO_TYPE: &[u8] = b"EnableAutoType"; // Group level ?
+    pub const ENABLE_AUTO_TYPE: &str = "EnableAutoType"; // Group level ?
 
     // <DefaultAutoTypeSequence/> when default parent's AutoTypeSequence is enabled
     // <DefaultAutoTypeSequence>{USERNAME}</DefaultAutoTypeSequence> when custom AutoTypeSequence is used
-    pub const DEFAULT_AUTO_TYPE_SEQUENCE: &[u8] = b"DefaultAutoTypeSequence"; // Group level
+    pub const DEFAULT_AUTO_TYPE_SEQUENCE: &str = "DefaultAutoTypeSequence"; // Group level
 
-    pub const DATA_TRANSFER_OBFUSCATION: &[u8] = b"DataTransferObfuscation"; // entry level - not used ?
+    pub const DATA_TRANSFER_OBFUSCATION: &str = "DataTransferObfuscation"; // entry level - not used ?
 
     //pub const KEEPASS_FILE_TAGS:&[&[u8]] = &[META,ROOT];
 }
 
 pub mod key_file_xml_element {
-    pub const KEY_FILE: &[u8] = b"KeyFile";
-    pub const KEY_FILE_META: &[u8] = b"Meta";
-    pub const KEY_FILE_VERSION: &[u8] = b"Version";
-    pub const KEY_FILE_KEY: &[u8] = b"Key";
-    pub const KEY_FILE_DATA: &[u8] = b"Data";
-    pub const KEY_FILE_DATA_HASH: &[u8] = b"Hash";
+    pub const KEY_FILE: &str = "KeyFile";
+    pub const KEY_FILE_META: &str = "Meta";
+    pub const KEY_FILE_VERSION: &str = "Version";
+    pub const KEY_FILE_KEY: &str = "Key";
+    pub const KEY_FILE_DATA: &str = "Data";
+    pub const KEY_FILE_DATA_HASH: &str = "Hash";
 }
 
 #[allow(dead_code)]
