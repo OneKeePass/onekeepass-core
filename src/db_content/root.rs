@@ -200,12 +200,14 @@ impl Root {
         }
     }
 
+    #[allow(dead_code)] // Retained for reference.
     pub fn delete_all_history_entries(&mut self) {
         for (_, entry) in self.all_entries.iter_mut() {
             entry.delete_history_entries();
         }
     }
 
+    #[allow(dead_code)] // Retained for reference.
     pub fn remove_all_binary_kvs_and_history_entries(&mut self) {
         for (_, entry) in self.all_entries.iter_mut() {
             entry.delete_history_entries();
@@ -218,6 +220,7 @@ impl Root {
     }
 
     // Finds the first entry that has a matching value in a given key field
+    #[allow(dead_code)] // Retained for reference.
     pub fn entry_by_matching_kv(&self, key: &str, value: &str) -> Option<&Entry> {
         // First match is returned
         self.all_entries.values().find(|e| {
@@ -229,6 +232,7 @@ impl Root {
         })
     }
 
+    #[allow(dead_code)] // Retained for reference.
     pub fn entry_by_matching_kv_mut(&mut self, key: &str, value: &str) -> Option<&mut Entry> {
         // First match is returned
         self.all_entries.values_mut().find(|e| {
@@ -260,6 +264,7 @@ impl Root {
         self.all_groups.values().find(|g| g.name == name)
     }
 
+    #[allow(dead_code)] // Retained for reference.
     pub fn group_by_name_mut(&mut self, name: &str) -> Option<&mut Group> {
         // Returns the first matching group
         let g_opt = self
@@ -398,6 +403,7 @@ impl Root {
     }
 
     /// Ensures that the special group such as recycle_bin_uuid is at the end of root's group listing
+    #[allow(dead_code)] // Retained for reference.
     pub fn adjust_special_groups_order(&mut self) {
         if let Some(root_grp) = self.all_groups.get_mut(&self.root_uuid) {
             root_grp.group_uuids.retain(|x| x != &self.recycle_bin_uuid);

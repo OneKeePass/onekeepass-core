@@ -35,6 +35,7 @@ struct RpInfo {
 struct UserInfo {
     id: String, // base64url-encoded bytes
     name: String,
+    #[allow(dead_code)] // Retained for reference.
     display_name: Option<String>,
 }
 
@@ -56,6 +57,7 @@ struct CreationOptions {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AllowCredential {
+    #[allow(dead_code)] // Retained for reference.
     id: String, // base64url
 }
 
@@ -65,6 +67,7 @@ struct RequestOptions {
     rp_id: Option<String>,
     challenge: String, // base64url
     #[serde(default)]
+    #[allow(dead_code)] // Retained for reference.
     allow_credentials: Vec<AllowCredential>,
 }
 
@@ -747,7 +750,7 @@ mod tests {
             .decode(result.authenticator_data_b64url.as_bytes())
             .unwrap();
         let expected_rp_hash = Sha256::digest(rp_id.as_bytes());
-        assert_eq!(&auth_data_bytes[..32], expected_rp_hash.as_slice());
+        assert_eq!(&auth_data_bytes[..32], &expected_rp_hash[..]);
     }
 
     #[test]

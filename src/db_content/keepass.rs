@@ -51,6 +51,7 @@ impl KeepassFile {
             .collect_favorite_entries(self.root.recycle_bin_uuid())
     }
 
+    #[allow(dead_code)] // Retained for reference.
     fn deleted_entry_uuids(&self) -> Vec<Uuid> {
         // TODO: Pass recycle bin group uuid from meta to root
         self.root.deleted_entry_uuids()

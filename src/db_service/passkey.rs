@@ -109,8 +109,9 @@ pub struct PasskeyStoreOutcome {
 // Private helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-// #[cfg(test)]
-use crate::db_content::{Entry, FieldDataType, KeyValue};
+use crate::db_content::Entry;
+#[cfg(test)]
+use crate::db_content::{FieldDataType, KeyValue};
 
 #[cfg(test)]
 fn make_passkey_kv(key: &str, value: &str, protected: bool) -> KeyValue {

@@ -6,7 +6,7 @@ use crate::db_service::entry_keyvalue_key as kv_key;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::db_service::error::{self, Error, Result};
+use crate::db_service::error::{Error, Result};
 
 use super::RemoteStorageType;
 
@@ -500,6 +500,7 @@ impl ConnectionConfigs {
     }
 
     // Not used anymore. Used till app version 0.18.0
+    #[allow(dead_code)] // Retained for reference.
     pub(crate) fn add_config(request: RemoteStorageTypeConfig) -> Result<()> {
         // Need to be in a block so that the config_store().lock() is released before next lock call
         {
@@ -580,6 +581,7 @@ impl ConnectionConfigs {
         }
     }
 
+    #[allow(dead_code)] // Retained for reference.
     fn internal_add_config<T: ConnectionId>(configs: &mut Vec<T>, m_config: T) {
         let found = configs
             .iter() // .iter_mut() for mut call

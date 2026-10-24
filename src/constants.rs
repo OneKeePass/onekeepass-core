@@ -15,7 +15,7 @@ pub const VERSION_20: u32 = 0x0002_0000;
 #[allow(dead_code)]
 pub const VD_VER: u16 = 0x0100;
 #[allow(dead_code)]
-pub const HEADER_BLK_IDX: u64 = ::std::u64::MAX;
+pub const HEADER_BLK_IDX: u64 = u64::MAX;
 #[allow(dead_code)]
 pub const SALSA20_IV: &[u8] = &[0xE8, 0x30, 0x09, 0x4B, 0x97, 0x20, 0x5D, 0x2A];
 #[allow(dead_code)]

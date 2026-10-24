@@ -97,6 +97,7 @@ pub(crate) fn create_entry(keepassfile: &mut KeepassFile, title: &str, group_uui
     entry
 }
 
+#[allow(dead_code)] // Retained for reference.
 pub(crate) fn delete_entry_permanently(keepassfile: &mut KeepassFile, entry_uuid: &Uuid) {
     // First move to recycle bin
     keepassfile
@@ -123,6 +124,7 @@ pub(crate) fn delete_group_permanently(keepassfile: &mut KeepassFile, group_uuid
         .unwrap();
 }
 
+#[allow(dead_code)] // Retained for reference.
 pub(crate) fn update_entry(
     keepassfile: &mut KeepassFile,
     entry: &mut Entry,

@@ -2,6 +2,7 @@ use crate::{
     constants,
     error::Result,
 };
+use log::debug;
 use serde::{Deserialize, Serialize};
 
 pub trait Kdf {
@@ -95,8 +96,6 @@ impl Kdf for Argon2Kdf {
 
         #[cfg(not(feature = "argon2-sys-kdf"))]
         {
-            use log::debug;
-
             debug!("BOTAN backend for argon2 transform_key is used...");
             botan_backend::transform_key(self, &composite_key)
         }
