@@ -2,7 +2,7 @@ use crate::{
     constants,
     error::Result,
 };
-use log::debug;
+use log;
 use serde::{Deserialize, Serialize};
 
 pub trait Kdf {
@@ -90,13 +90,13 @@ impl Kdf for Argon2Kdf {
     fn transform_key(&self, composite_key: Vec<u8>) -> Result<Vec<u8>> {
         #[cfg(feature = "argon2-sys-kdf")]
         {
-            debug!("argon2_sys_backend for argon2 transform_key is used...");
+            log::info!("argon2_sys_backend for argon2 transform_key is used...");
             argon2_sys_backend::transform_key(self, &composite_key)
         }
 
         #[cfg(not(feature = "argon2-sys-kdf"))]
         {
-            debug!("BOTAN backend for argon2 transform_key is used...");
+            log::info!("Botan backend for argon2 transform_key is used...");
             botan_backend::transform_key(self, &composite_key)
         }
     }

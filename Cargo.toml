@@ -86,13 +86,15 @@ botan = {version = "0.14.0", features = ["vendored"] }
 # Keep this version in sync with the botan-sys version that botan depends on.
 botan-sys = "1.20260811.1"
 
-# Passkey / WebAuthn cryptography (shared across desktop and mobile)
-p256           = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
-ed25519-dalek  = { version = "2", features = ["pkcs8", "rand_core"] }
-rsa            = { version = "0.9", features = ["sha2"] }
+# Passkey / WebAuthn cryptography (shared across desktop and mobile). Botan is the
+# default backend for passkey keys and signatures; enable the 'rustcrypto-passkey'
+# feature to switch back to the RustCrypto crates below.
 sha2           = "0.10"
 ciborium       = "0.2"
-rand_core      = { version = "0.6", features = ["getrandom"] }
+p256           = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"], optional = true }
+ed25519-dalek  = { version = "2", features = ["pkcs8", "rand_core"], optional = true }
+rsa            = { version = "0.9", features = ["sha2"], optional = true }
+rand_core      = { version = "0.6", features = ["getrandom"], optional = true }
 
 
 [dependencies.passwords]
@@ -105,6 +107,9 @@ desktop-ssh-agent = []
 # Use argon2-sys instead of Botan for the Argon2 KDF. Also enables the
 # Botan vs argon2-sys output comparison tests in crypto::kdf
 argon2-sys-kdf = ["dep:argon2-sys"]
+# Use the RustCrypto crates instead of Botan for passkey key generation and signing. Also
+# enables the Botan vs RustCrypto cross-compatibility tests in passkey_crypto
+rustcrypto-passkey = ["dep:p256", "dep:ed25519-dalek", "dep:rsa", "dep:rand_core"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(rust_analyzer)'] }
