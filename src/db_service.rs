@@ -193,6 +193,7 @@ impl Default for KdbxContext {
 
 impl KdbxContext {
     // Add the newly created KdbxFile to cache for UI use
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux", test))]
     fn insert(kdbx_file: KdbxFile) {
         let db_key = kdbx_file.get_database_file_name().to_string();
         let mut kdbx_context = KdbxContext::default();

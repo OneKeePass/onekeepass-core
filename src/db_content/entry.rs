@@ -292,6 +292,8 @@ impl Entry {
         self
     }
 
+    // Used by desktop CSV import; retained on mobile for reference.
+    #[cfg_attr(any(target_os = "ios", target_os = "android"), allow(dead_code))]
     pub(crate) fn set_tags(&mut self, tags: &str) -> &mut Self {
         self.tags = tags.into();
         self
@@ -315,6 +317,8 @@ impl Entry {
     }
 
     // An Entry with default login entry type
+    // Used by desktop CSV import; retained on mobile for reference.
+    #[cfg_attr(any(target_os = "ios", target_os = "android"), allow(dead_code))]
     pub(crate) fn new_login_entry(parent_group_uuid: Option<&Uuid>) -> Self {
         let entry_type_uuid = crate::build_uuid!(crate::constants::entry_type_uuid::LOGIN);
         Entry::new_blank_entry_by_type_id(&entry_type_uuid, None, parent_group_uuid)
@@ -1104,6 +1108,8 @@ impl KeyValue {
         }
     }
 
+    // Used by desktop CSV import; retained on mobile for reference.
+    #[cfg_attr(any(target_os = "ios", target_os = "android"), allow(dead_code))]
     pub(crate) fn from(key: String, value: String, protected: bool) -> Self {
         KeyValue {
             key,

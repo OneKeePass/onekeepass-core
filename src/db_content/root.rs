@@ -259,6 +259,8 @@ impl Root {
         self.all_groups.get_mut(group_uuid)
     }
 
+    // Used by desktop CSV import; retained on mobile for reference.
+    #[cfg_attr(any(target_os = "ios", target_os = "android"), allow(dead_code))]
     pub fn group_by_name(&self, name: &str) -> Option<&Group> {
         // Returns the first matching group
         self.all_groups.values().find(|g| g.name == name)

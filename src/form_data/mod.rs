@@ -7,7 +7,9 @@ pub(crate) mod parsing;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{db::KdbxFile, db_content::Meta, util};
+use crate::{db::KdbxFile, db_content::Meta};
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+use crate::util;
 
 pub use self::categories::*;
 pub use self::entry::*;
