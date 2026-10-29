@@ -323,6 +323,15 @@ fn is_login_type_entry(entry: &Entry) -> bool {
     entry.entry_field.entry_type.uuid == crate::build_uuid!(entry_type_uuid::LOGIN)
 }
 
+// The Login type defines the Passkey Details fields, so any Login entry saved through
+// the entry form carries them with empty values. A field that is present but blank
+// is treated as absent, so such entries are not taken to hold a passkey
+fn non_empty_kv_value(entry: &Entry, name: &str) -> Option<String> {
+    entry
+        .find_kv_field_value(name)
+        .filter(|v| !v.trim().is_empty())
+}
+
 // Searches all provided databases for passkey entries matching `rp_id`.
 // If `allow_credential_ids` is non-empty, further filters by credential ID.
 pub fn find_matching_passkeys(
@@ -341,11 +350,11 @@ pub fn find_matching_passkeys(
                     if !is_login_type_entry(entry) {
                         return None;
                     }
-                    let stored_rp_id = entry.find_kv_field_value(KPEX_PASSKEY_RELYING_PARTY)?;
+                    let stored_rp_id = non_empty_kv_value(entry, KPEX_PASSKEY_RELYING_PARTY)?;
                     if stored_rp_id != rp_id {
                         return None;
                     }
-                    let cred_id = entry.find_kv_field_value(KPEX_PASSKEY_CREDENTIAL_ID)?;
+                    let cred_id = non_empty_kv_value(entry, KPEX_PASSKEY_CREDENTIAL_ID)?;
                     if !allow_credential_ids.is_empty() && !allow_credential_ids.contains(&cred_id)
                     {
                         return None;
@@ -389,8 +398,8 @@ pub fn get_all_passkeys(db_keys: &[String]) -> Result<Vec<PasskeySummary>> {
                     if !is_login_type_entry(entry) {
                         return None;
                     }
-                    let rp_id = entry.find_kv_field_value(KPEX_PASSKEY_RELYING_PARTY)?;
-                    let cred_id = entry.find_kv_field_value(KPEX_PASSKEY_CREDENTIAL_ID)?;
+                    let rp_id = non_empty_kv_value(entry, KPEX_PASSKEY_RELYING_PARTY)?;
+                    let cred_id = non_empty_kv_value(entry, KPEX_PASSKEY_CREDENTIAL_ID)?;
                     let username = entry
                         .find_kv_field_value(KPEX_PASSKEY_USERNAME)
                         .unwrap_or_default();
@@ -952,6 +961,47 @@ mod tests {
         assert!(
             results.is_empty(),
             "a non-Login entry with passkey fields must not be returned"
+        );
+
+        teardown_test_db(db_key);
+    }
+
+    #[test]
+    fn test_get_all_passkeys_ignores_login_entry_with_blank_passkey_fields() {
+        use crate::constants::entry_keyvalue_key::TITLE;
+        use crate::constants::entry_type_uuid;
+        use crate::db_content::Entry;
+
+        let db_key = "pk_test_blank_fields_guard";
+        setup_test_db(db_key, "PasskeyTestDB");
+
+        // A Login entry saved through the entry form stores the Passkey Details
+        // fields with empty values even when it holds no passkey
+        kp_service::call_main_content_mut_action(db_key, |k| {
+            let root_uuid = k.root.root_uuid();
+            let login_type_uuid = crate::build_uuid!(entry_type_uuid::LOGIN);
+            let mut login =
+                Entry::new_blank_entry_by_type_id(&login_type_uuid, None, Some(&root_uuid));
+            login.entry_field.update_value(TITLE, "Plain Login");
+            for name in [
+                KPEX_PASSKEY_RELYING_PARTY,
+                KPEX_PASSKEY_CREDENTIAL_ID,
+                KPEX_PASSKEY_USERNAME,
+                KPEX_PASSKEY_USER_HANDLE,
+            ] {
+                login
+                    .entry_field
+                    .insert_key_value(make_passkey_kv(name, "", false));
+            }
+            k.insert_entry(login)?;
+            Ok(())
+        })
+        .expect("inserting the login entry should succeed");
+
+        let db_keys = vec![db_key.to_string()];
+        assert!(
+            get_all_passkeys(&db_keys).unwrap().is_empty(),
+            "a Login entry with blank passkey fields must not be listed as a passkey"
         );
 
         teardown_test_db(db_key);
