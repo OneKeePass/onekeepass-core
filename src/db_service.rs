@@ -745,8 +745,9 @@ pub fn search_term(db_key: &str, term: &str) -> Result<EntrySearchResult> {
             entry_items: vec![],
         };
 
-        // Use collect_all_active_entries instead of get_all_entries ?
-        for e in k.get_all_entries(true) {
+        // get_all_entries(true) skips only the recycle bin's direct children, so entries
+        // inside a deleted group (a group moved to the recycle bin) would still match
+        for e in k.collect_all_active_entries() {
             if searcher::term_search_all_entry_fields(term, e)? {
                 let (t1, t2) = extract_entry_titles(e);
                 search_result.entry_items.push(EntrySummary {
