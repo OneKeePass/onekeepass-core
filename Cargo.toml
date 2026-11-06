@@ -1,11 +1,13 @@
 [package]
 name = "onekeepass-core"
-version = "0.25.1"
+version = "0.26.0"
 authors = ["jeyasankar"]
 edition = "2021"
 
 [dependencies]
-argon2-sys = "0.1.0"
+# Argon2 KDF reference C implementation. Botan is the default Argon2 backend;
+# enable the 'argon2-sys-kdf' feature to switch back to this one.
+argon2-sys = { version = "0.1.0", optional = true }
 
 secstr = "0.5.1"
 # Volatile, non-elidable zeroing of in-memory secrets. Used by the  
@@ -32,8 +34,7 @@ chrono-tz = "0.9.0"
 flate2 = {version = "1.1", features = ["zlib"]} 
 
 slice_as_array = "1.1.0"
-log = "0.4.28"
-hex-literal = "0.3.4"
+log = "0.4.34"
 hex = "0.4.3"
 once_cell = "1"
 thiserror = "2.0.17"
@@ -49,7 +50,7 @@ cfg-if = "1.0"
 
 enum_dispatch = "0.3.13"
 
-quick-xml = "0.37.5"
+quick-xml = "0.42.0"
 
 chbs = "0.1.1"
 nom = "7.1.3"
@@ -79,15 +80,21 @@ webpki-roots = "1.0"
 
 ## rusqlite = { version = "0.32.0", features = ["bundled"] }
 
-botan = {version = "0.11.1", features = ["vendored"] }
+botan = {version = "0.14.0", features = ["vendored"] }
+# Direct FFI access is needed for Argon2 because botan's safe
+# derive_key_from_password takes a &str and the KDBX composite key is binary.
+# Keep this version in sync with the botan-sys version that botan depends on.
+botan-sys = "1.20260811.1"
 
-# Passkey / WebAuthn cryptography (shared across desktop and mobile)
-p256           = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
-ed25519-dalek  = { version = "2", features = ["pkcs8", "rand_core"] }
-rsa            = { version = "0.9", features = ["sha2"] }
+# Passkey / WebAuthn cryptography (shared across desktop and mobile). Botan is the
+# default backend for passkey keys and signatures; enable the 'rustcrypto-passkey'
+# feature to switch back to the RustCrypto crates below.
 sha2           = "0.10"
 ciborium       = "0.2"
-rand_core      = { version = "0.6", features = ["getrandom"] }
+p256           = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"], optional = true }
+ed25519-dalek  = { version = "2", features = ["pkcs8", "rand_core"], optional = true }
+rsa            = { version = "0.9", features = ["sha2"], optional = true }
+rand_core      = { version = "0.6", features = ["getrandom"], optional = true }
 
 
 [dependencies.passwords]
@@ -97,6 +104,12 @@ features = ["common-password"]
 [features]
 favicon = ["dep:reqwest", "dep:image", "dep:ico"]
 desktop-ssh-agent = []
+# Use argon2-sys instead of Botan for the Argon2 KDF. Also enables the
+# Botan vs argon2-sys output comparison tests in crypto::kdf
+argon2-sys-kdf = ["dep:argon2-sys"]
+# Use the RustCrypto crates instead of Botan for passkey key generation and signing. Also
+# enables the Botan vs RustCrypto cross-compatibility tests in passkey_crypto
+rustcrypto-passkey = ["dep:p256", "dep:ed25519-dalek", "dep:rsa", "dep:rand_core"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(rust_analyzer)'] }

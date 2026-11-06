@@ -292,6 +292,8 @@ impl Entry {
         self
     }
 
+    // Used by desktop CSV import; retained on mobile for reference.
+    #[cfg_attr(any(target_os = "ios", target_os = "android"), allow(dead_code))]
     pub(crate) fn set_tags(&mut self, tags: &str) -> &mut Self {
         self.tags = tags.into();
         self
@@ -315,6 +317,8 @@ impl Entry {
     }
 
     // An Entry with default login entry type
+    // Used by desktop CSV import; retained on mobile for reference.
+    #[cfg_attr(any(target_os = "ios", target_os = "android"), allow(dead_code))]
     pub(crate) fn new_login_entry(parent_group_uuid: Option<&Uuid>) -> Self {
         let entry_type_uuid = crate::build_uuid!(crate::constants::entry_type_uuid::LOGIN);
         Entry::new_blank_entry_by_type_id(&entry_type_uuid, None, parent_group_uuid)
@@ -499,6 +503,65 @@ impl Entry {
         for e in &mut self.history.entries {
             e.set_attachment_hashes(attachment_hash_indexed);
         }
+    }
+
+    // Approximate data size in bytes: UTF-8 bytes of the field names and values, tags,
+    // auto type sequences and custom data, plus the attachment bytes, plus the same for
+    // every history entry. A history entry repeating an attachment counts it again even
+    // though the file stores that binary once - this follows how KeePass reports entry size
+    pub(crate) fn data_size(&self) -> u64 {
+        let fields: u64 = self
+            .entry_field
+            .get_key_values()
+            .iter()
+            .map(|kv| (kv.key.len() + kv.value.len()) as u64)
+            .sum();
+
+        let attachments: u64 = self
+            .binary_key_values
+            .iter()
+            .map(|b| (b.key.len() + b.data_size) as u64)
+            .sum();
+
+        let auto_type = self.auto_type.default_sequence.as_ref().map_or(0, |s| s.len())
+            + self
+                .auto_type
+                .associations
+                .iter()
+                .map(|a| a.window.len() + a.key_stroke_sequence.as_ref().map_or(0, |s| s.len()))
+                .sum::<usize>();
+
+        let history: u64 = self.history.entries.iter().map(|e| e.data_size()).sum();
+
+        fields
+            + attachments
+            + self.tags.len() as u64
+            + auto_type as u64
+            + self.custom_data.data_size()
+            + history
+    }
+
+    pub(crate) fn attachment_count(&self) -> usize {
+        self.binary_key_values.len()
+    }
+
+    pub(crate) fn history_count(&self) -> usize {
+        self.history.entries.len()
+    }
+
+    // A passkey can be stored on an entry of any entry type, so the credential id field
+    // is what marks the entry as having one
+    pub(crate) fn has_passkey(&self) -> bool {
+        self.entry_field
+            .find_key_value(KPEX_PASSKEY_CREDENTIAL_ID)
+            .is_some_and(|kv| !kv.value.is_empty())
+    }
+
+    // Only fields holding a parseable otp url count - see parse_all_otp_fields
+    pub(crate) fn has_otp(&self) -> bool {
+        self.parsed_otp_values
+            .as_ref()
+            .is_some_and(|m| !m.is_empty())
     }
 
     // Memory-security lock: volatile-zero this entry's field values and all
@@ -1045,6 +1108,8 @@ impl KeyValue {
         }
     }
 
+    // Used by desktop CSV import; retained on mobile for reference.
+    #[cfg_attr(any(target_os = "ios", target_os = "android"), allow(dead_code))]
     pub(crate) fn from(key: String, value: String, protected: bool) -> Self {
         KeyValue {
             key,
@@ -1269,6 +1334,63 @@ mod tests {
     fn entry_new_has_empty_history() {
         let e = Entry::new();
         assert!(e.histories().is_empty());
+    }
+
+    // Entry::data_size
+
+    fn attachment(name: &str, size: usize) -> BinaryKeyValue {
+        BinaryKeyValue {
+            key: name.into(),
+            value: String::default(),
+            index_ref: 0,
+            data_hash: 0,
+            data_size: size,
+        }
+    }
+
+    #[test]
+    fn data_size_counts_field_names_values_and_tags() {
+        let mut e = Entry::new();
+        e.entry_field.insert_key_value(make_kv("Title", "Bank", false));
+        e.tags = "work".into();
+        // "Title" + "Bank" + "work"
+        assert_eq!(e.data_size(), 5 + 4 + 4);
+    }
+
+    #[test]
+    fn data_size_uses_utf8_bytes() {
+        let mut e = Entry::new();
+        // "é" is 2 bytes and "日本" is 6 bytes in UTF-8
+        e.entry_field.insert_key_value(make_kv("Notes", "é日本", false));
+        assert_eq!(e.data_size(), 5 + 2 + 6);
+    }
+
+    #[test]
+    fn data_size_counts_attachment_name_and_bytes() {
+        let mut e = Entry::new();
+        e.binary_key_values.push(attachment("a.pdf", 1000));
+        assert_eq!(e.data_size(), 5 + 1000);
+    }
+
+    #[test]
+    fn data_size_counts_attachment_again_in_each_history_entry() {
+        let mut e = Entry::new();
+        e.binary_key_values.push(attachment("a.pdf", 1000));
+        for _ in 0..2 {
+            let mut h = Entry::new();
+            h.binary_key_values.push(attachment("a.pdf", 1000));
+            e.history.entries.push(h);
+        }
+        assert_eq!(e.data_size(), 3 * (5 + 1000));
+    }
+
+    #[test]
+    fn counts_and_flags_of_a_new_entry() {
+        let e = Entry::new();
+        assert_eq!(e.attachment_count(), 0);
+        assert_eq!(e.history_count(), 0);
+        assert!(!e.has_passkey());
+        assert!(!e.has_otp());
     }
 
     // Entry::list_otp_token_data - which single otp field represents an entry on a list row

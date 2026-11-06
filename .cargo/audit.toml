@@ -13,4 +13,12 @@ ignore = [
     # exposed as a queryable network timing oracle, so practical risk is low.
     # Revisit when RustCrypto ships a constant-time release.
     "RUSTSEC-2023-0071",
+
+    # RUSTSEC-2026-0387 — timing variability in `crypto-bigint`. The patched 0.7.6+ is
+    # already resolved for the russh path. The remaining crypto-bigint 0.5.5 comes only
+    # from p256 0.13, which is compiled only with the optional 'rustcrypto-passkey'
+    # feature; default builds use Botan for passkeys and do not include it. It stays in
+    # Cargo.lock because the lockfile records optional dependencies.
+    # Remove this entry if the RustCrypto passkey backend is dropped or moved to p256 0.14.
+    "RUSTSEC-2026-0387",
 ]

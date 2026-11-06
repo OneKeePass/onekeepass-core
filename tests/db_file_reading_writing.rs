@@ -163,7 +163,6 @@ fn verify_entry_1() {
 
     let entry_form = get_entry_form_data_by_id(db_key, &entry_uuid);
     assert!(entry_form.is_ok());
-    let entry_form = entry_form.unwrap();
-
+    //let entry_form = entry_form.unwrap();
     //println!("entry_form is {:?}",entry_form);
 }

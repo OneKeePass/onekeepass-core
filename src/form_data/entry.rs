@@ -868,34 +868,36 @@ impl EntrySummary {
         kp: &'a KeepassFile,
         entry_category: &'a categories::EntryCategory,
     ) -> Vec<EntrySummary> {
-        let entries: Vec<&Entry> = categories::entry_by_category(kp, entry_category);
-        let mut summary_list: Vec<EntrySummary> = vec![];
-        let title_upper = TITLE.to_uppercase();
-        for e in entries {
-            let parsed_fields = parsing::EntryPlaceHolderParser::resolve_place_holders(&kp.root, e);
-            let title = parsed_fields
-                .get(&title_upper)
-                .map_or_else(|| e.find_kv_field_value(TITLE), |s| Some(s.to_string()));
+        categories::entry_by_category(kp, entry_category)
+            .into_iter()
+            .map(|e| EntrySummary::from_entry(kp, e))
+            .collect()
+    }
 
-            let secondary_title = EntrySummary::secondary_title(e, &parsed_fields);
+    // Summary of an entry as shown on a list row, with any placeholders in the titles resolved
+    pub(crate) fn from_entry(kp: &KeepassFile, e: &Entry) -> EntrySummary {
+        let parsed_fields = parsing::EntryPlaceHolderParser::resolve_place_holders(&kp.root, e);
+        let title = parsed_fields
+            .get(&TITLE.to_uppercase())
+            .map_or_else(|| e.find_kv_field_value(TITLE), |s| Some(s.to_string()));
 
-            summary_list.push(Self {
-                uuid: e.uuid.to_string(),
-                parent_group_uuid: e.parent_group_uuid(),
-                title,
-                secondary_title,
-                entry_type_name: e.entry_field.entry_type.name.clone(),
-                entry_type_uuid: e.entry_field.entry_type.uuid.to_string(),
-                icon_id: e.icon_id,
-                custom_icon_uuid: e.custom_icon_uuid.map(|u| u.to_string()),
-                history_index: None,
-                #[allow(deprecated)]
-                modified_time: Some(e.times.last_modification_time.timestamp()),
-                #[allow(deprecated)]
-                created_time: Some(e.times.creation_time.timestamp()),
-            });
+        let secondary_title = EntrySummary::secondary_title(e, &parsed_fields);
+
+        EntrySummary {
+            uuid: e.uuid.to_string(),
+            parent_group_uuid: e.parent_group_uuid(),
+            title,
+            secondary_title,
+            entry_type_name: e.entry_field.entry_type.name.clone(),
+            entry_type_uuid: e.entry_field.entry_type.uuid.to_string(),
+            icon_id: e.icon_id,
+            custom_icon_uuid: e.custom_icon_uuid.map(|u| u.to_string()),
+            history_index: None,
+            #[allow(deprecated)]
+            modified_time: Some(e.times.last_modification_time.timestamp()),
+            #[allow(deprecated)]
+            created_time: Some(e.times.creation_time.timestamp()),
         }
-        summary_list
     }
 
     // pub fn entry_summary_data(entries: Vec<&Entry>) -> Vec<EntrySummary> {

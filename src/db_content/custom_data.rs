@@ -36,6 +36,14 @@ impl CustomData {
         self.items.remove(key)
     }
 
+    // UTF-8 bytes of all keys and values - used for the entry size estimate
+    pub(crate) fn data_size(&self) -> u64 {
+        self.items
+            .values()
+            .map(|i| (i.key.len() + i.value.len()) as u64)
+            .sum()
+    }
+
     fn _insert_items(&mut self, items: Vec<Item>) {
         // self.items.extend(items.iter().map( |i| (i.key.clone(),i.clone())) );
         // The above extend call based also will work

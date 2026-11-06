@@ -42,6 +42,8 @@ impl Group {
         &self.name
     }
 
+    // Used by desktop CSV import; retained on mobile for reference.
+    #[cfg_attr(any(target_os = "ios", target_os = "android"), allow(dead_code))]
     pub(crate) fn set_name(&mut self, name: &str) -> &mut Self {
         self.name = name.to_string();
         self

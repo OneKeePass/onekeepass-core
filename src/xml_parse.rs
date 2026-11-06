@@ -39,7 +39,7 @@ macro_rules! read_tags {
                 Ok(Event::Start(ref e)) => {
                     match e.name().as_ref() {
                         $($start_tag => {
-                            let content = $self.reader.read_text(QName($start_tag))?;
+                            let content = $self.reader.read_text(QName($start_tag))?.into_inner();
                             $start_tag_action(content.to_string(),&mut e.attributes(),&mut $self.stream_cipher);
                         }
                         )*
@@ -88,16 +88,16 @@ macro_rules! read_tags {
                     break;
                 }
                 Ok(Event::End(ref e)) if e.name().as_ref() != $end_tag => {
-                    let ep = std::str::from_utf8($end_tag);
+                    let ep = $end_tag;
                     return Err(Error::XmlReadingFailed(format!("Found unexpected end tag {:?} when only expected end tag is {:?}",e,ep)));
                 }
                 Ok(Event::Eof) => {
-                    let ep = std::str::from_utf8($end_tag);
+                    let ep = $end_tag;
                     return Err(Error::XmlReadingFailed(format!("Reached end before seeing the end tag {:?}", ep)));
                 }
                 Ok(ref x) => {
                     //TODO: Log any other events for debugging
-                    let ep = std::str::from_utf8($end_tag);
+                    let ep = $end_tag;
                     println!("Unhandled event {:?} before seeing the end tag {:?}", x,ep);
                 }
                 Err(e) => {
@@ -108,7 +108,7 @@ macro_rules! read_tags {
     };
 }
 
-fn skip_tag<B: BufRead>(tag: &[u8], reader: &mut QuickXmlReader<B>) -> Result<()> {
+fn skip_tag<B: BufRead>(tag: &str, reader: &mut QuickXmlReader<B>) -> Result<()> {
     let mut buf = vec![];
     reader.read_to_end_into(QName(tag), &mut buf)?;
     Ok(())
@@ -222,6 +222,7 @@ impl<'a> XmlReader<'a> {
                 Ok(Event::DocType(_)) => {}
                 Ok(Event::PI(_)) => {}
                 Ok(Event::Text(_)) => {}
+                Ok(Event::GeneralRef(_)) => {}
                 Ok(Event::Start(ref e)) => {
                     // if !xml_decl_available {
                     //     return Err(Error::XmlReadingFailed(format!(
@@ -239,7 +240,7 @@ impl<'a> XmlReader<'a> {
                             //debug!("MAIN: in match {:?} KEEPASS_FILE", std::str::from_utf8(KEEPASS_FILE).unwrap());
                             return Err(Error::XmlReadingFailed(format!(
                                 "Unexpected starting tag {:?}",
-                                std::str::from_utf8(x)
+                                x
                             )));
                         }
                     }
@@ -806,13 +807,13 @@ fn is_value_protected(attributes: &mut Attributes) -> bool {
     if !v.is_empty() {
         match v.pop() {
             Some(Attribute {
-                key: QName(b"Protected"),
+                key: QName("Protected"),
                 value: x,
             }) => {
                 //debug!("!!!!!! in fn attributes of Value are {:?}",v);
                 if let std::borrow::Cow::Borrowed(a) = x {
                     //debug!("@@@@ a is {:?}",std::str::from_utf8(a).ok());
-                    if b"True" == a {
+                    if "True" == a {
                         protected = true;
                     }
                 }
@@ -840,13 +841,13 @@ fn attachment_ref_index(attributes: &mut Attributes) -> i32 {
     if !v.is_empty() {
         match v.pop() {
             Some(Attribute {
-                key: QName(b"Ref"),
+                key: QName("Ref"),
                 value: x,
             }) => {
                 //debug!("!!!!!! in fn attributes of Value are {:?}",v);
                 if let std::borrow::Cow::Borrowed(a) = x {
                     //debug!("@@@@ a is {:?}",std::str::from_utf8(a).ok());
-                    if let Some(i) = std::str::from_utf8(a).ok() {
+                    if let Some(i) = Some(a) {
                         if let Some(i) = i.parse::<i32>().ok() {
                             ref_index = i;
                         }
@@ -884,7 +885,7 @@ macro_rules! write_tags {
         // $txt should be evaluated once and reuse. Otherwise it will be evaluated
         // each time it is used
         $( let val = &$txt; // $txt evaluates to a String
-            let name_of_tag  = std::str::from_utf8($tag_name)?;
+            let name_of_tag  = $tag_name;
             if val.is_empty() {
                 $self.writer.write_event(Event::Empty(BytesStart::new(name_of_tag)))?;
             } else {
@@ -906,7 +907,7 @@ macro_rules! write_tags_or_skip_empty {
         // each time it is used
         $( let val = &$txt; // $txt evaluates to a String
             if !val.is_empty() {
-                let name_of_tag  = std::str::from_utf8($tag_name)?;
+                let name_of_tag  = $tag_name;
                 $self.writer.write_event(Event::Start(BytesStart::new(name_of_tag)))?;
                 // Creates a new BytesText from a string. The string is expected not to be escaped
                 // quick_xml escapes the text content internally
@@ -926,7 +927,7 @@ macro_rules! write_opt_val_tags_or_skip {
         // each time it is used
         $( if let Some(ref val ) = $txt {
                 // $txt evaluates to an Option
-                let name_of_tag  = std::str::from_utf8($tag_name)?;
+                let name_of_tag  = $tag_name;
                 $self.writer.write_event(Event::Start(BytesStart::new(name_of_tag)))?;
                 // Creates a new BytesText from a string. The string is expected not to be escaped
                 // quick_xml escapes the text content internally
@@ -939,7 +940,7 @@ macro_rules! write_opt_val_tags_or_skip {
 
 macro_rules! write_parent_child_tags {
     ($self:ident, $parent_tag:expr, $($tag_name:expr, $txt:expr),*) => {
-        let name_of_paren_tag  = std::str::from_utf8($parent_tag)?;
+        let name_of_paren_tag  = $parent_tag;
         $self.writer.write_event(Event::Start(BytesStart::new(name_of_paren_tag)))?;
         write_tags!($self, $($tag_name, $txt),*);
         $self.writer.write_event(Event::End(BytesEnd::new(name_of_paren_tag)))?;
@@ -949,7 +950,7 @@ macro_rules! write_parent_child_tags {
 macro_rules! write_tags_with_attributes {
     ($self:ident, $($tag_name:expr, $attrs:expr,$txt:expr),*) => {
         $(
-            let name_of_tag  = std::str::from_utf8($tag_name)?;
+            let name_of_tag  = $tag_name;
             let mut my_element = BytesStart::new(name_of_tag);
             for a in $attrs.iter() {
                 my_element.push_attribute(*a);
@@ -964,7 +965,7 @@ macro_rules! write_tags_with_attributes {
 
 macro_rules! write_parent_child_with_attributes {
     ($self:ident, $parent_tag:expr, $($tag_name:expr, $attrs:expr,$txt:expr),*) => {
-        let name_of_paren_tag  = std::str::from_utf8($parent_tag)?;
+        let name_of_paren_tag  = $parent_tag;
         $self.writer.write_event(Event::Start(BytesStart::new(name_of_paren_tag)))?;
         write_tags_with_attributes!($self, $($tag_name, $attrs,$txt),*);
         $self.writer.write_event(Event::End(BytesEnd::new(name_of_paren_tag)))?;
@@ -997,7 +998,7 @@ impl<W: Write> XmlWriter<W> {
             return Ok(());
         }
 
-        let deleted_objects_tags = std::str::from_utf8(DELETED_OBJECTS)?;
+        let deleted_objects_tags = DELETED_OBJECTS;
         self.writer
             .write_event(Event::Start(BytesStart::new(deleted_objects_tags)))?;
 
@@ -1016,7 +1017,7 @@ impl<W: Write> XmlWriter<W> {
     }
 
     fn write_meta(&mut self, keepass_file: &KeepassFile) -> Result<()> {
-        let meta_tag = std::str::from_utf8(META)?;
+        let meta_tag = META;
         self.writer
             .write_event(Event::Start(BytesStart::new(meta_tag)))?;
 
@@ -1070,7 +1071,7 @@ impl<W: Write> XmlWriter<W> {
             return Ok(());
         }
 
-        let custom_icons_tag = std::str::from_utf8(CUSTOM_ICONS)?;
+        let custom_icons_tag = CUSTOM_ICONS;
         self.writer
             .write_event(Event::Start(BytesStart::new(custom_icons_tag)))?;
         for icon in custom_icons.icons.iter() {
@@ -1095,7 +1096,7 @@ impl<W: Write> XmlWriter<W> {
             return Ok(());
         }
 
-        let custom_data_tag = std::str::from_utf8(CUSTOM_DATA)?;
+        let custom_data_tag = CUSTOM_DATA;
         self.writer
             .write_event(Event::Start(BytesStart::new(custom_data_tag)))?;
 
@@ -1125,7 +1126,7 @@ impl<W: Write> XmlWriter<W> {
     }
 
     fn write_group(&mut self, group_uuid: &uuid::Uuid, root: &Root) -> Result<()> {
-        let group_tag = std::str::from_utf8(GROUP)?;
+        let group_tag = GROUP;
         if let Some(group) = root.group_by_id(group_uuid) {
             self.writer
                 .write_event(Event::Start(BytesStart::new(group_tag)))?;
@@ -1178,7 +1179,7 @@ impl<W: Write> XmlWriter<W> {
 
     // Writes the AutoType tag and its children
     fn write_entry_auto_type(&mut self, auto_type: &AutoType) -> Result<()> {
-        let tag_element = std::str::from_utf8(AUTO_TYPE)?;
+        let tag_element = AUTO_TYPE;
         self.writer
             .write_event(Event::Start(BytesStart::new(tag_element)))?;
         write_tags! { self,
@@ -1205,7 +1206,7 @@ impl<W: Write> XmlWriter<W> {
         //let temp_title = entry.entry_field.find_key_value("Title");
         //debug!("Start of writing the entry with Title {:?}", temp_title);
 
-        let tag_element = std::str::from_utf8(ENTRY)?;
+        let tag_element = ENTRY;
         self.writer
             .write_event(Event::Start(BytesStart::new(tag_element)))?;
 
@@ -1272,7 +1273,7 @@ impl<W: Write> XmlWriter<W> {
 
         // We need to exclude the History tag while writing the child Entry tag that comes under the History tag
         if !in_history {
-            let history_tag_element = std::str::from_utf8(HISTORY)?;
+            let history_tag_element = HISTORY;
             self.writer
                 .write_event(Event::Start(BytesStart::new(history_tag_element)))?;
             for e in entry.history.entries.iter() {
@@ -1305,7 +1306,7 @@ impl<W: Write> XmlWriter<W> {
     }
 
     fn write_root(&mut self, kp: &KeepassFile) -> Result<()> {
-        let tag_element = std::str::from_utf8(ROOT)?;
+        let tag_element = ROOT;
         self.writer
             .write_event(Event::Start(BytesStart::new(tag_element)))?;
         self.write_group(&kp.root.root_uuid(), &kp.root)?;
@@ -1324,7 +1325,7 @@ impl<W: Write> XmlWriter<W> {
             Some("yes"),
         )))?;
 
-        let tag_element = std::str::from_utf8(KEEPASS_FILE)?;
+        let tag_element = KEEPASS_FILE;
 
         self.writer
             .write_event(Event::Start(BytesStart::new(tag_element)))?;
@@ -1396,6 +1397,7 @@ impl<'a> FileKeyXmlReader<'a> {
                 Ok(Event::DocType(_)) => {}
                 Ok(Event::PI(_)) => {}
                 Ok(Event::Text(_)) => {}
+                Ok(Event::GeneralRef(_)) => {}
 
                 Ok(Event::Start(ref e)) => {
                     if !xml_decl_available {
@@ -1413,7 +1415,7 @@ impl<'a> FileKeyXmlReader<'a> {
                             //debug!("MAIN: in match {:?} KEEPASS_FILE", std::str::from_utf8(KEEPASS_FILE).unwrap());
                             return Err(Error::XmlReadingFailed(format!(
                                 "Unexpected starting tag {:?}",
-                                std::str::from_utf8(x)
+                                x
                             )));
                         }
                     }
@@ -1528,7 +1530,7 @@ impl<'a> FileKeyXmlReader<'a> {
                     //debug!("!!!!!! in fn attributes of Value are {:?}",v);
                     if let std::borrow::Cow::Borrowed(a) = x {
                         // println!("@@@@ a is {:?}", std::str::from_utf8(a).ok());
-                        data_hash = std::str::from_utf8(a).map(|s| s.to_string()).ok();
+                        data_hash = Some(a.to_string());
                     }
                 }
                 // Log as error if these happen when reading other KeePass app generated
@@ -1557,7 +1559,7 @@ impl<W: Write> FileKeyXmlWriter<W> {
     }
 
     fn write_meta(&mut self, _key_file_data: &KeyFileData) -> Result<()> {
-        let tag_element = std::str::from_utf8(KEY_FILE_META)?;
+        let tag_element = KEY_FILE_META;
         self.writer
             .write_event(Event::Start(BytesStart::new(tag_element)))?;
 
@@ -1608,7 +1610,7 @@ impl<W: Write> FileKeyXmlWriter<W> {
         self.writer
             .write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), None)))?;
 
-        let tag_element = std::str::from_utf8(KEY_FILE)?;
+        let tag_element = KEY_FILE;
 
         self.writer
             .write_event(Event::Start(BytesStart::new(tag_element)))?;

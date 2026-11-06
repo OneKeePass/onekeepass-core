@@ -35,11 +35,6 @@ impl KeepassFile {
 
     // See 'empty_trash' method for additional comments
 
-    // TODO: For now we are just delegating to 'root' and need to pass excluded group ids (recycle group id and template group id )
-    pub(crate) fn get_all_entries<'a>(&'a self, exclude: bool) -> Vec<&'a Entry> {
-        self.root.get_all_entries(exclude)
-    }
-
     // Collects all entries that are not in recycle bin
     pub(crate) fn collect_all_active_entries<'a>(&'a self) -> Vec<&'a Entry> {
         self.root
@@ -51,6 +46,7 @@ impl KeepassFile {
             .collect_favorite_entries(self.root.recycle_bin_uuid())
     }
 
+    #[allow(dead_code)] // Retained for reference.
     fn deleted_entry_uuids(&self) -> Vec<Uuid> {
         // TODO: Pass recycle bin group uuid from meta to root
         self.root.deleted_entry_uuids()

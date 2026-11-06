@@ -88,8 +88,8 @@ pub use crate::db_content::{
 
 pub use crate::form_data::{
     CategoryDetail, CurrentOtpTokenData, DbSettings, EntryCategories, EntryCategory,
-    EntryCategoryGrouping, EntryCategoryInfo, EntryFormData, EntryListOtpToken, EntrySummary,
-    EntryTypeFormData, EntryTypeHeader, EntryTypeHeaders, EntryTypeNames, GroupSummary, GroupTree,
+    EntryCategoryGrouping, EntryCategoryInfo, EntryFindItem, EntryFindKind, EntryFindResult,
+    EntryFormData, EntryListOtpToken, EntrySummary, EntryTypeFormData, EntryTypeHeader, EntryTypeHeaders, EntryTypeNames, GroupSummary, GroupTree,
     KdbxLoaded, KdbxSaved,
 };
 
@@ -193,6 +193,7 @@ impl Default for KdbxContext {
 
 impl KdbxContext {
     // Add the newly created KdbxFile to cache for UI use
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux", test))]
     fn insert(kdbx_file: KdbxFile) {
         let db_key = kdbx_file.get_database_file_name().to_string();
         let mut kdbx_context = KdbxContext::default();
@@ -744,8 +745,9 @@ pub fn search_term(db_key: &str, term: &str) -> Result<EntrySearchResult> {
             entry_items: vec![],
         };
 
-        // Use collect_all_active_entries instead of get_all_entries ?
-        for e in k.get_all_entries(true) {
+        // get_all_entries(true) skips only the recycle bin's direct children, so entries
+        // inside a deleted group (a group moved to the recycle bin) would still match
+        for e in k.collect_all_active_entries() {
             if searcher::term_search_all_entry_fields(term, e)? {
                 let (t1, t2) = extract_entry_titles(e);
                 search_result.entry_items.push(EntrySummary {
@@ -914,6 +916,12 @@ pub fn entry_summary_data(
     };
     main_content_action!(db_key, action)
 }
+// Entries matching the given kind (attachments, history, passkeys, totp or all by size)
+// for the on demand find entries page
+pub fn find_entries(db_key: &str, kind: EntryFindKind) -> Result<EntryFindResult> {
+    main_content_action!(db_key, move |k: &KeepassFile| Ok(form_data::find_entries(k, kind)))
+}
+
 pub fn get_group_by_id(db_key: &str, group_uuid: &Uuid) -> Result<Group> {
     main_content_action!(db_key, move |k: &KeepassFile| {
         match k.root.group_by_id(group_uuid) {

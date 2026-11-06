@@ -16,8 +16,11 @@ use crate::{kdbx_context_mut_action, main_content_action, to_keepassfile};
 
 use crate::error::{Error, Result};
 
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+use crate::db::KdbxFile;
+
 use crate::db::{
-    self, write_kdbx_content_to_file, write_kdbx_file, write_kdbx_file_with_backup_file, KdbxFile,
+    self, write_kdbx_content_to_file, write_kdbx_file, write_kdbx_file_with_backup_file,
 };
 use crate::util::{self};
 
