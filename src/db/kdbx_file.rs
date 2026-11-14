@@ -255,33 +255,46 @@ impl KdbxFile {
     pub(crate) fn lock_content(&mut self, db_key: &str) -> Result<Option<Vec<u8>>> {
         use zeroize::Zeroize;
 
-        if let Some(mut kp) = self.keepass_main_content.take() {
-            // None cipher: protected values are serialized as plaintext *inside* the
-            // blob, which is then AES-GCM encrypted as a whole. Entries keep the
-            // `index_ref` set at load, so write_xml emits correct Binary Refs.
-            let mut xml_bytes = crate::xml_parse::write_xml(&kp, None)?;
+        let Some(kp) = self.keepass_main_content.as_ref() else {
+            return Ok(None);
+        };
 
-            // Move attachment byte blobs out (index maps stay for relink on unlock).
-            let mut attachments = self.inner_header.entry_attachments.take_attachment_bytes();
+        // None cipher: protected values are serialized as plaintext *inside* the
+        // blob, which is then AES-GCM encrypted as a whole. Entries keep the
+        // `index_ref` set at load, so write_xml emits correct Binary Refs.
+        let mut xml_bytes = crate::xml_parse::write_xml(kp, None)?;
 
-            let mut framed = frame_locked_content(&xml_bytes, &attachments);
-            let blob = encrypt_content_blob(db_key, &framed)?;
+        // Move attachment byte blobs out (index maps stay for relink on unlock).
+        let mut attachments = self.inner_header.entry_attachments.take_attachment_bytes();
 
-            // Make the wipe real: volatile-zero every transient plaintext buffer and
-            // the dropped object graph (Rust does not zero on drop).
-            framed.zeroize();
-            xml_bytes.zeroize();
-            for (_h, data) in attachments.iter_mut() {
-                data.zeroize();
+        let mut framed = frame_locked_content(&xml_bytes, &attachments);
+        xml_bytes.zeroize();
+
+        let blob = match encrypt_content_blob(db_key, &framed) {
+            Ok(blob) => blob,
+            Err(e) => {
+                // The content is left as it was so that the db stays usable. Encryption
+                // fails, for example, when the OS key store cannot be read at that time
+                framed.zeroize();
+                self.inner_header
+                    .entry_attachments
+                    .restore_attachment_bytes(attachments);
+                return Err(e);
             }
-            kp.zeroize_sensitive_content();
-            // `attachments` (zeroed) and `kp` (scrubbed) drop here;
-            // keepass_main_content is already None via take().
+        };
 
-            Ok(Some(blob))
-        } else {
-            Ok(None)
+        // Make the wipe real: volatile-zero every transient plaintext buffer and
+        // the dropped object graph (Rust does not zero on drop).
+        framed.zeroize();
+        for (_h, data) in attachments.iter_mut() {
+            data.zeroize();
         }
+        if let Some(mut kp) = self.keepass_main_content.take() {
+            kp.zeroize_sensitive_content();
+        }
+        // `attachments` (zeroed) and the taken content (scrubbed) drop here
+
+        Ok(Some(blob))
     }
 
     // Reverse of `lock_content`: decrypt + unframe the blob, restore attachment bytes
