@@ -2,7 +2,7 @@
 // and the mobile (iOS / Android) autofill flows.
 //
 // This module is compiled for all platforms. It is the single match authority so
-// that every platform offers the same entries for a given login URL:
+// that every platform uses the same URL matching rules:
 //   * only Login-type entries are considered (see is_autofill_eligible_type), and
 //   * an entry matches when the incoming URL matches its URL field or any of its
 //     Additional URLs.
@@ -253,6 +253,23 @@ pub fn find_matching_entries(
     input_url: &str,
     require_otp: bool,
 ) -> Result<Vec<EntrySummary>> {
+    Ok(
+        find_ranked_matching_entries(db_key, input_url, require_otp)?
+            .into_iter()
+            .map(|(_, summary)| summary)
+            .collect(),
+    )
+}
+
+// Keep the host/field rank available to the browser's cross-database selection.
+// Mobile callers retain the full ordered list through find_matching_entries.
+pub(super) type RankedEntrySummary = ((u8, u8), EntrySummary);
+
+pub(super) fn find_ranked_matching_entries(
+    db_key: &str,
+    input_url: &str,
+    require_otp: bool,
+) -> Result<Vec<RankedEntrySummary>> {
     main_content_action!(db_key, |k: &KeepassFile| {
         // (rank, summary) pairs; rank = (host strength, field source), smaller = better.
         let mut ranked: Vec<((u8, u8), EntrySummary)> = k
@@ -305,9 +322,7 @@ pub fn find_matching_entries(
 
         // Stable sort by rank; entries with the same rank keep their database order.
         ranked.sort_by_key(|(rank, _)| *rank);
-        let summaries = ranked.into_iter().map(|(_, summary)| summary).collect();
-
-        Ok(summaries)
+        Ok(ranked)
     })
 }
 
