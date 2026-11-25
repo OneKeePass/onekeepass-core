@@ -261,6 +261,20 @@ pub fn find_matching_entries(
     )
 }
 
+// As find_matching_login_entries, but leaves out passkey-only entries (see
+// is_passkey_only_entry). Used by the browser extension's username/password fill
+// list: an entry that holds only a passkey has no password to fill, and it is
+// offered through the separate passkey (WebAuthn) list instead.
+pub fn find_matching_password_entries(
+    db_key: &str,
+    input_url: &str,
+) -> Result<Vec<EntrySummary>> {
+    Ok(find_ranked_password_entries(db_key, input_url)?
+        .into_iter()
+        .map(|(_, summary)| summary)
+        .collect())
+}
+
 // Keep the host/field rank available to the browser's cross-database selection.
 // Mobile callers retain the full ordered list through find_matching_entries.
 pub(super) type RankedEntrySummary = ((u8, u8), EntrySummary);
@@ -270,6 +284,99 @@ pub(super) fn find_ranked_matching_entries(
     input_url: &str,
     require_otp: bool,
 ) -> Result<Vec<RankedEntrySummary>> {
+    find_ranked_entries_filtered(
+        db_key,
+        input_url,
+        MatchFilter {
+            require_otp,
+            ..MatchFilter::default()
+        },
+    )
+}
+
+// The ranked counterpart of find_matching_password_entries, for the browser's
+// cross-database selection.
+pub(super) fn find_ranked_password_entries(
+    db_key: &str,
+    input_url: &str,
+) -> Result<Vec<RankedEntrySummary>> {
+    find_ranked_entries_filtered(
+        db_key,
+        input_url,
+        MatchFilter {
+            exclude_passkey_only: true,
+            ..MatchFilter::default()
+        },
+    )
+}
+
+// Whether an entry, given its place-holder resolved fields, is for the site of
+// `input_url`: its URL field or one of its Additional URLs matches, by the same rule
+// the fill list uses. Lets the browser extension's save flow find the entries a
+// submitted login belongs to without a second matching rule.
+pub(crate) fn entry_fields_match_url(
+    entry_fields: &std::collections::HashMap<String, String>,
+    input_url: &str,
+) -> bool {
+    entry_fields_host_strength(entry_fields, input_url).is_some()
+}
+
+// As entry_fields_match_url, but returns how strongly the host matched (smaller is
+// stronger: exact host before registrable domain), or None when it does not match.
+// Lets a caller prefer exact-host entries across databases, as the fill list does.
+pub(crate) fn entry_fields_host_strength(
+    entry_fields: &std::collections::HashMap<String, String>,
+    input_url: &str,
+) -> Option<u8> {
+    let url_field_strength = entry_fields
+        .get(URL)
+        .and_then(|u| url_match_strength(input_url, u));
+    let additional_urls_strength = entry_fields
+        .get(ADDITIONAL_URLS)
+        .and_then(|urls| additional_urls_match_strength(input_url, urls));
+    match_rank(url_field_strength, additional_urls_strength).map(|(host, _)| host)
+}
+
+// Extra conditions on top of the URL match and the autofill-eligible type check.
+#[derive(Default, Clone, Copy)]
+struct MatchFilter {
+    // Keep only entries autofill can generate a TOTP from.
+    require_otp: bool,
+    // Drop entries that hold a passkey but no password.
+    exclude_passkey_only: bool,
+}
+
+// Whether a field value is set to something other than whitespace.
+fn non_blank(value: Option<&String>) -> bool {
+    value.map_or(false, |v| !v.trim().is_empty())
+}
+
+// True when the entry holds a usable passkey (relying party + credential id) and no
+// password. Such an entry is a passkey credential, not a username/password one, so
+// the password fill list leaves it out. An entry with both a password and a passkey
+// is kept: it still has a password to fill. `resolved_fields` are the entry's fields
+// with place holders resolved, so a password given as a {REF:...} still counts.
+fn is_passkey_only_entry(
+    entry: &Entry,
+    resolved_fields: &std::collections::HashMap<String, String>,
+) -> bool {
+    use crate::constants::entry_keyvalue_key::{
+        KPEX_PASSKEY_CREDENTIAL_ID, KPEX_PASSKEY_RELYING_PARTY, PASSWORD,
+    };
+    let has_passkey = non_blank(entry.find_kv_field_value(KPEX_PASSKEY_CREDENTIAL_ID).as_ref())
+        && non_blank(entry.find_kv_field_value(KPEX_PASSKEY_RELYING_PARTY).as_ref());
+    has_passkey && !non_blank(resolved_fields.get(PASSWORD))
+}
+
+fn find_ranked_entries_filtered(
+    db_key: &str,
+    input_url: &str,
+    filter: MatchFilter,
+) -> Result<Vec<RankedEntrySummary>> {
+    let MatchFilter {
+        require_otp,
+        exclude_passkey_only,
+    } = filter;
     main_content_action!(db_key, |k: &KeepassFile| {
         // (rank, summary) pairs; rank = (host strength, field source), smaller = better.
         let mut ranked: Vec<((u8, u8), EntrySummary)> = k
@@ -288,6 +395,12 @@ pub(super) fn find_ranked_matching_entries(
 
                 let (parsed_fields, entry_fields) =
                     EntryPlaceHolderParser::place_holder_resolved_entry_fields(&k.root, e);
+
+                // The password fill list offers passkey-only entries through the
+                // passkey list instead.
+                if exclude_passkey_only && is_passkey_only_entry(e, &entry_fields) {
+                    return None;
+                }
 
                 let url_field_strength = entry_fields
                     .get(URL)
@@ -749,6 +862,50 @@ mod tests {
             "TOTP",
             TEST_OTP_URL
         )));
+    }
+
+    #[test]
+    fn passkey_only_entry_detection() {
+        use crate::constants::entry_keyvalue_key::{
+            KPEX_PASSKEY_CREDENTIAL_ID, KPEX_PASSKEY_RELYING_PARTY, PASSWORD,
+        };
+        use crate::db_content::KeyValue;
+        use std::collections::HashMap;
+
+        fn with_passkey(mut e: Entry) -> Entry {
+            e.entry_field.insert_key_value(KeyValue::from(
+                KPEX_PASSKEY_RELYING_PARTY.into(),
+                "example.com".into(),
+                false,
+            ));
+            e.entry_field.insert_key_value(KeyValue::from(
+                KPEX_PASSKEY_CREDENTIAL_ID.into(),
+                "cred-1".into(),
+                true,
+            ));
+            e
+        }
+        let fields = |pwd: &str| {
+            let mut m = HashMap::new();
+            m.insert(PASSWORD.to_string(), pwd.to_string());
+            m
+        };
+
+        // Passkey and no password: a passkey credential, left out of the password list.
+        let passkey_only = with_passkey(Entry::new_login_entry(None));
+        assert!(is_passkey_only_entry(&passkey_only, &fields("")));
+        assert!(is_passkey_only_entry(&passkey_only, &fields("   ")));
+        assert!(is_passkey_only_entry(&passkey_only, &HashMap::new()));
+
+        // Passkey and a password: still a password credential.
+        assert!(!is_passkey_only_entry(&passkey_only, &fields("s3cret")));
+
+        // No passkey at all: a plain login, even with an empty password.
+        assert!(!is_passkey_only_entry(&Entry::new_login_entry(None), &fields("")));
+
+        // A relying party without a credential id is not a usable passkey.
+        let half = login_entry_with(KPEX_PASSKEY_RELYING_PARTY, "example.com");
+        assert!(!is_passkey_only_entry(&half, &fields("")));
     }
 
     #[test]
