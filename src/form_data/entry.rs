@@ -312,6 +312,20 @@ impl EntryFormData {
         }
     }
 
+    // Sets the value of the field named `key` in whichever section holds it.
+    // Returns false (no change) when no section has such a field. Used where the
+    // field's section depends on the entry type (e.g. Password is in Login Details
+    // for Login entries but in another section for other types).
+    pub(crate) fn set_field_value(&mut self, key: &str, value: &str) -> bool {
+        for kvds in self.section_fields.values_mut() {
+            if let Some(kvd) = kvds.iter_mut().find(|k| k.key == key) {
+                kvd.value = Some(value.to_string());
+                return true;
+            }
+        }
+        false
+    }
+
     // Replaces (or inserts) the full list of KV fields for a named section.
     // Also ensures the section name appears in section_names.
     pub(crate) fn set_or_replace_section_fields(
