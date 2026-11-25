@@ -148,7 +148,7 @@ fn match_rank(
 // field def. Differently named fields in that section are deliberately not considered -
 // autofill is a one-tap flow, so the field to fill from has to be unambiguous, and the
 // standard field is the entry's login code by construction.
-fn has_usable_otp_field(entry: &Entry) -> bool {
+pub(crate) fn has_usable_otp_field(entry: &Entry) -> bool {
     entry
         .entry_field
         .get_key_values()

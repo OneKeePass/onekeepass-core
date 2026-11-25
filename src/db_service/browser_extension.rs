@@ -12,9 +12,9 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 use zeroize::Zeroize;
 
-use crate::constants::entry_keyvalue_key::{PASSWORD, TITLE, URL, USER_NAME};
+use crate::constants::entry_keyvalue_key::{OTP, PASSWORD, TITLE, URL, USER_NAME};
 use crate::constants::entry_type_uuid;
-use crate::db_content::KeepassFile;
+use crate::db_content::{CurrentOtpTokenData, KeepassFile, OtpData};
 use crate::db_service::{call_kdbx_context_mut_action, call_main_content_action, KdbxContext};
 use crate::error::Error;
 use crate::error::Result;
@@ -45,12 +45,17 @@ pub struct MatchedDbEntries {
     db_name: String,
     db_key: String,
     entry_summaries: Vec<EntrySummary>,
+    // The uuids of those entries that have a one-time password (TOTP) the
+    // extension can fill into a site's 2FA code field
+    otp_entry_uuids: Vec<String>,
 }
 
 struct RankedDbEntries {
     db_name: String,
     db_key: String,
     entries: Vec<super::autofill::RankedEntrySummary>,
+    // The matched entries with a usable TOTP
+    otp_entry_uuids: Vec<String>,
 }
 
 #[derive(Default, Serialize, Debug)]
@@ -64,6 +69,19 @@ pub struct BrowserExtensionCustomIcon {
 pub struct BasicEntryCredentialInfo {
     username: Option<String>,
     password: Option<String>,
+    // The current one-time password of the entry's standard otp field, when it
+    // has a usable one. Only the generated code (with its remaining seconds) is
+    // sent; the TOTP secret never leaves the app.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    otp: Option<CurrentOtpTokenData>,
+}
+
+// The current TOTP code of the entry's standard otp field. Only the standard field
+// is used, as for the autofill matcher (see autofill::has_usable_otp_field): the
+// field to fill a site's 2FA code from has to be unambiguous.
+fn current_otp(entry: &crate::db_content::Entry) -> Option<CurrentOtpTokenData> {
+    let otp_url = entry.find_kv_field_value(OTP)?;
+    OtpData::from_url(&otp_url).ok()?.current_otp_token_data().ok()
 }
 
 pub fn find_matching_in_enabled_db_entries(
@@ -86,15 +104,25 @@ pub fn find_matching_in_enabled_db_entries(
 
     Ok(databases
         .into_iter()
-        .map(|db| MatchedDbEntries {
-            db_name: db.db_name,
-            db_key: db.db_key,
-            entry_summaries: db
+        .map(|db| {
+            let entry_summaries: Vec<EntrySummary> = db
                 .entries
                 .into_iter()
                 .filter(|(rank, _)| Some(rank.0) == best_host_strength)
                 .map(|(_, summary)| summary)
-                .collect(),
+                .collect();
+            // Only the uuids of the entries kept in the list
+            let otp_entry_uuids = db
+                .otp_entry_uuids
+                .into_iter()
+                .filter(|id| entry_summaries.iter().any(|s| &s.uuid == id))
+                .collect();
+            MatchedDbEntries {
+                db_name: db.db_name,
+                db_key: db.db_key,
+                entry_summaries,
+                otp_entry_uuids,
+            }
         })
         .collect())
 }
@@ -109,6 +137,7 @@ pub fn basic_entry_credential_info(
             let info = BasicEntryCredentialInfo {
                 username: e.find_kv_field_value(USER_NAME).clone(),
                 password: e.find_kv_field_value(PASSWORD).clone(),
+                otp: current_otp(e),
             };
             Ok(info)
         }
@@ -144,11 +173,36 @@ pub fn custom_icon_for_browser_extension(
 // offered through the passkey (WebAuthn) list instead.
 fn find_matching_entries_in_db(db_key: &str, input_url: &str) -> Result<RankedDbEntries> {
     let entries = super::autofill::find_ranked_password_entries(db_key, input_url)?;
+    let otp_entry_uuids = otp_entry_uuids(db_key, entries.iter().map(|(_, s)| s))?;
     Ok(RankedDbEntries {
         db_name: get_db_name(db_key)?,
         db_key: db_key.to_string(),
         entries,
+        otp_entry_uuids,
     })
+}
+
+// Of the given matched entries, the uuids of those with a usable TOTP field
+fn otp_entry_uuids<'a>(
+    db_key: &str,
+    summaries: impl Iterator<Item = &'a EntrySummary> + Clone,
+) -> Result<Vec<String>> {
+    if summaries.clone().next().is_none() {
+        return Ok(vec![]);
+    }
+    let action = |k: &KeepassFile| {
+        Ok(summaries
+            .clone()
+            .filter(|s| {
+                Uuid::parse_str(&s.uuid)
+                    .ok()
+                    .and_then(|id| k.root.entry_by_id(&id))
+                    .map_or(false, crate::db_service::autofill::has_usable_otp_field)
+            })
+            .map(|s| s.uuid.clone())
+            .collect())
+    };
+    main_content_action!(db_key, action, no_times)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1109,6 +1163,44 @@ mod tests {
         assert_eq!(stored(db_key, &out.entry_uuid, TITLE).as_deref(), Some("My Shop"));
         info.group_uuid = Some(Uuid::new_v4());
         assert!(save_login_credential(&dbs, &info).is_err());
+
+        teardown_test_db(db_key);
+    }
+
+    #[test]
+    fn totp_code_comes_with_the_selected_entry_and_flags_the_list() {
+        let db_key = "be_totp_fill";
+        setup_test_db(db_key);
+        let dbs = vec![db_key.to_string()];
+        let with_otp = add_login(db_key, "With 2FA", "https://example.com", "alice", "pw");
+        let without_otp = add_login(db_key, "No 2FA", "https://example.com", "bob", "pw2");
+        kp_service::call_main_content_mut_action(db_key, |k| {
+            let e = k.root.entry_by_id_mut(&with_otp).unwrap();
+            e.entry_field.update_value(
+                OTP,
+                "otpauth://totp/Test:alice?secret=JBSWY3DPEHPK3PXP&issuer=Test",
+            );
+            Ok(())
+        })
+        .unwrap();
+
+        let info = basic_entry_credential_info(db_key, &with_otp).unwrap();
+        let otp = info.otp.expect("an entry with an otp url gets its current code");
+        assert_eq!(otp.token.len(), 6);
+        assert!(otp.token.chars().all(|c| c.is_ascii_digit()));
+        assert!(otp.ttl >= 1 && otp.ttl <= 30);
+        // Only the code is serialized, never the secret
+        let json = serde_json::to_string(&basic_entry_credential_info(db_key, &with_otp).unwrap()).unwrap();
+        assert!(!json.contains("JBSWY3DPEHPK3PXP"));
+
+        let info = basic_entry_credential_info(db_key, &without_otp).unwrap();
+        assert!(info.otp.is_none());
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(!json.contains("otp"), "no otp key when the entry has none: {}", json);
+
+        let matched = find_matching_in_enabled_db_entries(&dbs, "https://example.com").unwrap();
+        assert_eq!(matched[0].entry_summaries.len(), 2);
+        assert_eq!(matched[0].otp_entry_uuids, vec![with_otp.to_string()]);
 
         teardown_test_db(db_key);
     }
